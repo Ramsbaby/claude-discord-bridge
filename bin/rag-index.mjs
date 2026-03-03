@@ -83,6 +83,16 @@ async function main() {
         }
       }
     } catch { /* discord-history 아직 없으면 스킵 */ }
+    // context/owner/ and context/career/ (오너 프로필, 커리어 데이터)
+    for (const subDir of ['owner', 'career']) {
+      try {
+        const subDirPath = join(contextDir, subDir);
+        const subEntries = await readdir(subDirPath);
+        for (const f of subEntries) {
+          if (extname(f) === '.md') targets.push(join(subDirPath, f));
+        }
+      } catch { /* dir may not exist */ }
+    }
   } catch { /* dir may not exist */ }
 
   // 2. RAG memory files
