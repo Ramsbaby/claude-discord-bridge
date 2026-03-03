@@ -1,0 +1,28 @@
+{
+  "webhook": {
+    "url": "YOUR_WEBHOOK_URL",
+    "name": "MyBot",
+    "channel_name": "ai-bot"
+  },
+  "webhooks": {
+    "ai-bot":    "YOUR_BOT_WEBHOOK_URL",
+    "bot-system": "YOUR_SYSTEM_WEBHOOK_URL",
+    "bot-market": "YOUR_MARKET_WEBHOOK_URL",
+    "bot-blog":    "YOUR_BLOG_WEBHOOK_URL",
+    "bot-ceo":      "YOUR_CEO_WEBHOOK_URL"
+  },
+  "ntfy": {
+    "enabled": true,
+    "server": "https://ntfy.sh",
+    "topic": "your-ntfy-topic-id"
+  },
+  "alerts": {
+    "enabled": true,
+    "cooldown_seconds": 900,
+    "levels": {
+      "critical": true,
+      "warning": true,
+      "info": false
+    }
+  }
+}

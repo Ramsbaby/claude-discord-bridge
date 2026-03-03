@@ -1,0 +1,23 @@
+# Claude Discord Bridge — Docker Compose
+# Usage: docker compose up -d
+
+services:
+  bot:
+    build: .
+    container_name: claude-discord-bridge
+    restart: unless-stopped
+    env_file: discord/.env
+    volumes:
+      # Claude CLI authentication (read-only)
+      - ~/.claude:/root/.claude:ro
+      # Persistent data
+      - ./context:/app/context
+      - ./state:/app/state
+      - ./logs:/app/logs
+      - ./rag:/app/rag
+      - ./results:/app/results
+      # Config overrides (read-only)
+      - ./discord/personas.json:/app/discord/personas.json:ro
+      - ./config:/app/config:ro
+    environment:
+      - NODE_ENV=production

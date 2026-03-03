@@ -1,0 +1,25 @@
+{
+  "mcpServers": {
+    "serena": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/oraios/serena",
+        "serena",
+        "start-mcp-server",
+        "--context=claude-code",
+        "--project",
+        "YOUR_INSTALL_DIR"
+      ],
+      "env": {
+        "ENABLE_TOOL_SEARCH": "true"
+      },
+      "description": "코드 심볼 검색 (읽기 전용 4개 도구만 허용)"
+    },
+    "nexus": {
+      "command": "node",
+      "args": ["YOUR_INSTALL_DIR/lib/mcp-nexus.mjs"],
+      "description": "Nexus Context Intelligence Gateway — exec/scan/cache_exec/log_tail/health/file_peek"
+    }
+  }
+}

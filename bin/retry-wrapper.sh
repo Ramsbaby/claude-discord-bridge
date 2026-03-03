@@ -1,0 +1,211 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# retry-wrapper.sh - Retry wrapper with exponential backoff for ask-claude.sh
+# Usage: retry-wrapper.sh <task-id> <prompt> [allowed-tools] [timeout] [max-budget]
+
+BOT_HOME="${BOT_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+RETRY_LOG="${BOT_HOME}/logs/retry.jsonl"
+
+# --- Arguments ---
+TASK_ID="${1:?Usage: retry-wrapper.sh TASK_ID PROMPT [ALLOWED_TOOLS] [TIMEOUT] [MAX_BUDGET] [RETENTION]}"
+PROMPT="${2:?Usage: retry-wrapper.sh TASK_ID PROMPT [ALLOWED_TOOLS] [TIMEOUT] [MAX_BUDGET] [RETENTION]}"
+ALLOWED_TOOLS="${3:-Read}"
+TIMEOUT="${4:-180}"
+MAX_BUDGET="${5:-}"
+RESULT_RETENTION="${6:-7}"
+MODEL="${7:-}"
+
+MAX_RETRIES=3
+BACKOFF_DELAYS=(5 10 20 40)
+
+mkdir -p "$(dirname "$RETRY_LOG")"
+
+# --- Source semaphore ---
+. "$BOT_HOME/bin/semaphore.sh"
+
+# --- Temp file + semaphore management ---
+RESULT_TMP="/tmp/claude-retry-${TASK_ID}-$$.out"
+ACQUIRED_SLOT=""
+cleanup_slot() {
+    rm -f "$RESULT_TMP"
+    if [[ -n "$ACQUIRED_SLOT" ]]; then
+        release_slot "$ACQUIRED_SLOT"
+        ACQUIRED_SLOT=""
+    fi
+}
+trap cleanup_slot EXIT
+
+ACQUIRED_SLOT=$(acquire_slot) || {
+    echo "All semaphore slots busy, skipping task $TASK_ID" >&2
+    # 드롭된 태스크를 알림으로 통보
+    "$BOT_HOME/bin/route-result.sh" alert "$TASK_ID" \
+        "⚠️ Task $TASK_ID DROPPED: semaphore full (max 2 concurrent slots busy)" 2>/dev/null || true
+    exit 1
+}
+
+# --- Error classification by exit code ---
+classify_exit_code() {
+    local code="$1"
+    case "$code" in
+        0)   echo "success" ;;
+        2)   echo "non-retryable" ;;
+        124) echo "non-retryable" ;; # timeout — 재시도해도 동일하게 실패
+        137) echo "retryable" ;;
+        143) echo "retryable" ;;
+        1)   echo "retryable" ;;
+        *)   echo "retryable" ;;
+    esac
+}
+
+# --- Error classification by stdout content ---
+classify_error() {
+    local result_file="$1"
+    if grep -qi "rate_limit\|rate limit\|429" "$result_file" 2>/dev/null; then echo "RATE_LIMITED"
+    elif grep -qi "overloaded\|503\|capacity" "$result_file" 2>/dev/null; then echo "OVERLOADED"
+    elif grep -qi "authentication\|unauthorized\|401" "$result_file" 2>/dev/null; then echo "AUTH_ERROR"
+    elif grep -qi "context_length\|too.long\|too.large" "$result_file" 2>/dev/null; then echo "TOO_LONG"
+    else echo "UNKNOWN"; fi
+}
+
+# --- JSONL log entry ---
+log_retry() {
+    local attempt="$1" exit_code="$2" classification="$3" duration_s="$4"
+    printf '{"timestamp":"%s","task_id":"%s","attempt":%d,"exit_code":%d,"classification":"%s","duration_s":%s}\n' \
+        "$(date -u +%FT%TZ)" "$TASK_ID" "$attempt" "$exit_code" "$classification" "$duration_s" \
+        >> "$RETRY_LOG"
+}
+
+# --- Retry loop ---
+for attempt in $(seq 1 "$MAX_RETRIES"); do
+    start_s=$(date +%s)
+
+    exit_code=0
+    "$BOT_HOME/bin/ask-claude.sh" "$TASK_ID" "$PROMPT" "$ALLOWED_TOOLS" "$TIMEOUT" "$MAX_BUDGET" "$RESULT_RETENTION" "$MODEL" \
+        > "$RESULT_TMP" 2>&1 || exit_code=$?
+
+    end_s=$(date +%s)
+    duration_s=$(( end_s - start_s ))
+
+    # Classify by exit code first
+    classification=$(classify_exit_code "$exit_code")
+
+    # If retryable by exit code, refine classification from output
+    if [[ "$classification" == "retryable" && "$exit_code" -ne 0 ]]; then
+        stdout_class=$(classify_error "$RESULT_TMP")
+        case "$stdout_class" in
+            AUTH_ERROR|TOO_LONG)
+                classification="non-retryable"
+                ;;
+            RATE_LIMITED)
+                classification="rate_limited"
+                ;;
+            OVERLOADED)
+                classification="retryable"
+                ;;
+        esac
+    fi
+
+    log_retry "$attempt" "$exit_code" "$classification" "$duration_s"
+
+    # Success - output result and exit
+    if [[ "$classification" == "success" ]]; then
+        cat "$RESULT_TMP"
+        exit 0
+    fi
+
+    # Non-retryable - fail immediately
+    if [[ "$classification" == "non-retryable" ]]; then
+        cat "$RESULT_TMP" >&2
+        exit "$exit_code"
+    fi
+
+    # Last attempt exhausted
+    if [[ "$attempt" -eq "$MAX_RETRIES" ]]; then
+        break
+    fi
+
+    # Compute backoff delay
+    delay="${BACKOFF_DELAYS[$((attempt - 1))]}"
+    if [[ "$classification" == "rate_limited" ]]; then
+        # Rate limit은 5시간 윈도우 기반 → 짧은 재시도는 무의미
+        # 1차: 5분, 2차: 15분 대기 (크론 다음 실행까지 양보)
+        delay=$(( 300 * attempt ))
+    fi
+
+    sleep "$delay"
+done
+
+# --- Classify failure reason (detailed, for cron.log + proposals) ---
+classify_failure() {
+    local exit_code="$1"
+    local stderr_file="$2"
+
+    if [[ $exit_code -eq 124 ]]; then
+        echo "TIMEOUT"
+    elif [[ -f "$stderr_file" ]] && grep -qiE "rate.limit|429|overloaded|too many" "$stderr_file" 2>/dev/null; then
+        echo "RATE_LIMIT"
+    elif [[ -f "$stderr_file" ]] && grep -qiE "401|authentication|unauthorized|api.key" "$stderr_file" 2>/dev/null; then
+        echo "AUTH_ERROR"
+    elif [[ -f "$stderr_file" ]] && grep -qiE "context_length|too.long|too.large" "$stderr_file" 2>/dev/null; then
+        echo "CONTEXT_TOO_LONG"
+    else
+        echo "UNKNOWN"
+    fi
+}
+
+# --- Check repeated failures and auto-propose ---
+check_repeated_failures() {
+    local task_id="$1"
+    local fail_class="$2"
+    local cron_log="${BOT_HOME}/logs/cron.log"
+    local tracker="${BOT_HOME}/rag/teams/proposals-tracker.md"
+
+    # Count same TASK_ID + same class in last 24h from cron.log
+    local cutoff
+    cutoff=$(date -v-24H +%F 2>/dev/null || date -d '24 hours ago' +%F 2>/dev/null || echo "")
+    if [[ -z "$cutoff" ]]; then
+        return 0
+    fi
+
+    local count=0
+    if [[ -f "$cron_log" ]]; then
+        count=$(grep -c "\[${task_id}\].*\[FAILED:${fail_class}\]" "$cron_log" 2>/dev/null || echo "0")
+    fi
+
+    # 3+ failures of same type → auto-propose
+    if [[ "$count" -ge 3 ]] && [[ -f "$tracker" ]]; then
+        local proposal_id="P-$(date +%m%d)-auto"
+        local entry="| ${proposal_id} | [${task_id}] ${fail_class} 반복 실패 (${count}회+) | L2 | ⏳ 대기 | $(date +%F) |"
+
+        # Avoid duplicate proposals for same task+class today
+        if ! grep -q "\[${task_id}\] ${fail_class}" "$tracker" 2>/dev/null; then
+            # Insert before the "반복 패턴 감지" section
+            if grep -q "아직 등록된 제안 없음" "$tracker" 2>/dev/null; then
+                sed -i '' "s|_아직 등록된 제안 없음_|${entry}|" "$tracker" 2>/dev/null || true
+            else
+                sed -i '' "/^## 📌 반복 패턴 감지/i\\
+${entry}" "$tracker" 2>/dev/null || true
+            fi
+        fi
+    fi
+}
+
+# All retries exhausted - classify, log, and alert
+STDERR_FILE="${BOT_HOME}/logs/claude-stderr-${TASK_ID}.log"
+FAIL_CLASS=$(classify_failure "$exit_code" "$STDERR_FILE")
+
+# Log to cron.log with failure classification
+CRON_LOG="${BOT_HOME}/logs/cron.log"
+printf '[%s] [%s] [FAILED:%s] exit=%d retries=%d\n' \
+    "$(date '+%F %H:%M:%S')" "$TASK_ID" "$FAIL_CLASS" "${exit_code:-1}" "$MAX_RETRIES" \
+    >> "$CRON_LOG"
+
+# Check for repeated failure pattern → auto-propose
+check_repeated_failures "$TASK_ID" "$FAIL_CLASS"
+
+"$BOT_HOME/bin/route-result.sh" alert "$TASK_ID" \
+    "Task $TASK_ID failed after $MAX_RETRIES retries (last exit: $exit_code, class: $FAIL_CLASS)"
+
+cat "$RESULT_TMP" >&2
+exit "${exit_code:-1}"

@@ -1,0 +1,50 @@
+{
+  "tasks": [
+    {
+      "id": "morning-standup",
+      "name": "Morning Standup",
+      "schedule": "5 8 * * *",
+      "timeout": 300,
+      "prompt": "Generate a morning briefing: 1) Today's calendar events 2) Pending tasks 3) System status. Keep it concise.",
+      "allowedTools": "Read,Bash,WebSearch",
+      "output": ["discord", "file"],
+      "discordChannel": "ai-bot",
+      "retry": { "max": 3, "backoff": "exponential" },
+      "maxBudget": "1.00",
+      "priority": "critical",
+      "contextFile": "morning-standup.md",
+      "resultRetention": 7,
+      "resultMaxChars": 2000
+    },
+    {
+      "id": "daily-summary",
+      "name": "Daily Summary",
+      "schedule": "0 20 * * *",
+      "timeout": 300,
+      "prompt": "Summarize the day: 1) Cron task results 2) System issues 3) Tomorrow's schedule. Keep it brief.",
+      "allowedTools": "Read,Bash",
+      "output": ["discord", "file"],
+      "discordChannel": "ai-bot",
+      "retry": { "max": 3, "backoff": "exponential" },
+      "maxBudget": "1.00",
+      "priority": "daily",
+      "contextFile": "daily-summary.md",
+      "resultRetention": 7,
+      "resultMaxChars": 2000
+    },
+    {
+      "id": "system-health",
+      "name": "System Health Check",
+      "schedule": "1,31 * * * *",
+      "timeout": 120,
+      "prompt": "Check system health: disk usage, memory, running LaunchAgents. Alert if anything is wrong.",
+      "allowedTools": "Bash",
+      "output": ["file"],
+      "retry": { "max": 2, "backoff": "linear" },
+      "maxBudget": "0.50",
+      "priority": "monitoring",
+      "resultRetention": 3,
+      "resultMaxChars": 500
+    }
+  ]
+}

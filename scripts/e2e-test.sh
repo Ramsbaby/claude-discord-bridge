@@ -1,0 +1,147 @@
+#!/usr/bin/env bash
+set -uo pipefail
+
+# Claude Discord Bridge E2E Test Suite
+# Usage: ~/claude-discord-bridge/scripts/e2e-test.sh [--ntfy] (--ntfy sends test push notification)
+
+export BOT_HOME="${BOT_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+PASS=0
+FAIL=0
+SKIP=0
+SEND_NTFY="${1:-}"
+
+green() { printf '\033[32m%s\033[0m\n' "$1"; }
+red()   { printf '\033[31m%s\033[0m\n' "$1"; }
+yellow(){ printf '\033[33m%s\033[0m\n' "$1"; }
+
+check() {
+  local name="$1"
+  shift
+  if "$@" >/dev/null 2>&1; then
+    green "✅ PASS: $name"
+    ((PASS++))
+  else
+    red "❌ FAIL: $name"
+    ((FAIL++))
+  fi
+}
+
+skip() {
+  yellow "⏭️  SKIP: $1"
+  ((SKIP++))
+}
+
+echo "═══════════════════════════════════════════"
+echo "  Claude Discord Bridge E2E Test Suite"
+echo "  $(date '+%Y-%m-%d %H:%M:%S')"
+echo "═══════════════════════════════════════════"
+echo ""
+
+# --- Process Tests ---
+echo "▶ Process Health"
+check "Discord bot running" pgrep -f "discord-bot.js"
+
+# --- File Structure Tests ---
+echo ""
+echo "▶ File Structure"
+check "RAG engine exists" test -f "$BOT_HOME/lib/rag-engine.mjs"
+check "RAG query script exists" test -f "$BOT_HOME/lib/rag-query.mjs"
+check "RAG indexer exists" test -f "$BOT_HOME/bin/rag-index.mjs"
+check "ask-claude.sh exists" test -f "$BOT_HOME/bin/ask-claude.sh"
+check "discord-bot.js exists" test -f "$BOT_HOME/discord/discord-bot.js"
+check "tasks.json exists" test -f "$BOT_HOME/config/tasks.json"
+check "monitoring.json exists" test -f "$BOT_HOME/config/monitoring.json"
+
+# --- Dependency Tests ---
+echo ""
+echo "▶ Dependencies"
+check "LanceDB package installed" test -d "$BOT_HOME/discord/node_modules/@lancedb/lancedb"
+check "OpenAI package installed" test -d "$BOT_HOME/discord/node_modules/openai"
+check "apache-arrow installed" test -d "$BOT_HOME/discord/node_modules/apache-arrow"
+check "discord-bot.js syntax valid" node --check "$BOT_HOME/discord/discord-bot.js"
+
+# --- RAG Tests ---
+echo ""
+echo "▶ RAG Engine"
+
+# Run initial index if LanceDB directory doesn't exist
+if [[ ! -d "$BOT_HOME/rag/lancedb" ]]; then
+  echo "  ℹ️  Running initial RAG index..."
+  NODE_PATH="$BOT_HOME/discord/node_modules" node "$BOT_HOME/bin/rag-index.mjs" 2>/dev/null || true
+fi
+
+check "LanceDB directory exists" test -d "$BOT_HOME/rag/lancedb"
+check "RAG query returns data" bash -c "NODE_PATH=$BOT_HOME/discord/node_modules node $BOT_HOME/lib/rag-query.mjs 'system health' 2>/dev/null | head -1 | grep -q ."
+
+# --- State Files ---
+echo ""
+echo "▶ State Files"
+check "sessions.json valid" jq '.' "$BOT_HOME/state/sessions.json"
+check "rate-tracker.json valid" jq '.' "$BOT_HOME/state/rate-tracker.json"
+check "memory.md exists" test -f "$BOT_HOME/rag/memory.md"
+check "decisions.md exists" test -f "$BOT_HOME/rag/decisions.md"
+
+# --- ask-claude.sh RAG Integration ---
+echo ""
+echo "▶ ask-claude.sh Integration"
+check "ask-claude.sh has RAG integration" grep -q "rag-query.mjs" "$BOT_HOME/bin/ask-claude.sh"
+check "ask-claude.sh has fallback" grep -q "Fallback" "$BOT_HOME/bin/ask-claude.sh"
+
+# --- Discord Bot Features ---
+echo ""
+echo "▶ Discord Bot Features"
+check "ntfy integration" grep -q "sendNtfy" "$BOT_HOME/discord/discord-bot.js"
+check "RAG context injection" grep -q "ragContext" "$BOT_HOME/discord/lib/claude-runner.js"
+check "/search command" grep -q "'search'" "$BOT_HOME/discord/discord-bot.js"
+check "/threads command" grep -q "'threads'" "$BOT_HOME/discord/discord-bot.js"
+check "/alert command" grep -q "'alert'" "$BOT_HOME/discord/discord-bot.js"
+
+# --- Cron Tests ---
+echo ""
+echo "▶ Cron Jobs"
+check "RAG indexer cron exists" bash -c "crontab -l 2>/dev/null | grep -q 'rag-index'"
+check "morning-standup cron exists" bash -c "crontab -l 2>/dev/null | grep -q 'morning-standup'"
+check "e2e-cron.sh registered" bash -c "crontab -l 2>/dev/null | grep -q 'e2e-cron'"
+check "weekly-kpi cron exists" bash -c "crontab -l 2>/dev/null | grep -q 'weekly-kpi'"
+check "security-scan cron exists" bash -c "crontab -l 2>/dev/null | grep -q 'security-scan'"
+check "rag-health cron exists" bash -c "crontab -l 2>/dev/null | grep -q 'rag-health'"
+
+# --- Phase 3~5 Tasks ---
+echo ""
+echo "▶ Phase 3~5 Context Files"
+for task in weekly-kpi monthly-review security-scan rag-health career-weekly cost-monitor; do
+  check "$task context exists" test -f "$BOT_HOME/context/$task.md"
+done
+check "autonomy-levels.md exists" test -f "$BOT_HOME/config/autonomy-levels.md"
+check "company-dna.md SSoT" test -f "$BOT_HOME/config/company-dna.md"
+check "e2e-cron.sh executable" test -x "$BOT_HOME/scripts/e2e-cron.sh"
+
+# --- Channel Routing ---
+echo ""
+echo "▶ Channel Routing"
+check "monitoring.json has webhooks" bash -c "jq -e '.webhooks' '$BOT_HOME/config/monitoring.json' > /dev/null 2>&1"
+check "route-result.sh supports channel arg" bash -c "grep -q 'CHANNEL' '$BOT_HOME/bin/route-result.sh'"
+check "bot-cron.sh passes channel" bash -c "grep -q 'DISCORD_CHANNEL' '$BOT_HOME/bin/bot-cron.sh'"
+
+# --- ntfy Test (optional) ---
+echo ""
+echo "▶ ntfy Push Notification"
+if [[ "$SEND_NTFY" == "--ntfy" ]]; then
+  check "ntfy test send" curl -sf -o /dev/null \
+    -H "Title: Claude Discord Bridge E2E Test" \
+    -H "Priority: low" \
+    -H "Tags: test_tube" \
+    -d "E2E test passed at $(date '+%H:%M:%S')" \
+    "https://ntfy.sh/${NTFY_TOPIC:-test-topic}"
+else
+  skip "ntfy test send (use --ntfy flag to test)"
+fi
+
+# --- Summary ---
+echo ""
+echo "═══════════════════════════════════════════"
+TOTAL=$((PASS + FAIL + SKIP))
+echo "  Results: $(green "$PASS passed"), $(red "$FAIL failed"), $(yellow "$SKIP skipped") / $TOTAL total"
+echo "═══════════════════════════════════════════"
+
+exit $((FAIL > 0 ? 1 : 0))

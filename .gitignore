@@ -1,0 +1,50 @@
+# 민감 정보 (개인 설정)
+discord/.env
+config/monitoring.json
+config/tasks.json
+config/company-dna.md
+config/discord-mcp.json
+discord/personas.json
+context/user-profile.md
+context/career-weekly.md
+context/tqqq-monitor.md
+context/market-alert.md
+scripts/tqqq-alert.sh
+
+# 런타임
+state/
+logs/
+rag/lancedb/
+rag/index-state.json
+discord/node_modules/
+results/
+watchdog/
+tmp/
+
+# Serena LSP
+.serena/
+
+# 개인 운영 문서
+REPORT.md
+docs/audit-report.md
+
+# node_modules 심링크 (설치 시 자동 생성)
+bin/node_modules
+lib/node_modules
+
+# 빈 유틸 디렉토리
+2/
+queue/
+load/
+list/
+launchctl/
+ops/
+sleep/
+discord-sessions/
+heartbeats/
+
+# OS
+.DS_Store
+*.pid
+context/discord-history/
+rag/teams/
