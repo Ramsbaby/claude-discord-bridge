@@ -97,15 +97,18 @@ check_stale_locks() {
         pid=$(cat "$pid_file")
         # Check if process is still alive
         if ! kill -0 "$pid" 2>/dev/null; then
-            rm -rf "$slot_dir"
-            _decrement_global_count
+            # Only decrement if we are the one removing the slot (prevent double-decrement)
+            if rm -rf "$slot_dir" 2>/dev/null; then
+                _decrement_global_count
+            fi
             continue
         fi
         # Check if lock is older than STALE_TIMEOUT
         mtime=$(stat -f %m "$slot_dir")
         if (( now - mtime > STALE_TIMEOUT )); then
-            rm -rf "$slot_dir"
-            _decrement_global_count
+            if rm -rf "$slot_dir" 2>/dev/null; then
+                _decrement_global_count
+            fi
         fi
     done
 }
@@ -114,37 +117,47 @@ acquire_slot() {
     local i slot_dir wait_elapsed=0
     mkdir -p "$LOCK_DIR"
 
-    # Wait for global availability (max 60s)
-    while ! _check_global_available; do
+    # Acquire slot atomically: hold global lock across check + mkdir + increment
+    # to prevent TOCTOU race between _check_global_available and _increment_global_count
+    while true; do
         if [[ "$wait_elapsed" -ge 60 ]]; then
             return 1
         fi
-        sleep 2
-        wait_elapsed=$(( wait_elapsed + 2 ))
-    done
 
-    # Try each slot
-    for i in $(seq 1 "$MAX_SLOTS"); do
-        slot_dir="${LOCK_DIR}/slot-${i}"
-        if mkdir "$slot_dir" 2>/dev/null; then
-            echo $$ > "${slot_dir}/pid"
-            _increment_global_count
-            echo "$i"
-            return 0
+        if _acquire_global_lock; then
+            local count
+            count=$(_read_global_count)
+            if [[ "$count" -ge "$MAX_GLOBAL" ]]; then
+                _release_global_lock
+                sleep 2
+                wait_elapsed=$(( wait_elapsed + 2 ))
+                continue
+            fi
+            # Try to claim a slot while holding the lock
+            local acquired=0
+            for i in $(seq 1 "$MAX_SLOTS"); do
+                slot_dir="${LOCK_DIR}/slot-${i}"
+                if mkdir "$slot_dir" 2>/dev/null; then
+                    echo $$ > "${slot_dir}/pid"
+                    echo $(( count + 1 )) > "$GLOBAL_COUNT_FILE"
+                    acquired=$i
+                    break
+                fi
+            done
+            _release_global_lock
+            if [[ "$acquired" -gt 0 ]]; then
+                echo "$acquired"
+                return 0
+            fi
+            # All slots taken — clean stale and retry
+            check_stale_locks
+            sleep 2
+            wait_elapsed=$(( wait_elapsed + 2 ))
+        else
+            sleep 2
+            wait_elapsed=$(( wait_elapsed + 2 ))
         fi
     done
-    # All slots taken - check for stale locks and retry
-    check_stale_locks
-    for i in $(seq 1 "$MAX_SLOTS"); do
-        slot_dir="${LOCK_DIR}/slot-${i}"
-        if mkdir "$slot_dir" 2>/dev/null; then
-            echo $$ > "${slot_dir}/pid"
-            _increment_global_count
-            echo "$i"
-            return 0
-        fi
-    done
-    return 1
 }
 
 release_slot() {

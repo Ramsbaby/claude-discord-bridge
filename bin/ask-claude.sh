@@ -54,7 +54,7 @@ cleanup() {
 trap cleanup EXIT
 
 # --- Setup ---
-mkdir -p "$WORK_DIR" "$RESULTS_DIR" "$(dirname "$LOG_FILE")"
+mkdir -p "$WORK_DIR" "$RESULTS_DIR" "$(dirname "$LOG_FILE")" "$(dirname "$PID_FILE")"
 echo $$ > "$PID_FILE"
 
 # Layer 2: Git boundary - prevents claude from traversing to parent repos

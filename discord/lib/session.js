@@ -251,22 +251,25 @@ export class Semaphore {
       }
     }
 
-    // Could not acquire file lock — fall back to local-only check
-    this.current++;
-    return true;
+    // Could not acquire file lock — deny rather than bypass global ceiling
+    return false;
   }
 
   release() {
     if (this.current <= 0) return;
     this.current = Math.max(0, this.current - 1);
 
-    // Decrement global counter
-    if (_acquireFileLock()) {
-      try {
-        const globalCount = _readGlobalCount();
-        _writeGlobalCount(globalCount - 1);
-      } finally {
-        _releaseFileLock();
+    // Decrement global counter — retry up to 3 times to prevent counter leak
+    let released = false;
+    for (let i = 0; i < 3 && !released; i++) {
+      if (_acquireFileLock()) {
+        try {
+          const globalCount = _readGlobalCount();
+          _writeGlobalCount(Math.max(0, globalCount - 1));
+          released = true;
+        } finally {
+          _releaseFileLock();
+        }
       }
     }
   }
