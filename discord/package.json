@@ -9,6 +9,7 @@
     "check": "node --check discord-bot.js"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.63",
     "@lancedb/lancedb": "^0.26.2",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "apache-arrow": "^18.1.0",

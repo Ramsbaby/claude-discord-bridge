@@ -137,6 +137,37 @@ try {
 }
 
 // ---------------------------------------------------------------------------
+// Load USER_PROFILES from config/user_profiles.json
+// Maps Discord user IDs to named profiles (owner, family, etc.)
+// Env overrides: OWNER_DISCORD_ID, BORAM_DISCORD_ID
+// ---------------------------------------------------------------------------
+
+let USER_PROFILES = {};
+try {
+  const userProfilesPath = join(BOT_HOME, 'config', 'user_profiles.json');
+  USER_PROFILES = JSON.parse(readFileSync(userProfilesPath, 'utf-8'));
+  if (process.env.OWNER_DISCORD_ID && USER_PROFILES.owner) {
+    USER_PROFILES.owner.discordId = process.env.OWNER_DISCORD_ID;
+  }
+  if (process.env.BORAM_DISCORD_ID && USER_PROFILES.boram) {
+    USER_PROFILES.boram.discordId = process.env.BORAM_DISCORD_ID;
+  }
+} catch {
+  log('warn', 'user_profiles.json not found — single-user (owner) mode');
+}
+
+/**
+ * Returns the profile for a Discord user ID, or null if not found.
+ * Returns null (→ owner fallback) if discordId is empty/unset.
+ */
+function getUserProfile(discordUserId) {
+  if (!discordUserId) return null;
+  return Object.values(USER_PROFILES).find(
+    (p) => p.discordId && p.discordId === discordUserId,
+  ) || null;
+}
+
+// ---------------------------------------------------------------------------
 // execRagAsync — semantic memory search via rag-query.mjs
 // ---------------------------------------------------------------------------
 
@@ -165,8 +196,9 @@ export async function execRagAsync(query) {
 // saveConversationTurn — append to daily file for RAG indexing
 // ---------------------------------------------------------------------------
 
-export function saveConversationTurn(userMsg, botMsg, channelName) {
-  const ownerName = process.env.OWNER_NAME || 'Owner';
+export function saveConversationTurn(userMsg, botMsg, channelName, userId = null) {
+  const profile = userId ? getUserProfile(userId) : null;
+  const senderName = profile?.name || process.env.OWNER_NAME || 'Owner';
   try {
     mkdirSync(CONV_HISTORY_DIR, { recursive: true });
     const now = new Date();
@@ -175,7 +207,7 @@ export function saveConversationTurn(userMsg, botMsg, channelName) {
     const timeStr = kst.toISOString().slice(11, 16);
     const filePath = join(CONV_HISTORY_DIR, `${dateStr}.md`);
     const botName = process.env.BOT_NAME || 'Jarvis';
-    const entry = `\n## [${dateStr} ${timeStr} KST] #${channelName}\n\n**${ownerName}**: ${userMsg.slice(0, 600)}\n\n**${botName}**: ${botMsg.slice(0, 1800)}\n\n---\n`;
+    const entry = `\n## [${dateStr} ${timeStr} KST] #${channelName}\n\n**${senderName}**: ${userMsg.slice(0, 600)}\n\n**${botName}**: ${botMsg.slice(0, 1800)}\n\n---\n`;
     appendFileSync(filePath, entry, 'utf-8');
   } catch (err) {
     log('warn', 'Failed to save conversation turn', { error: err.message });
@@ -224,7 +256,24 @@ export async function* createClaudeSession(prompt, {
   const ownerTitle = process.env.OWNER_TITLE || 'Owner';
   const githubUsername = process.env.GITHUB_USERNAME || 'user';
 
-  // 4. Build system prompt (identical logic to former spawnClaude)
+  // 4. Detect active user — owner fallback if not registered
+  const activeUserProfile = getUserProfile(userId);
+  const isOwner = !activeUserProfile || activeUserProfile.type === 'owner';
+
+  // 4a. Build user context section
+  const userContextParts = isOwner
+    ? [
+        '--- Owner Context ---',
+        `지금 대화 중인 사람은 ${ownerName}(${ownerTitle}님, GitHub: ${githubUsername})이다. 오너가 "나 누구야?" 등으로 물으면 프로필 기반으로 답한다.`,
+        createClaudeSession._profileCache,
+      ]
+    : [
+        '--- 사용자 컨텍스트 ---',
+        `지금 대화 중인 사람은 ${activeUserProfile.name}(${activeUserProfile.title})이다. ${activeUserProfile.bio || ''}`.trim(),
+        activeUserProfile.persona ? `응답 가이드: ${activeUserProfile.persona}` : '',
+      ].filter(Boolean);
+
+  // 5. Build system prompt
   const systemParts = [
     `당신의 이름은 ${process.env.BOT_NAME || 'Jarvis'}입니다. ${ownerName}님의 개인 AI 어시스턴트입니다.`,
     '중요: 절대 스스로를 "Claude"라고 소개하거나 지칭하지 마세요. Claude는 내부 엔진일 뿐, 당신의 이름이 아닙니다. "저는 Jarvis입니다"라고만 하세요.',
@@ -282,9 +331,7 @@ export async function* createClaudeSession(prompt, {
     'Bash 금지 명령: rm -rf, shutdown, reboot, kill -9, DROP TABLE, 파괴적 쓰기 작업.',
     'API 키/토큰/비밀번호 노출 금지. 경로나 시스템 정보는 필요한 경우에만 요약 제공.',
     '',
-    '--- Owner Context ---',
-    `지금 대화 중인 사람은 ${ownerName}(${ownerTitle}님, GitHub: ${githubUsername})이다. 오너가 "나 누구야?" 등으로 물으면 프로필 기반으로 답한다.`,
-    createClaudeSession._profileCache,
+    ...userContextParts,
   ];
 
   // Channel-specific persona
@@ -323,8 +370,12 @@ export async function* createClaudeSession(prompt, {
   if (isResuming) {
     // When resuming: add context to the prompt (system prompt is already in session)
     const ctxParts = [];
-    ctxParts.push(`[대화 상대] ${ownerName}(${ownerTitle}님, ${githubUsername}). ${createClaudeSession._profileCache?.slice(0, 400) || ''}`);
-    if (channelPersona) ctxParts.push(`[채널 역할]\n${channelPersona.slice(0, 300)}`);
+    if (isOwner) {
+      ctxParts.push(`[대화 상대] ${ownerName}(${ownerTitle}님, ${githubUsername}). ${createClaudeSession._profileCache?.slice(0, 400) || ''}`);
+    } else {
+      ctxParts.push(`[대화 상대] ${activeUserProfile.name}(${activeUserProfile.title}). ${activeUserProfile.bio?.slice(0, 200) || ''}`);
+    }
+    if (channelPersona) ctxParts.push(`[채널 역할]\n${channelPersona.slice(0, 800)}`);
     if (usageSummary) ctxParts.push(usageSummary);
     if (ragContext) ctxParts.push(`[관련 메모리]\n${ragContext}`);
     if (attachments.length > 0) {

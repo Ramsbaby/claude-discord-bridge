@@ -11,8 +11,7 @@ import { EmbedBuilder } from 'discord.js';
 import { log, sendNtfy } from './claude-runner.js';
 import { StreamingMessage } from './session.js';
 import {
-  spawnClaude,
-  parseStreamEvents,
+  createClaudeSession,
   execRagAsync,
   saveConversationTurn,
   processFeedback,
@@ -54,7 +53,6 @@ export async function handleMessage(message, { sessions, rateTracker, semaphore,
 
   if (message.author.bot) return;
 
-  // Support multiple channels (CHANNEL_IDS comma-separated, fallback to CHANNEL_ID)
   const channelIds = (process.env.CHANNEL_IDS || process.env.CHANNEL_ID || '')
     .split(',')
     .map((id) => id.trim())
@@ -122,11 +120,10 @@ export async function handleMessage(message, { sessions, rateTracker, semaphore,
   let typingInterval = null;
   let stallTimer = null;
   let timeoutHandle = null;
-  let workDir = null;
   let imageAttachments = [];
   let userPrompt = message.content;
 
-  // Learning feedback loop: detect and persist user feedback signals
+  // Learning feedback loop
   const feedback = processFeedback(message.author.id, userPrompt);
   if (feedback) {
     log('info', 'Feedback detected', { userId: message.author.id, type: feedback.type });
@@ -211,7 +208,7 @@ export async function handleMessage(message, { sessions, rateTracker, semaphore,
     }
 
     async function runClaude(sid, streamer) {
-      log('info', 'Spawning claude', {
+      log('info', 'Starting Claude session', {
         threadId: thread.id,
         resume: !!sid,
         promptLen: userPrompt.length,
@@ -220,30 +217,25 @@ export async function handleMessage(message, { sessions, rateTracker, semaphore,
 
       const effectiveChannelId = isThread ? message.channel.parentId : message.channel.id;
 
-      // Heuristic: code analysis / multi-file tasks need more turns
       const LARGE_KEYWORDS = /코드|분석|파일|구조|함수|클래스|디버그|확인|리뷰|왜|어떻게|explain|debug|analyze|review/i;
       const contextBudget = userPrompt.length > 200 || LARGE_KEYWORDS.test(userPrompt) ? 'large' : 'medium';
 
-      const { proc, rl, workDir: wd } = spawnClaude(userPrompt, {
-        sessionId: sid,
-        threadId: thread.id,
-        channelId: effectiveChannelId,
-        ragContext,
-        attachments: imageAttachments,
-        userId: message.author.id,
-        contextBudget,
-      });
-      workDir = wd;
+      // AbortController replaces proc.kill() — clean async cancellation
+      const abortController = new AbortController();
+
+      // Compat shim: commands.js uses active.proc.kill() and active.proc.killed
+      let aborted = false;
+      const procShim = {
+        kill: () => { aborted = true; abortController.abort(); },
+        get killed() { return aborted; },
+      };
 
       timeoutHandle = setTimeout(() => {
-        log('warn', 'Claude process timed out, killing', { threadId: thread.id });
-        proc.kill('SIGTERM');
-        setTimeout(() => { if (!proc.killed) proc.kill('SIGKILL'); }, 5000);
+        log('warn', 'Claude session timed out, aborting', { threadId: thread.id });
+        procShim.kill();
       }, 300_000);
-      activeProcesses.set(sessionKey, { proc, timeout: timeoutHandle, typingInterval });
 
-      let stderrBuf = '';
-      proc.stderr.on('data', (chunk) => { stderrBuf += chunk.toString(); });
+      activeProcesses.set(sessionKey, { proc: procShim, timeout: timeoutHandle, typingInterval });
 
       let lastOutputTime = Date.now();
       let stallSoftFired = false;
@@ -269,7 +261,16 @@ export async function handleMessage(message, { sessions, rateTracker, semaphore,
         if (stallHardFired) { unreact(EMOJI.STALL_HARD); stallHardFired = false; }
       }
 
-      for await (const event of parseStreamEvents(rl)) {
+      for await (const event of createClaudeSession(userPrompt, {
+        sessionId: sid,
+        threadId: thread.id,
+        channelId: effectiveChannelId,
+        ragContext,
+        attachments: imageAttachments,
+        userId: message.author.id,
+        contextBudget,
+        signal: abortController.signal,
+      })) {
         if (event.type === 'system') {
           if (event.session_id) {
             sessions.set(sessionKey, event.session_id);
@@ -308,23 +309,21 @@ export async function handleMessage(message, { sessions, rateTracker, semaphore,
           stallTimer = null;
 
           log('debug', 'Result event received', {
-            subtype: event.subtype,
             isError: event.is_error ?? false,
             hasResult: !!event.result,
             resultLen: event.result?.length ?? 0,
             hasAssistantText: lastAssistantText.length > 0,
           });
 
-          // Resume failure: clear bad session and signal retry
-          if ((event.is_error || event.subtype === 'error_during_execution') && sid) {
+          // Resume failure → retry fresh
+          if (event.is_error && sid) {
             log('warn', 'Resume failed, retrying fresh', { sessionId: sid });
             sessions.delete(sessionKey);
-            proc.kill('SIGTERM');
             retryNeeded = true;
             break;
           }
 
-          // Fallback: use event.result text if buffer is empty
+          // Fallback: use result text if streamer buffer is empty
           if (event.result && !streamer.hasRealContent && lastAssistantText === '') {
             log('info', 'Using event.result fallback', { resultLen: event.result.length });
             streamer.append(event.result);
@@ -332,7 +331,7 @@ export async function handleMessage(message, { sessions, rateTracker, semaphore,
 
           await streamer.finalize();
 
-          const cost = event.cost_usd ?? event.cost ?? null;
+          const cost = event.cost_usd ?? null;
           const resultSessionId = event.session_id ?? null;
           if (resultSessionId) sessions.set(sessionKey, resultSessionId);
 
@@ -354,43 +353,42 @@ export async function handleMessage(message, { sessions, rateTracker, semaphore,
 
           if (lastAssistantText.length > 20) {
             const chName = isThread ? (message.channel.parent?.name ?? 'thread') : (message.channel.name ?? 'dm');
-            saveConversationTurn(userPrompt, lastAssistantText, chName);
+            saveConversationTurn(userPrompt, lastAssistantText, chName, message.author.id);
           }
         }
       }
 
       clearInterval(stallTimer);
       stallTimer = null;
-      if (proc.exitCode === null) await new Promise((r) => proc.on('close', r));
       clearTimeout(timeoutHandle);
       timeoutHandle = null;
       activeProcesses.delete(sessionKey);
 
       if (!streamer.finalized && !retryNeeded) await streamer.finalize();
 
-      return { retryNeeded, stderrBuf, lastAssistantText };
+      return { retryNeeded, lastAssistantText };
     }
 
     // First attempt
     let runResult = await runClaude(sessionId, streamer);
 
-    // Retry with fresh session if resume caused error_during_execution
+    // Retry with fresh session if resume caused error
     if (runResult.retryNeeded) {
-      log('info', 'Retrying claude with fresh session', { threadId: thread.id });
+      log('info', 'Retrying Claude with fresh session', { threadId: thread.id });
       sessionId = null;
       streamer.finalized = false;
       streamer.replyTo = message;
       runResult = await runClaude(null, streamer);
     }
 
-    if (runResult.stderrBuf.trim() && !streamer.hasRealContent && runResult.lastAssistantText === '') {
+    // If nothing was produced (no text, no result), show generic error
+    if (!streamer.hasRealContent && runResult.lastAssistantText === '') {
       await clearStatusReactions();
       await react(EMOJI.ERROR);
-      const errMsg = runResult.stderrBuf.trim().slice(0, 500);
       const embed = new EmbedBuilder()
         .setColor(0xed4245)
-        .setTitle('Error')
-        .setDescription(`\`\`\`\n${errMsg}\n\`\`\``)
+        .setTitle('오류')
+        .setDescription('응답을 받지 못했습니다. 잠시 후 다시 시도해 주세요.')
         .setTimestamp();
       if (streamer.currentMessage) {
         await streamer.currentMessage.edit({ content: null, embeds: [embed], components: [] });
@@ -421,10 +419,11 @@ export async function handleMessage(message, { sessions, rateTracker, semaphore,
     semaphore.release();
     if (sessionKey) activeProcesses.delete(sessionKey);
 
-    // Keep workDir if session is alive (--resume needs stable cwd)
-    if (workDir && sessionKey && !sessions.get(sessionKey)) {
+    // Keep workDir if session is alive (resume needs stable cwd)
+    const threadId = thread?.id;
+    if (threadId && sessionKey && !sessions.get(sessionKey)) {
       try {
-        rmSync(workDir, { recursive: true, force: true });
+        rmSync(join('/tmp', 'claude-discord', String(threadId)), { recursive: true, force: true });
       } catch { /* Best effort */ }
     }
 
