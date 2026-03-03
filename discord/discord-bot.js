@@ -25,6 +25,7 @@ import { log, sendNtfy } from './lib/claude-runner.js';
 import { SessionStore, RateTracker, Semaphore } from './lib/session.js';
 import { handleMessage } from './lib/handlers.js';
 import { handleInteraction } from './lib/commands.js';
+import { handleApprovalInteraction, pollL3Requests } from './lib/approval.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -153,6 +154,9 @@ client.once('clientReady', async () => {
     }
   }, 600_000);
 
+  // L3 request polling (pick up bash-originated approval requests every 10s)
+  setInterval(() => pollL3Requests(client), 10_000);
+
   // QW2: WebSocket self-ping every 2 hours — detect zombie connections
   setInterval(() => {
     const wsStatus = client.ws?.status ?? -1;
@@ -186,10 +190,15 @@ const interactionDeps = {
   maxConcurrent: MAX_CONCURRENT,
 };
 
-client.on('interactionCreate', (interaction) => {
-  handleInteraction(interaction, interactionDeps).catch((err) => {
-    log('error', 'Unhandled error in handleInteraction', { error: err.message });
-  });
+client.on('interactionCreate', async (interaction) => {
+  try {
+    // L3 approval buttons — check before slash commands
+    if (await handleApprovalInteraction(interaction)) return;
+
+    await handleInteraction(interaction, interactionDeps);
+  } catch (err) {
+    log('error', 'Unhandled error in interactionCreate', { error: err.message });
+  }
 });
 
 client.on('error', (err) => {

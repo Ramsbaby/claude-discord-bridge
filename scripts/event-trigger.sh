@@ -139,7 +139,24 @@ else:
     fi
 }
 
-# --- Trigger 2: Disk Space Alert ---
+# --- L3 승인 요청 헬퍼 ---
+request_l3_approval() {
+    local action_key="$1" label="$2" description="$3" script="$4"
+    local request_file="$BOT_HOME/state/l3-requests/$(date +%s)-${action_key}.json"
+    mkdir -p "$BOT_HOME/state/l3-requests"
+    cat > "$request_file" << JSON
+{
+  "label": "${label}",
+  "description": "${description}",
+  "script": "${script}",
+  "args": [],
+  "requestedAt": "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+}
+JSON
+    log "L3 승인 요청 생성: ${label} → ${request_file}"
+}
+
+# --- Trigger 2: Disk Space Alert (L3 승인 요청) ---
 check_disk() {
     if is_in_cooldown "disk-space" 86400; then
         return 0
@@ -154,9 +171,13 @@ check_disk() {
     fi
 
     if (( usage > 85 )); then
-        send_discord "💾 **디스크 용량 경고** 사용률: ${usage}%"
+        request_l3_approval \
+            "disk-cleanup" \
+            "디스크 정리 자동실행" \
+            "디스크 사용률 ${usage}%. 로그 및 결과 파일을 정리하시겠습니까?" \
+            "cleanup-logs.sh"
         mark_triggered "disk-space"
-        log "디스크 트리거: ${usage}%"
+        log "디스크 트리거: ${usage}% → L3 승인 요청"
     fi
 }
 

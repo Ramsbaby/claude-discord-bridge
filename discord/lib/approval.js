@@ -151,8 +151,12 @@ export async function handleApprovalInteraction(interaction) {
  * @returns {string} stdout (truncated to 1500 chars)
  */
 function execApprovedAction({ script, args = [] }) {
+  // Resolve script path: bare name → l3-actions dir, absolute path → as-is
+  const scriptPath = script.startsWith('/')
+    ? script
+    : join(BOT_HOME, 'scripts', 'l3-actions', script);
   try {
-    const output = execFileSync(script, args, {
+    const output = execFileSync(scriptPath, args, {
       timeout: 30_000,
       encoding: 'utf8',
       env: { ...process.env, BOT_HOME },
@@ -163,6 +167,16 @@ function execApprovedAction({ script, args = [] }) {
     const msg = stderr || err.message || 'Unknown error';
     return `ERROR: ${msg.slice(0, 500)}`;
   }
+}
+
+/**
+ * Read l3_channel_id from monitoring.json (fallback for bash requests without channelId).
+ */
+function getL3ChannelId() {
+  try {
+    const cfg = JSON.parse(readFileSync(join(BOT_HOME, 'config', 'monitoring.json'), 'utf8'));
+    return cfg.l3_channel_id || '';
+  } catch { return ''; }
 }
 
 /**
@@ -179,8 +193,15 @@ export async function pollL3Requests(client) {
       const req = JSON.parse(readFileSync(filePath, 'utf8'));
       unlinkSync(filePath); // consume immediately
 
-      const channel = client.channels.cache.get(req.channelId) ||
-        await client.channels.fetch(req.channelId).catch(() => null);
+      // channelId: from JSON if present, else from monitoring.json l3_channel_id
+      const channelId = req.channelId || getL3ChannelId();
+      if (!channelId) {
+        console.error(`[approval] pollL3Requests: no channelId for ${file}, skipping`);
+        continue;
+      }
+
+      const channel = client.channels.cache.get(channelId) ||
+        await client.channels.fetch(channelId).catch(() => null);
       if (!channel) continue;
 
       await requestApproval(channel, req);

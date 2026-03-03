@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 BOT_HOME="${BOT_HOME:-$HOME/.jarvis}"
-# Delete result files older than 7 days
-find "$BOT_HOME/results" -mtime +7 -type f -delete 2>/dev/null || true
-find "$BOT_HOME/results" -empty -type d -delete 2>/dev/null || true
-echo "결과 파일 정리 완료"
+before=$(du -sh "$BOT_HOME/results" 2>/dev/null | awk '{print $1}')
+find "$BOT_HOME/results" -name "*.md" -mtime +30 -delete 2>/dev/null || true
+after=$(du -sh "$BOT_HOME/results" 2>/dev/null | awk '{print $1}')
+echo "결과 파일 정리 완료: ${before} → ${after}"
