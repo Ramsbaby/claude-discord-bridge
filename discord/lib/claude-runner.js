@@ -377,7 +377,7 @@ export function spawnClaude(prompt, { sessionId, threadId, channelId, ragContext
     '--model', 'claude-sonnet-4-6',
     '--permission-mode', 'bypassPermissions',
     '--max-turns', String(maxTurns),
-    '--allowedTools', 'Bash,Read,Glob,Grep,WebSearch,Agent,mcp__serena__find_symbol,mcp__serena__get_symbols_overview,mcp__serena__search_for_pattern,mcp__serena__find_referencing_symbols,mcp__nexus__exec,mcp__nexus__scan,mcp__nexus__cache_exec,mcp__nexus__log_tail,mcp__nexus__health,mcp__nexus__file_peek',
+    '--allowedTools', 'Bash,Read,Glob,Grep,WebSearch,Agent,mcp__serena__find_symbol,mcp__serena__get_symbols_overview,mcp__serena__search_for_pattern,mcp__serena__find_referencing_symbols,mcp__serena__read_memory,mcp__serena__find_file,mcp__nexus__exec,mcp__nexus__scan,mcp__nexus__cache_exec,mcp__nexus__log_tail,mcp__nexus__health,mcp__nexus__file_peek',
     '--strict-mcp-config', '--mcp-config', resolve(DISCORD_MCP_PATH),
     '--setting-sources', 'local',
   ];

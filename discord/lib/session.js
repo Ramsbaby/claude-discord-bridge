@@ -18,7 +18,7 @@ import { log } from './claude-runner.js';
 // Constants
 // ---------------------------------------------------------------------------
 
-const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30일
+const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7일
 const STREAM_EDIT_INTERVAL_MS = 1500;
 const STREAM_MAX_CHARS = 1900;
 const RATE_WINDOW_HOURS = 5;
