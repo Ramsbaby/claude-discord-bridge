@@ -48,7 +48,7 @@ async function getMtime(filePath) {
 
 async function main() {
   const startTime = Date.now();
-  const engine = new RAGEngine();
+  const engine = new RAGEngine(join(BOT_HOME, 'rag', 'lancedb'));
   await engine.init();
 
   const state = await loadState();
