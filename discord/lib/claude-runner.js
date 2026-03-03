@@ -25,7 +25,7 @@ import { createInterface } from 'node:readline';
 // ---------------------------------------------------------------------------
 
 const HOME = homedir();
-const BOT_HOME = join(process.env.BOT_HOME || join(HOME, 'claude-discord-bridge'));
+const BOT_HOME = join(process.env.BOT_HOME || join(HOME, '.jarvis'));
 const DISCORD_MCP_PATH = join(BOT_HOME, 'config', 'discord-mcp.json');
 const USER_PROFILE_PATH = join(BOT_HOME, 'context', 'user-profile.md');
 const CONV_HISTORY_DIR = join(BOT_HOME, 'context', 'discord-history');
