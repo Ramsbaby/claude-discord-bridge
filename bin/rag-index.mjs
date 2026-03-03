@@ -108,7 +108,19 @@ async function main() {
   // proposals-tracker
   targets.push(join(BOT_HOME, 'rag', 'teams', 'proposals-tracker.md'));
 
-  // 5. 사용자 커스텀 메모리 (선택적 외부 경로)
+  // 5. 프로젝트 문서 (README, ROADMAP, docs/) — Jarvis가 시스템 구조를 알 수 있도록
+  for (const f of ['README.md', 'ROADMAP.md']) {
+    targets.push(join(BOT_HOME, f));
+  }
+  try {
+    const docsDir = join(BOT_HOME, 'docs');
+    const docFiles = await readdir(docsDir);
+    for (const f of docFiles) {
+      if (extname(f) === '.md') targets.push(join(docsDir, f));
+    }
+  } catch { /* docs/ 없으면 스킵 */ }
+
+  // 5b. 사용자 커스텀 메모리 (선택적 외부 경로)
   // BOT_EXTRA_MEMORY 환경변수에 경로를 지정하면 해당 디렉토리도 인덱싱
   const extraMemoryPath = process.env.BOT_EXTRA_MEMORY;
   if (extraMemoryPath) {
