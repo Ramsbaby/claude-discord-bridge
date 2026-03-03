@@ -130,7 +130,36 @@ async function main() {
     }
   } catch { /* docs/ 없으면 스킵 */ }
 
-  // 5b. 사용자 커스텀 메모리 (선택적 외부 경로)
+  // 5b. Jarvis-Vault (Obsidian Knowledge Hub) — 01-system, 06-knowledge 우선
+  try {
+    const vaultBase = join(homedir(), 'Jarvis-Vault');
+    for (const dir of ['01-system', '04-owner', '05-career', '06-knowledge']) {
+      try {
+        const dirPath = join(vaultBase, dir);
+        const entries = await readdir(dirPath, { withFileTypes: true });
+        for (const e of entries) {
+          if (!e.isDirectory() && extname(e.name) === '.md') {
+            targets.push(join(dirPath, e.name));
+          }
+        }
+      } catch { /* subdir may not exist */ }
+    }
+    // 02-daily/insights: 최근 7일
+    try {
+      const insightsDir = join(vaultBase, '02-daily', 'insights');
+      const files = await readdir(insightsDir);
+      for (const f of files) {
+        if (extname(f) !== '.md') continue;
+        const fPath = join(insightsDir, f);
+        const mtime = await getMtime(fPath);
+        if (mtime && (Date.now() - mtime) / (1000 * 60 * 60 * 24) <= 7) {
+          targets.push(fPath);
+        }
+      }
+    } catch { /* insights/ 없으면 스킵 */ }
+  } catch { /* vault may not exist */ }
+
+  // 5c. 사용자 커스텀 메모리 (선택적 외부 경로)
   // BOT_EXTRA_MEMORY 환경변수에 경로를 지정하면 해당 디렉토리도 인덱싱
   const extraMemoryPath = process.env.BOT_EXTRA_MEMORY;
   if (extraMemoryPath) {
