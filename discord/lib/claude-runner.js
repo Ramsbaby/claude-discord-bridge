@@ -367,7 +367,7 @@ export function spawnClaude(prompt, { sessionId, threadId, channelId, ragContext
   const systemPrompt = systemParts.join('\n');
 
   // Adaptive Context Budget: map contextBudget to max-turns
-  const BUDGET_TURNS = { small: 3, medium: 8, large: 20 };
+  const BUDGET_TURNS = { small: 3, medium: 20, large: 40 };
   const maxTurns = BUDGET_TURNS[contextBudget] ?? BUDGET_TURNS.medium;
 
   const args = [

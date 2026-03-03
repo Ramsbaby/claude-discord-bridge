@@ -219,6 +219,11 @@ export async function handleMessage(message, { sessions, rateTracker, semaphore,
       });
 
       const effectiveChannelId = isThread ? message.channel.parentId : message.channel.id;
+
+      // Heuristic: code analysis / multi-file tasks need more turns
+      const LARGE_KEYWORDS = /코드|분석|파일|구조|함수|클래스|디버그|확인|리뷰|왜|어떻게|explain|debug|analyze|review/i;
+      const contextBudget = userPrompt.length > 200 || LARGE_KEYWORDS.test(userPrompt) ? 'large' : 'medium';
+
       const { proc, rl, workDir: wd } = spawnClaude(userPrompt, {
         sessionId: sid,
         threadId: thread.id,
@@ -226,6 +231,7 @@ export async function handleMessage(message, { sessions, rateTracker, semaphore,
         ragContext,
         attachments: imageAttachments,
         userId: message.author.id,
+        contextBudget,
       });
       workDir = wd;
 
