@@ -131,6 +131,34 @@ if [[ -n "$HISTORY" ]]; then
 ${HISTORY}"
 fi
 
+# --- Auto-retry wrapper ---
+run_with_retry() {
+    local max_attempts=3
+    local attempt=1
+    local delay=2
+    while (( attempt <= max_attempts )); do
+        local exit_code=0
+        if "$@"; then
+            return 0
+        else
+            exit_code=$?
+        fi
+        # Non-retryable: auth failure (2), command not found (126/127)
+        if (( exit_code == 2 || exit_code == 126 || exit_code == 127 )); then
+            log_jsonl "error" "FATAL: non-retryable exit $exit_code" "0"
+            return $exit_code
+        fi
+        if (( attempt < max_attempts )); then
+            log_jsonl "warn" "attempt $attempt/$max_attempts failed (exit $exit_code), retry in ${delay}s..." "0"
+            sleep $delay
+            delay=$(( delay * 2 ))
+        fi
+        (( attempt++ )) || true
+    done
+    log_jsonl "error" "all $max_attempts attempts failed" "0"
+    return 1
+}
+
 # --- Execute claude -p ---
 # Prevent nested claude detection (required for cron + Claude Code CLI sessions)
 unset CLAUDECODE CLAUDE_CODE_ENTRYPOINT CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS
@@ -139,7 +167,7 @@ cd "$WORK_DIR"
 CLAUDE_OUTPUT_TMP="${WORK_DIR}/claude-output.json"
 
 CLAUDE_EXIT=0
-gtimeout "${TIMEOUT}" claude -p "$PROMPT" \
+run_with_retry gtimeout "${TIMEOUT}" claude -p "$PROMPT" \
     --output-format json \
     --permission-mode bypassPermissions \
     --allowedTools "$ALLOWED_TOOLS" \

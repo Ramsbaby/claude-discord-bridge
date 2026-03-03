@@ -127,7 +127,7 @@ export function saveConversationTurn(userMsg, botMsg, channelName) {
 // spawnClaude — subprocess with 4-layer token isolation
 // ---------------------------------------------------------------------------
 
-export function spawnClaude(prompt, { sessionId, threadId, channelId, ragContext, attachments = [] } = {}) {
+export function spawnClaude(prompt, { sessionId, threadId, channelId, ragContext, attachments = [], contextBudget } = {}) {
   const stableDir = join('/tmp', 'claude-discord', String(threadId));
   mkdirSync(stableDir, { recursive: true });
 
@@ -268,13 +268,17 @@ export function spawnClaude(prompt, { sessionId, threadId, channelId, ragContext
 
   const systemPrompt = systemParts.join('\n');
 
+  // Adaptive Context Budget: map contextBudget to max-turns
+  const BUDGET_TURNS = { small: 3, medium: 8, large: 20 };
+  const maxTurns = BUDGET_TURNS[contextBudget] ?? 30;
+
   const args = [
     '-p', effectivePrompt,
     '--verbose',
     '--output-format', 'stream-json',
     '--model', 'claude-sonnet-4-6',
     '--permission-mode', 'bypassPermissions',
-    '--max-turns', '30',
+    '--max-turns', String(maxTurns),
     '--allowedTools', 'Bash,Read,Glob,Grep,WebSearch,Agent,mcp__serena__find_symbol,mcp__serena__get_symbols_overview,mcp__serena__search_for_pattern,mcp__serena__find_referencing_symbols,mcp__nexus__exec,mcp__nexus__scan,mcp__nexus__cache_exec,mcp__nexus__log_tail,mcp__nexus__health,mcp__nexus__file_peek',
     '--strict-mcp-config', '--mcp-config', resolve(DISCORD_MCP_PATH),
     '--setting-sources', 'local',
