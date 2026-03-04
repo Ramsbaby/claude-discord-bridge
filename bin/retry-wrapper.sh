@@ -38,7 +38,7 @@ trap cleanup_slot EXIT
 
 ACQUIRED_SLOT=$(acquire_slot) || {
     echo "All semaphore slots busy, skipping task $TASK_ID" >&2
-    # 드롭된 태스크를 알림으로 통보
+    # Notify about the dropped task
     "$BOT_HOME/bin/route-result.sh" alert "$TASK_ID" \
         "⚠️ Task $TASK_ID DROPPED: semaphore full (max 2 concurrent slots busy)" 2>/dev/null || true
     exit 1
@@ -50,7 +50,7 @@ classify_exit_code() {
     case "$code" in
         0)   echo "success" ;;
         2)   echo "non-retryable" ;;
-        124) echo "non-retryable" ;; # timeout — 재시도해도 동일하게 실패
+        124) echo "non-retryable" ;; # timeout — retrying will produce the same failure
         137) echo "retryable" ;;
         143) echo "retryable" ;;
         1)   echo "retryable" ;;
@@ -128,8 +128,8 @@ for attempt in $(seq 1 "$MAX_RETRIES"); do
     # Compute backoff delay
     delay="${BACKOFF_DELAYS[$((attempt - 1))]}"
     if [[ "$classification" == "rate_limited" ]]; then
-        # Rate limit은 5시간 윈도우 기반 → 짧은 재시도는 무의미
-        # 1차: 5분, 2차: 15분 대기 (크론 다음 실행까지 양보)
+        # Rate limit uses a 5-hour window — short retries are pointless
+        # 1st: 5min, 2nd: 15min delay (yield until the next cron cycle)
         delay=$(( 300 * attempt ))
     fi
 
@@ -176,15 +176,15 @@ check_repeated_failures() {
     # 3+ failures of same type → auto-propose
     if [[ "$count" -ge 3 ]] && [[ -f "$tracker" ]]; then
         local proposal_id="P-$(date +%m%d)-auto"
-        local entry="| ${proposal_id} | [${task_id}] ${fail_class} 반복 실패 (${count}회+) | L2 | ⏳ 대기 | $(date +%F) |"
+        local entry="| ${proposal_id} | [${task_id}] ${fail_class} repeated failure (${count}+ times) | L2 | Pending | $(date +%F) |"
 
         # Avoid duplicate proposals for same task+class today
         if ! grep -q "\[${task_id}\] ${fail_class}" "$tracker" 2>/dev/null; then
-            # Insert before the "반복 패턴 감지" section
-            if grep -q "아직 등록된 제안 없음" "$tracker" 2>/dev/null; then
-                sed -i '' "s|_아직 등록된 제안 없음_|${entry}|" "$tracker" 2>/dev/null || true
+            # Insert before the "Repeated Pattern Detection" section
+            if grep -q "No proposals registered yet" "$tracker" 2>/dev/null; then
+                sed -i '' "s|_No proposals registered yet_|${entry}|" "$tracker" 2>/dev/null || true
             else
-                sed -i '' "/^## 📌 반복 패턴 감지/i\\
+                sed -i '' "/^## Repeated Pattern Detection/i\\
 ${entry}" "$tracker" 2>/dev/null || true
             fi
         fi

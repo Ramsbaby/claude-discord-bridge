@@ -1,37 +1,37 @@
-# 인프라팀 (Infra) 컨텍스트
+# Infrastructure Team (Infra) Context
 
-## 역할
-자비스 컴퍼니 모든 시스템의 안정성 유지. 장애 예방 및 조기 감지.
+## Role
+Maintain stability of all bot systems. Prevent outages and enable early detection.
 
-## 🔰 태스크 시작 시 필독 (온보딩)
+## Onboarding (read before starting)
 ```
-1. Check ~/claude-discord-bridge/rag/teams/shared-inbox/    # 인프라팀 수신 메시지 확인
-2. cat ~/claude-discord-bridge/state/health.json            # 최근 헬스체크 상태 확인
-3. launchctl list | grep "ai\."               # LaunchAgent 상태 확인
+1. Check ~/claude-discord-bridge/rag/teams/shared-inbox/    # Check infra team inbox
+2. cat ~/claude-discord-bridge/state/health.json            # Recent health check status
+3. launchctl list | grep "$DISCORD_SERVICE"                 # LaunchAgent status
 ```
 
-## 감시 대상
-- LaunchAgent: ai.discord-bot, ai.discord-watchdog
-- Glances 웹 대시보드 (포트 61208) — 선택적 외부 서비스 (`launchctl list | grep glances`)
-- Discord Bot 로그 freshness: ~/claude-discord-bridge/logs/ 최근 5분 이내 갱신 여부
-- 디스크: / 파티션 90% 이하 유지
-- 메모리: 시스템 여유 메모리 2GB 이상 유지
-- 크론 성공률: ~/claude-discord-bridge/logs/cron.log 최근 24시간
+## Monitoring Targets
+- LaunchAgent: $DISCORD_SERVICE (Discord bot), watchdog
+- Optional external services (e.g., Glances web dashboard on port 61208)
+- Discord Bot log freshness: ~/claude-discord-bridge/logs/ updated within last 5 minutes
+- Disk: / partition below 90%
+- Memory: System free memory above 2GB
+- Cron success rate: ~/claude-discord-bridge/logs/cron.log last 24 hours
 
-## 장애 판정
-- LaunchAgent PID 없음 → CRITICAL
-- 디스크 90%+ → HIGH
-- 크론 실패 3개+ (24시간) → MEDIUM
-- 메모리 2GB 미만 → MEDIUM
+## Severity Classification
+- LaunchAgent PID missing -> CRITICAL
+- Disk 90%+ -> HIGH
+- Cron failures 3+ (24 hours) -> MEDIUM
+- Memory below 2GB -> MEDIUM
 
-## 📤 태스크 완료 후 필수 작업
+## Post-Task Actions (mandatory)
 ```
-1. 일일 점검 보고서 저장:
+1. Save daily inspection report:
    ~/claude-discord-bridge/rag/teams/reports/infra-$(date +%F).md
 
-2. CRITICAL/HIGH 발견 시 shared-inbox에 council팀에게 알림:
+2. If CRITICAL/HIGH found, notify council team via shared-inbox:
    ~/claude-discord-bridge/rag/teams/shared-inbox/$(date +%Y-%m-%d)_infra_to_council.md
 ```
 
-## Discord 전송 채널
+## Discord Channel
 #bot-ceo

@@ -1,29 +1,29 @@
 # Cost Monitor
 
-## 목적
-매주 일요일 09:00에 봇 시스템 비용을 추정하고 이상 지출을 조기 감지한다.
+## Purpose
+Every Sunday at 09:00, estimate bot system costs and detect abnormal spending early.
 
-## 비용 구조
-| 항목 | 단가 | 예상 월 비용 |
-|------|------|-------------|
-| RAG 임베딩 (text-embedding-3-small) | $0.02/1M 토큰 | ~$0.03 |
-| rag-health/security-scan 크론 | claude -p 호출 (Max 구독) | $0 추가 |
-| 전체 크론 태스크 | claude -p 호출 (Max 구독) | $0 추가 |
+## Cost Structure
+| Item | Unit Price | Estimated Monthly Cost |
+|------|-----------|----------------------|
+| RAG embedding (text-embedding-3-small) | $0.02/1M tokens | ~$0.03 |
+| rag-health/security-scan cron | claude -p call (Max subscription) | $0 extra |
+| All cron tasks | claude -p call (Max subscription) | $0 extra |
 
-## 경고 임계값
-- 주간 임베딩 비용 > $0.10 → 이상 신호 (급격한 인덱싱 증가)
-- 월 OpenAI API 비용 > $10 → ⚠️ 경고
-- RAG 소스 > 500개 → 크기 검토 권고
+## Warning Thresholds
+- Weekly embedding cost > $0.10 -> Anomaly signal (rapid indexing increase)
+- Monthly OpenAI API cost > $10 -> Warning
+- RAG sources > 500 -> Size review recommended
 
-## 계산 방법
-- 임베딩 토큰 = 신규 청크 수 × 평균 500토큰
-- 비용 = 토큰 수 / 1,000,000 × $0.02
+## Calculation Method
+- Embedding tokens = new chunk count x avg 500 tokens
+- Cost = tokens / 1,000,000 x $0.02
 
-## 출력 포맷
+## Output Format
 ```
-💰 이번 주 비용 현황 (YYYY-MM-DD)
-RAG 임베딩: $X.XXXX (N청크 × 500토큰)
-누적 크론 실행: N회 (claude -p, Max 구독 = $0)
-월 예상 합계: ~$X.XX
-상태: 정상 / ⚠️ 경고
+Cost Summary (YYYY-MM-DD)
+RAG embedding: $X.XXXX (N chunks x 500 tokens)
+Cumulative cron executions: N (claude -p, Max subscription = $0)
+Monthly estimate: ~$X.XX
+Status: Normal / Warning
 ```

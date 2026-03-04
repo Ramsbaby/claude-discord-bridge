@@ -9,7 +9,7 @@ BOT_HOME="${BOT_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 STATE_DIR="$BOT_HOME/watchdog"
 LOG_FILE="$BOT_HOME/logs/watchdog.log"
 HEALING_LOCK="/tmp/bot-healing.lock"
-DISCORD_SERVICE="${DISCORD_SERVICE:-ai.discord-bot}"
+DISCORD_SERVICE="${DISCORD_SERVICE:-ai.claude-discord-bot}"
 DISCORD_PLIST="$HOME/Library/LaunchAgents/${DISCORD_SERVICE}.plist"
 ROUTE_RESULT="$BOT_HOME/bin/route-result.sh"
 
@@ -41,7 +41,9 @@ acquire_lock() {
     # Stale lock detection (600s = 10 min)
     local lock_age
     if [[ -d "$HEALING_LOCK" ]]; then
-        lock_age=$(( $(date +%s) - $(stat -f %m "$HEALING_LOCK") ))
+        local lock_mtime
+        lock_mtime=$(stat -f %m "$HEALING_LOCK" 2>/dev/null || stat -c %Y "$HEALING_LOCK" 2>/dev/null || echo "0")
+        lock_age=$(( $(date +%s) - lock_mtime ))
         if (( lock_age > 600 )); then
             log "WARN: Removing stale lock (age=${lock_age}s)"
             rmdir "$HEALING_LOCK" 2>/dev/null || true
@@ -161,7 +163,7 @@ check_discord_bot() {
     local uid
     uid=$(id -u)
     local status_line
-    status_line=$(launchctl list 2>/dev/null | grep "$DISCORD_SERVICE" || true)
+    status_line=$(launchctl list 2>/dev/null | grep -F "$DISCORD_SERVICE" || true)
 
     if [[ -z "$status_line" ]]; then
         echo "NOT_LOADED"

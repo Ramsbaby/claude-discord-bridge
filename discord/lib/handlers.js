@@ -173,7 +173,7 @@ export async function handleMessage(message, { sessions, rateTracker, semaphore,
       }
     }
     if (!userPrompt.trim() && imageAttachments.length > 0) {
-      userPrompt = '이 이미지를 분석해줘.';
+      userPrompt = 'Analyze this image.';
     }
 
     let streamer = new StreamingMessage(thread, message, sessionKey);

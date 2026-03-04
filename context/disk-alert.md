@@ -1,9 +1,9 @@
 # Disk Alert
 
-## 목적
-매시 10분에 디스크 사용률을 확인하고 90% 초과 시 경고한다.
+## Purpose
+Check disk usage every hour at :10 and warn if over 90%.
 
-## 주의사항
-- `df -h /` 명령어로 루트 파티션 확인
-- 90% 초과 시에만 출력, 정상이면 빈 결과
-- 간결한 경고 메시지 유지
+## Notes
+- Use `df -h /` to check root partition
+- Output only when over 90%; no output if normal
+- Keep warning messages concise

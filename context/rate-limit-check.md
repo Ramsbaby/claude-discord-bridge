@@ -1,16 +1,16 @@
 # Rate Limit Check
 
-## 목적
-30분마다 Claude Max rate limit 사용량을 확인하고 80% 초과 시 경고한다.
+## Purpose
+Every 30 minutes, check Claude Max rate limit usage and warn if over 80%.
 
-## 지시사항
-1. `~/claude-discord-bridge/state/rate-tracker.json` 읽기
-2. 파일이 타임스탬프 배열 형식이거나 사용량 데이터 없으면: `Rate limit: 정상 (사용량 데이터 없음)` 출력
-3. 사용량 객체가 있으면 `current / max * 100` 계산:
-   - 80% 미만: `Rate limit: 정상 (XX%)`
-   - 80~89%: `⚠️ Rate limit 경고: XX% — optional 태스크 스킵 권고`
-   - 90% 이상: `🚨 Rate limit 위험: XX% — critical 태스크만 실행`
+## Instructions
+1. Read `~/claude-discord-bridge/state/rate-tracker.json`
+2. If file is a timestamp array or no usage data: output `Rate limit: Normal (no usage data)`
+3. If usage object exists, calculate `current / max * 100`:
+   - Below 80%: `Rate limit: Normal (XX%)`
+   - 80-89%: `Rate limit warning: XX% -- recommend skipping optional tasks`
+   - 90%+: `Rate limit critical: XX% -- execute critical tasks only`
 
-## 주의사항
-- Read 도구만 사용 (파일 읽기만)
-- 계산 불가 시 "정상"으로 처리 (오탐 방지)
+## Notes
+- Use Read tool only (file reading only)
+- If calculation not possible, treat as "Normal" (prevent false positives)

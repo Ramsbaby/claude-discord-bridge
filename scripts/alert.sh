@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Alert System v2.0
-# Discord Webhook + ntfy 이중 알림
+# Discord Webhook + ntfy dual alert
 
 set -euo pipefail
 
@@ -10,7 +10,7 @@ ALERT_STATE_DIR="$BOT_HOME/state"
 LAST_ALERT_FILE="$ALERT_STATE_DIR/last-alert"
 
 # ============================================================================
-# 설정 로드
+# Load config
 # ============================================================================
 if [[ ! -f "$MONITORING_CONFIG" ]]; then
     echo "ERROR: monitoring.json not found" >&2
@@ -26,10 +26,10 @@ NTFY_TOPIC=$(jq -r '.ntfy.topic // ""' "$MONITORING_CONFIG")
 mkdir -p "$ALERT_STATE_DIR"
 
 # ============================================================================
-# 함수
+# Functions
 # ============================================================================
 
-# 쿨다운 체크 (동일 메시지 중복 방지)
+# Cooldown check (prevent duplicate messages)
 is_in_cooldown() {
     local message_hash="$1"
 
@@ -39,12 +39,12 @@ is_in_cooldown() {
 
     local last_hash=$(head -1 "$LAST_ALERT_FILE" 2>/dev/null || echo "")
     local last_time=$(tail -1 "$LAST_ALERT_FILE" 2>/dev/null || echo "0")
-    # 빈 값이나 숫자가 아닌 경우 0으로 처리
+    # Treat empty or non-numeric values as 0
     [[ ! "$last_time" =~ ^[0-9]+$ ]] && last_time=0
     local now=$(date +%s)
     local elapsed=$((now - last_time))
 
-    # 동일 메시지 + 쿨다운 시간 내
+    # Same message + within cooldown period
     if [[ "$last_hash" == "$message_hash" ]] && [[ $elapsed -lt $COOLDOWN_SECONDS ]]; then
         return 0
     fi
@@ -57,15 +57,15 @@ set_last_alert() {
     date +%s >> "$LAST_ALERT_FILE"
 }
 
-# Discord Embed 색상
+# Discord Embed colors
 get_color() {
     local level="$1"
     case "$level" in
-        critical) echo "15158332" ;;  # 빨강
-        warning)  echo "16776960" ;;  # 노랑
-        info)     echo "3447003" ;;   # 파랑
-        success)  echo "3066993" ;;   # 초록
-        *)        echo "9807270" ;;   # 회색
+        critical) echo "15158332" ;;  # red
+        warning)  echo "16776960" ;;  # yellow
+        info)     echo "3447003" ;;   # blue
+        success)  echo "3066993" ;;   # green
+        *)        echo "9807270" ;;   # gray
     esac
 }
 
@@ -81,14 +81,14 @@ get_emoji() {
     esac
 }
 
-# 메인 알림 전송
+# Main alert sender
 send_alert() {
     local level="${1:-warning}"
     local title="$2"
     local message="$3"
     local fields="${4:-}"  # JSON array string
 
-    # 쿨다운 체크
+    # Cooldown check
     local message_hash=$(echo "$level$title$message" | /sbin/md5 -q)
     if is_in_cooldown "$message_hash"; then
         echo "Alert skipped (cooldown): $title"
@@ -100,7 +100,7 @@ send_alert() {
     local timestamp=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
     local hostname=$(hostname -s)
 
-    # Embed JSON 생성 (jq로 특수문자 안전 처리)
+    # Build Embed JSON (jq handles special chars safely)
     local embed_json
     if [[ -n "$fields" ]] && [[ "$fields" != "[]" ]]; then
         embed_json=$(jq -n \
@@ -121,7 +121,7 @@ send_alert() {
             '{"embeds":[{"title":$title,"description":$desc,"color":$color,"timestamp":$ts,"footer":{"text":$footer}}]}')
     fi
 
-    # Webhook 전송
+    # Webhook delivery
     local http_code
     http_code=$(curl -s -o /tmp/webhook_response.txt -w "%{http_code}" -X POST "$WEBHOOK_URL" \
         -H "Content-Type: application/json" \
@@ -135,7 +135,7 @@ send_alert() {
         echo "Alert failed (Discord HTTP $http_code): $body" >&2
     fi
 
-    # ntfy 푸시 알림 (Galaxy 폰 직접 전송)
+    # ntfy push notification (direct to phone)
     if [[ "$NTFY_ENABLED" == "true" ]] && [[ -n "$NTFY_TOPIC" ]] && [[ "$NTFY_TOPIC" != "null" ]]; then
         local ntfy_priority="default"
         local ntfy_tags=""
@@ -168,13 +168,13 @@ Usage: alert.sh <level> <title> <message> [fields_json]
 Levels: critical, warning, info, success
 
 Examples:
-  alert.sh critical "Gateway Down" "프로세스가 응답하지 않습니다"
-  alert.sh warning "High Memory" "메모리 사용량: 85%"
-  alert.sh success "Recovery" "Gateway가 정상 복구되었습니다"
+  alert.sh critical "Gateway Down" "Process is not responding"
+  alert.sh warning "High Memory" "Memory usage: 85%"
+  alert.sh success "Recovery" "Gateway has recovered successfully"
 EOF
 }
 
-# 인자 처리
+# Argument handling
 if [[ $# -lt 3 ]]; then
     usage
     exit 1

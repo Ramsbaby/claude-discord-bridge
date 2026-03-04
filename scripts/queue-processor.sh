@@ -26,15 +26,15 @@ for f in "$QUEUE_DIR"/*.json; do
   [ -z "$PROMPT" ] && continue
 
   # Run via ask-claude.sh
-  RESULT=$(/bin/bash "$HOME/claude-discord-bridge/bin/ask-claude.sh" "$PROMPT" 2>&1 | head -c 1800 || echo "실행 실패")
+  RESULT=$(/bin/bash "$HOME/claude-discord-bridge/bin/ask-claude.sh" "$PROMPT" 2>&1 | head -c 1800 || echo "Execution failed")
 
   # Send result to Discord webhook
   if [ -n "$WEBHOOK_URL" ]; then
     PAYLOAD=$(python3 -c "
 import json,sys
-msg = '📋 **예약 태스크 완료**\n> ' + sys.argv[1][:200] + '\n\n' + sys.argv[2][:1500]
+msg = '📋 **Scheduled Task Complete**\n> ' + sys.argv[1][:200] + '\n\n' + sys.argv[2][:1500]
 print(json.dumps({'content': msg}))
-" "$PROMPT" "$RESULT" 2>/dev/null || echo '{"content":"예약 태스크 완료 (결과 파싱 실패)"}')
+" "$PROMPT" "$RESULT" 2>/dev/null || echo '{"content":"Scheduled task complete (result parsing failed)"}')
     curl -s -H "Content-Type: application/json" -d "$PAYLOAD" "$WEBHOOK_URL" >/dev/null 2>&1 || true
   fi
 

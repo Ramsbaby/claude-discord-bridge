@@ -5,6 +5,8 @@ set -euo pipefail
 # Usage: health-check.sh [--json]
 
 BOT_HOME="${BOT_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+DISCORD_SERVICE="${DISCORD_SERVICE:-ai.claude-discord-bot}"
+WATCHDOG_SERVICE="${WATCHDOG_SERVICE:-ai.claude-discord-watchdog}"
 JSON_MODE="${1:-}"
 
 check() {
@@ -20,7 +22,7 @@ check() {
 }
 
 # 1. Discord Bot (launchd)
-bot_status=$(launchctl list 2>/dev/null | grep "ai.discord-bot" || echo "")
+bot_status=$(launchctl list 2>/dev/null | grep -F "$DISCORD_SERVICE" || echo "")
 if [[ -z "$bot_status" ]]; then
     check "discord-bot" "fail" "not loaded in launchd"
 else
@@ -40,7 +42,7 @@ else
 fi
 
 # 2. Watchdog (launchd)
-wd_status=$(launchctl list 2>/dev/null | grep "ai.discord-watchdog" || echo "")
+wd_status=$(launchctl list 2>/dev/null | grep -F "$WATCHDOG_SERVICE" || echo "")
 if [[ -z "$wd_status" ]]; then
     check "watchdog" "fail" "not loaded in launchd"
 else

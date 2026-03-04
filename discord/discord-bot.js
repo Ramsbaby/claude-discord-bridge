@@ -62,46 +62,46 @@ async function registerSlashCommands(clientId, guildId) {
       .setDescription(`Stop the active ${BOT_NAME} process`),
     new SlashCommandBuilder()
       .setName('memory')
-      .setDescription(`${BOT_NAME} 장기 기억 내용 보기`),
+      .setDescription(`View ${BOT_NAME} long-term memory`),
     new SlashCommandBuilder()
       .setName('remember')
-      .setDescription('정보를 기억에 저장')
-      .addStringOption(opt => opt.setName('content').setDescription('기억할 내용').setRequired(true)),
+      .setDescription('Save information to memory')
+      .addStringOption(opt => opt.setName('content').setDescription('Content to remember').setRequired(true)),
     new SlashCommandBuilder()
       .setName('search')
-      .setDescription('RAG 시맨틱 검색')
-      .addStringOption(opt => opt.setName('query').setDescription('검색할 내용').setRequired(true)),
+      .setDescription('RAG semantic search')
+      .addStringOption(opt => opt.setName('query').setDescription('Search query').setRequired(true)),
     new SlashCommandBuilder()
       .setName('threads')
-      .setDescription(`활성 ${BOT_NAME} 세션/스레드 목록`),
+      .setDescription(`List active ${BOT_NAME} sessions/threads`),
     new SlashCommandBuilder()
       .setName('alert')
-      .setDescription('Galaxy 푸시 알림 전송')
-      .addStringOption(opt => opt.setName('message').setDescription('알림 내용').setRequired(true)),
+      .setDescription('Send push notification')
+      .addStringOption(opt => opt.setName('message').setDescription('Notification message').setRequired(true)),
     new SlashCommandBuilder()
       .setName('status')
-      .setDescription('봇 상태 대시보드 (WebSocket, rate limit, uptime)'),
+      .setDescription('Bot status dashboard (WebSocket, rate limit, uptime)'),
     new SlashCommandBuilder()
       .setName('tasks')
-      .setDescription('오늘 크론 태스크 실행 현황'),
+      .setDescription("Today's cron task execution status"),
     new SlashCommandBuilder()
       .setName('run')
-      .setDescription('크론 태스크 수동 실행')
+      .setDescription('Manually run a cron task')
       .addStringOption(opt =>
-        opt.setName('id').setDescription('태스크 ID').setRequired(true).setAutocomplete(true)
+        opt.setName('id').setDescription('Task ID').setRequired(true).setAutocomplete(true)
       ),
     new SlashCommandBuilder()
       .setName('schedule')
-      .setDescription('나중에 실행할 태스크 예약')
-      .addStringOption(opt => opt.setName('task').setDescription('실행할 내용').setRequired(true))
-      .addStringOption(opt => opt.setName('in').setDescription('지연 시간').setRequired(true)
+      .setDescription('Schedule a task for later')
+      .addStringOption(opt => opt.setName('task').setDescription('Task to execute').setRequired(true))
+      .addStringOption(opt => opt.setName('in').setDescription('Delay duration').setRequired(true)
         .addChoices(
-          { name: '30분', value: '30m' }, { name: '1시간', value: '1h' }, { name: '2시간', value: '2h' },
-          { name: '4시간', value: '4h' }, { name: '8시간', value: '8h' },
+          { name: '30 min', value: '30m' }, { name: '1 hour', value: '1h' }, { name: '2 hours', value: '2h' },
+          { name: '4 hours', value: '4h' }, { name: '8 hours', value: '8h' },
         )),
     new SlashCommandBuilder()
       .setName('usage')
-      .setDescription('Claude Code API 사용량 조회'),
+      .setDescription('Claude Code API usage stats'),
   ];
 
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
@@ -202,7 +202,7 @@ client.on('warn', (msg) => {
 
 client.on('shardDisconnect', (event, shardId) => {
   log('warn', 'Discord disconnected', { code: event.code, shardId });
-  sendNtfy(`${BOT_NAME} 연결 끊김`, `Shard ${shardId} disconnected (code: ${event.code})`, 'default').catch(() => {});
+  sendNtfy(`${BOT_NAME} Disconnected`, `Shard ${shardId} disconnected (code: ${event.code})`, 'default').catch(() => {});
 });
 
 client.on('shardReconnecting', (shardId) => {

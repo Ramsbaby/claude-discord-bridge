@@ -1,32 +1,32 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# sync-discord-token.sh — Discord 봇 토큰 업데이트 후 재시작
-# 사용법: sync-discord-token.sh <새토큰>
+# sync-discord-token.sh — Update Discord bot token and restart
+# Usage: sync-discord-token.sh <new-token>
 
 SCRIPT_NAME="sync-discord-token"
-NEW_TOKEN="${1:?사용법: $0 <새Discord봇토큰>}"
+NEW_TOKEN="${1:?Usage: $0 <new-discord-bot-token>}"
 BOT_ENV="$HOME/claude-discord-bridge/discord/.env"
 LOG="$HOME/claude-discord-bridge/logs/sync-discord-token.log"
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$SCRIPT_NAME] $*" | tee -a "$LOG"; }
 
-log "토큰 동기화 시작"
+log "Token sync started"
 
-# 1. .env 업데이트
+# 1. Update .env
 if [[ -f "$BOT_ENV" ]]; then
     sed -i.bak "s|^DISCORD_TOKEN=.*|DISCORD_TOKEN=${NEW_TOKEN}|" "$BOT_ENV"
     rm -f "${BOT_ENV}.bak"
-    log ".env 업데이트 완료"
+    log ".env updated"
 else
-    log "WARN: .env 없음 — .env.example에서 복사 후 재시도"
+    log "WARN: .env not found — copy from .env.example and retry"
     exit 1
 fi
 
-# 2. Discord Bot 재시작
-log "Discord Bot 재시작..."
-launchctl kickstart -k "gui/$(id -u)/ai.discord-bot" 2>/dev/null || true
+# 2. Restart Discord bot
+log "Restarting Discord bot..."
+launchctl kickstart -k "gui/$(id -u)/${DISCORD_SERVICE:-ai.claude-discord-bot}" 2>/dev/null || true
 sleep 3
 
-log "완료"
-echo "토큰 동기화 완료"
+log "Done"
+echo "Token sync complete"

@@ -24,7 +24,7 @@ log() {
     echo "[$(date '+%F %T')] [${TASK_ID}] $1" >> "$CRON_LOG"
 }
 
-# --- Completion trap: 비정상 종료 시에도 반드시 로그 기록 ---
+# --- Completion trap: ensure log entry even on abnormal exit ---
 _TASK_DONE=false
 _cleanup() {
     local rc=$?

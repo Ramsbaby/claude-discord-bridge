@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# measure-kpi.sh - 자비스 컴퍼니 팀별 KPI 자동 측정
+# measure-kpi.sh - Bot system team KPI measurement
 # Usage: measure-kpi.sh [--discord] [--days N]
 
 BOT_HOME="${BOT_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
@@ -18,7 +18,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# 팀별 SUCCESS/FAIL 집계 (bash 3.x 호환, local 변수 명시)
+# Per-team SUCCESS/FAIL aggregation (bash 3.x compatible, explicit local vars)
 team_kpi() {
     local label="$1"; shift
     local total=0 ok=0 t_total t_ok matched
@@ -32,39 +32,39 @@ team_kpi() {
         fi
     done
     if [[ $total -eq 0 ]]; then
-        printf '%-20s ⚫ NO_DATA\n' "$label"
+        printf '%-20s NO_DATA\n' "$label"
     else
         local rate=$((ok * 100 / total))
-        local icon="🔴 RED   "
-        [[ $rate -ge 90 ]] && icon="🟢 GREEN "
-        [[ $rate -ge 70 && $rate -lt 90 ]] && icon="🟡 YELLOW"
-        printf '%-20s %s %3d%% (%d/%d건)\n' "$label" "$icon" "$rate" "$ok" "$total"
+        local icon="RED   "
+        [[ $rate -ge 90 ]] && icon="GREEN "
+        [[ $rate -ge 70 && $rate -lt 90 ]] && icon="YELLOW"
+        printf '%-20s %s %3d%% (%d/%d)\n' "$label" "$icon" "$rate" "$ok" "$total"
     fi
 }
 
-# 리포트 생성
-NOW=$(date '+%Y-%m-%d %H:%M KST')
+# Generate report
+NOW=$(date '+%Y-%m-%d %H:%M')
 REPORT=$(
-    echo "📊 자비스 컴퍼니 KPI 리포트 (최근 ${DAYS}일)"
+    echo "Bot System KPI Report (last ${DAYS} days)"
     echo "${NOW}"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    team_kpi "감사팀 (Council)"  council-insight weekly-kpi
-    team_kpi "정보팀 (Trend)"    news-briefing
-    team_kpi "성장팀 (Career)"   career-weekly
-    team_kpi "학습팀 (Academy)"  academy-support
-    team_kpi "기록팀 (Record)"   record-daily memory-cleanup
-    team_kpi "인프라팀 (Infra)"  infra-daily system-health security-scan rag-health disk-alert
-    team_kpi "브랜드팀 (Brand)"  brand-weekly weekly-report
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "================================="
+    team_kpi "Council"    council-insight weekly-kpi
+    team_kpi "Trend"      news-briefing
+    team_kpi "Career"     career-weekly
+    team_kpi "Academy"    academy-support
+    team_kpi "Record"     record-daily memory-cleanup
+    team_kpi "Infra"      infra-daily system-health security-scan rag-health disk-alert
+    team_kpi "Brand"      brand-weekly weekly-report
+    echo "================================="
 )
 
-# 최종 판정
-if echo "$REPORT" | grep -q "🔴"; then
-    VERDICT="⚠️ RED 팀 감지 — 감사팀 상세 보고 확인 필요"
-elif echo "$REPORT" | grep -q "🟡"; then
-    VERDICT="🟡 일부 팀 개선 필요"
+# Final verdict
+if echo "$REPORT" | grep -q "RED"; then
+    VERDICT="WARNING: RED team detected -- check detailed council report"
+elif echo "$REPORT" | grep -q "YELLOW"; then
+    VERDICT="NOTICE: Some teams need improvement"
 else
-    VERDICT="✅ 전 팀 목표 달성"
+    VERDICT="OK: All teams meeting targets"
 fi
 
 REPORT="${REPORT}
@@ -72,13 +72,13 @@ ${VERDICT}"
 
 echo "$REPORT"
 
-# Discord 전송
+# Discord delivery
 if $SEND_DISCORD; then
     WEBHOOK=$(jq -r '.webhooks["bot-ceo"]' "$MONITORING" 2>/dev/null || echo "")
     if [[ -n "$WEBHOOK" && "$WEBHOOK" != "null" ]]; then
         PAYLOAD=$(jq -n --arg c "$REPORT" '{"content":$c}')
         HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$WEBHOOK" \
             -H "Content-Type: application/json" -d "$PAYLOAD")
-        if [[ "$HTTP" != "204" ]]; then echo "⚠️ Discord 전송 실패: HTTP $HTTP" >&2; fi
+        if [[ "$HTTP" != "204" ]]; then echo "WARNING: Discord delivery failed: HTTP $HTTP" >&2; fi
     fi
 fi

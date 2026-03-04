@@ -170,7 +170,7 @@ node discord/discord-bot.js
 macOS에서 24/7 상시 운영하려면 LaunchAgent 등록:
 
 ```bash
-launchctl load ~/Library/LaunchAgents/ai.discord-bot.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.claude-discord-bot.plist
 ```
 
 전체 단계별 가이드는 [discord/SETUP.md](discord/SETUP.md) 참조.

@@ -49,9 +49,9 @@ export async function handleInteraction(interaction, deps) {
     const proc = activeProcesses.get(key);
     if (proc?.proc) {
       proc.proc.kill('SIGTERM');
-      await interaction.reply({ content: '\u23f9\ufe0f \uc911\ub2e8\ub428', ephemeral: true });
+      await interaction.reply({ content: '\u23f9\ufe0f Stopped', ephemeral: true });
     } else {
-      await interaction.reply({ content: '\uc2e4\ud589 \uc911\uc778 \uc791\uc5c5 \uc5c6\uc74c', ephemeral: true });
+      await interaction.reply({ content: 'No active process', ephemeral: true });
     }
     return;
   }
@@ -74,7 +74,7 @@ export async function handleInteraction(interaction, deps) {
   const OWNER_ID = process.env.OWNER_DISCORD_ID;
   const SENSITIVE = ['run', 'schedule', 'remember', 'alert', 'stop', 'clear', 'memory', 'usage'];
   if (OWNER_ID && SENSITIVE.includes(interaction.commandName) && interaction.user.id !== OWNER_ID) {
-    await interaction.reply({ content: '\u26d4 \uc774 \uba85\ub839\uc5b4\ub294 \ubd07 \uc624\ub108\ub9cc \uc0ac\uc6a9\ud560 \uc218 \uc788\uc2b5\ub2c8\ub2e4.', ephemeral: true });
+    await interaction.reply({ content: '\u26d4 This command is owner-only.', ephemeral: true });
     return;
   }
 
@@ -104,7 +104,7 @@ export async function handleInteraction(interaction, deps) {
 
   } else if (commandName === 'memory') {
     const memPath = join(BOT_HOME, 'rag', 'memory.md');
-    const content = existsSync(memPath) ? readFileSync(memPath, 'utf8') : '\uba54\ubaa8\ub9ac\uac00 \ube44\uc5b4\uc788\uc2b5\ub2c8\ub2e4.';
+    const content = existsSync(memPath) ? readFileSync(memPath, 'utf8') : 'Memory is empty.';
     await interaction.reply({ content: content.slice(0, 1900) });
 
   } else if (commandName === 'remember') {
@@ -112,7 +112,7 @@ export async function handleInteraction(interaction, deps) {
     const memPath = join(BOT_HOME, 'rag', 'memory.md');
     const timestamp = new Date().toISOString().slice(0, 10);
     appendFileSync(memPath, `\n- [${timestamp}] ${text}`);
-    await interaction.reply({ content: `\uae30\uc5b5\ud588\uc2b5\ub2c8\ub2e4: ${text}` });
+    await interaction.reply({ content: `Remembered: ${text}` });
     log('info', 'Memory saved via /remember', { text: text.slice(0, 100) });
 
   } else if (commandName === 'search') {
@@ -124,22 +124,22 @@ export async function handleInteraction(interaction, deps) {
         'node', [join(BOT_HOME, 'lib', 'rag-query.mjs'), query],
         { timeout: 10000, encoding: 'utf-8' },
       );
-      await interaction.editReply(result.slice(0, 1900) || '\uac80\uc0c9 \uacb0\uacfc\uac00 \uc5c6\uc2b5\ub2c8\ub2e4.');
+      await interaction.editReply(result.slice(0, 1900) || 'No search results.');
     } catch (err) {
-      await interaction.editReply('RAG \uac80\uc0c9 \uc2e4\ud328: ' + (err.message?.slice(0, 200) || 'Unknown error'));
+      await interaction.editReply('RAG search failed: ' + (err.message?.slice(0, 200) || 'Unknown error'));
     }
 
   } else if (commandName === 'threads') {
     const entries = Object.entries(sessions.data);
     if (entries.length === 0) {
-      await interaction.reply({ content: '\ud65c\uc131 \uc138\uc158\uc774 \uc5c6\uc2b5\ub2c8\ub2e4.', ephemeral: true });
+      await interaction.reply({ content: 'No active sessions.', ephemeral: true });
     } else {
       const list = entries
         .slice(0, 20)
         .map(([key, sid]) => `\u2022 \`${key}\` \u2192 \`${sid.id?.slice(0, 8) ?? sid.slice?.(0, 8)}\u2026\``)
         .join('\n');
       await interaction.reply({
-        content: `**\ud65c\uc131 \uc138\uc158 (${entries.length}\uac1c)**\n${list}`,
+        content: `**Active sessions (${entries.length})**\n${list}`,
         ephemeral: true,
       });
     }
@@ -147,7 +147,7 @@ export async function handleInteraction(interaction, deps) {
   } else if (commandName === 'alert') {
     const msg = interaction.options.getString('message');
     await sendNtfy(`${BOT_NAME} Alert`, msg, 'high');
-    await interaction.reply({ content: `ntfy \uc804\uc1a1 \uc644\ub8cc: ${msg}`, ephemeral: true });
+    await interaction.reply({ content: `ntfy sent: ${msg}`, ephemeral: true });
 
   } else if (commandName === 'status') {
     await interaction.deferReply({ ephemeral: true });
@@ -163,16 +163,16 @@ export async function handleInteraction(interaction, deps) {
     const memMB = Math.round(process.memoryUsage().rss / 1024 / 1024);
     const pingMs = client.ws.ping;
     const embed = new EmbedBuilder()
-      .setTitle(`${BOT_NAME} \uc2dc\uc2a4\ud15c \uc0c1\ud0dc`)
+      .setTitle(`${BOT_NAME} System Status`)
       .setColor(wsHealthy && !rate.warn ? 0x2ecc71 : rate.reject ? 0xe74c3c : 0xf39c12)
       .addFields(
         { name: '\ud83d\udd0c WebSocket', value: `\`${wsStatus}\`${pingMs >= 0 ? ` (${pingMs}ms)` : ''}`, inline: true },
-        { name: '\u23f1\ufe0f \uc5c5\ud0c0\uc784', value: `\`${uptimeStr}\``, inline: true },
-        { name: '\ud83d\udd07 \ub9c8\uc9c0\ub9c9 \uc774\ubca4\ud2b8', value: `\`${silenceSec}\ucd08 \uc804\``, inline: true },
+        { name: '\u23f1\ufe0f Uptime', value: `\`${uptimeStr}\``, inline: true },
+        { name: '\ud83d\udd07 Last event', value: `\`${silenceSec}s ago\``, inline: true },
         { name: '\ud83d\udcca Rate limit', value: `\`${rate.count}/${rate.max}\` (${Math.round(rate.pct * 100)}%)`, inline: true },
-        { name: '\u26a1 \ud65c\uc131 \ud504\ub85c\uc138\uc2a4', value: `\`${activeProcesses.size}/${deps.maxConcurrent ?? 2}\``, inline: true },
-        { name: '\ud83d\udcac \uc138\uc158', value: `\`${Object.keys(sessions.data).length}\uac1c\``, inline: true },
-        { name: '\ud83d\udcbe \uba54\ubaa8\ub9ac', value: `\`${memMB}MB\``, inline: true },
+        { name: '\u26a1 Active processes', value: `\`${activeProcesses.size}/${deps.maxConcurrent ?? 2}\``, inline: true },
+        { name: '\ud83d\udcac Sessions', value: `\`${Object.keys(sessions.data).length}\``, inline: true },
+        { name: '\ud83d\udcbe Memory', value: `\`${memMB}MB\``, inline: true },
       )
       .setTimestamp();
     await interaction.editReply({ embeds: [embed] });
@@ -199,22 +199,22 @@ export async function handleInteraction(interaction, deps) {
         else taskStats[name].fail++;
       }
       if (Object.keys(taskStats).length === 0) {
-        await interaction.editReply('\uc624\ub298 \uc2e4\ud589\ub41c \ud06c\ub860 \ud0dc\uc2a4\ud06c\uac00 \uc5c6\uc2b5\ub2c8\ub2e4.');
+        await interaction.editReply('No cron tasks executed today.');
         return;
       }
       const lines = Object.entries(taskStats).map(([name, s]) =>
-        `${s.fail > 0 ? '\u274c' : '\u2705'} \`${name}\`: ${s.ok}\uc131\uacf5${s.fail > 0 ? ' ' + s.fail + '\uc2e4\ud328' : ''}`
+        `${s.fail > 0 ? '\u274c' : '\u2705'} \`${name}\`: ${s.ok} success${s.fail > 0 ? ' ' + s.fail + ' failed' : ''}`
       );
-      await interaction.editReply(`**\uc624\ub298 \ud0dc\uc2a4\ud06c \ud604\ud669 (${today})**\n${lines.join('\n')}`.slice(0, 1900));
+      await interaction.editReply(`**Today's task status (${today})**\n${lines.join('\n')}`.slice(0, 1900));
     } catch (err) {
-      await interaction.editReply('\ud0dc\uc2a4\ud06c \ub85c\uadf8 \uc77d\uae30 \uc2e4\ud328: ' + err.message?.slice(0, 200));
+      await interaction.editReply('Failed to read task log: ' + err.message?.slice(0, 200));
     }
 
   } else if (commandName === 'run') {
     const taskId = interaction.options.getString('id');
     const taskIds = getTaskIds(BOT_HOME).map(t => t.value);
     if (!taskIds.includes(taskId)) {
-      await interaction.reply({ content: `\u274c \ud0dc\uc2a4\ud06c ID \`${taskId}\` \ub97c \ucc3e\uc744 \uc218 \uc5c6\uc2b5\ub2c8\ub2e4.`, ephemeral: true });
+      await interaction.reply({ content: `\u274c Task ID \`${taskId}\` not found.`, ephemeral: true });
       return;
     }
     await interaction.deferReply();
@@ -228,14 +228,14 @@ export async function handleInteraction(interaction, deps) {
         env: { ...process.env, HOME },
       });
       const embed = new EmbedBuilder()
-        .setTitle(`\u2705 \ud0dc\uc2a4\ud06c \uc644\ub8cc: \`${taskId}\``)
+        .setTitle(`\u2705 Task completed: \`${taskId}\``)
         .setColor(0x2ecc71)
-        .setDescription(`**${interaction.user.tag}** \ub2d8\uc774 \uc218\ub3d9 \uc2e4\ud589\ud588\uc2b5\ub2c8\ub2e4.`)
+        .setDescription(`Manually triggered by **${interaction.user.tag}**`)
         .setTimestamp();
       await interaction.editReply({ embeds: [embed] });
     } catch (err) {
       const embed = new EmbedBuilder()
-        .setTitle(`\u274c \ud0dc\uc2a4\ud06c \uc2e4\ud328: \`${taskId}\``)
+        .setTitle(`\u274c Task failed: \`${taskId}\``)
         .setColor(0xe74c3c)
         .setDescription('```\n' + (err.message || 'Unknown error').slice(0, 500) + '\n```')
         .setTimestamp();
@@ -253,7 +253,7 @@ export async function handleInteraction(interaction, deps) {
     const fname = join(queueDir, `${Date.now()}_${Math.random().toString(36).slice(2)}.json`);
     const payload = { prompt: task, schedule_at: scheduleAt, created_by: interaction.user.tag, channel: interaction.channelId };
     writeFileSync(fname, JSON.stringify(payload, null, 2));
-    await interaction.reply(`\u2705 **${delay}** \ud6c4 \uc2e4\ud589 \uc608\uc57d\ub428\n> ${task}`);
+    await interaction.reply(`\u2705 Scheduled to run in **${delay}**\n> ${task}`);
 
   } else if (commandName === 'usage') {
     await interaction.deferReply();
@@ -263,7 +263,7 @@ export async function handleInteraction(interaction, deps) {
       const statsPath = join(HOME, '.claude', 'stats-cache.json');
 
       if (!existsSync(cachePath)) {
-        await interaction.editReply('\u274c \uc0ac\uc6a9\ub7c9 \uce90\uc2dc \uc5c6\uc74c. Claude Code\ub97c \ud55c \ubc88 \uc2e4\ud589\ud574\uc8fc\uc138\uc694.');
+        await interaction.editReply('\u274c No usage cache found. Run Claude Code once.');
         return;
       }
 
@@ -282,29 +282,29 @@ export async function handleInteraction(interaction, deps) {
       const sonnet = cache.sonnet ?? {};
       const maxPct = Math.max(fiveH.pct ?? 0, sevenD.pct ?? 0, sonnet.pct ?? 0);
       const ts = cache.ts ? new Date(cache.ts) : null;
-      const tsStr = ts ? ts.toLocaleString('ko-KR', { timeZone: cfg.timezone ?? 'Asia/Seoul', hour12: false }) : '\uc54c \uc218 \uc5c6\uc74c';
+      const tsStr = ts ? ts.toLocaleString('en-US', { timeZone: cfg.timezone ?? 'Asia/Seoul', hour12: false }) : 'Unknown';
 
       const embed = new EmbedBuilder()
         .setColor(color(maxPct))
-        .setTitle('\u26a1 Claude Max \uc0ac\uc6a9\ub7c9')
+        .setTitle('\u26a1 Claude Max Usage')
         .addFields(
           {
-            name: `5\uc2dc\uac04 \ud55c\ub3c4 (${limits.fiveH?.toLocaleString() ?? '?'} msgs)`,
-            value: `\`${bar(fiveH.pct ?? 0)}\` **${fiveH.pct ?? '?'}%** \u2014 ${fiveH.remain ?? '?'} \ub0a8\uc74c\n\ub9ac\uc14b: ${fiveH.reset ?? '?'} (${fiveH.resetIn ?? '?'} \ud6c4)`,
+            name: `5-hour limit (${limits.fiveH?.toLocaleString() ?? '?'} msgs)`,
+            value: `\`${bar(fiveH.pct ?? 0)}\` **${fiveH.pct ?? '?'}%** \u2014 ${fiveH.remain ?? '?'} remaining\nResets: ${fiveH.reset ?? '?'} (${fiveH.resetIn ?? '?'} later)`,
             inline: false,
           },
           {
-            name: `7\uc77c \ud55c\ub3c4 (${limits.sevenD?.toLocaleString() ?? '?'} msgs)`,
-            value: `\`${bar(sevenD.pct ?? 0)}\` **${sevenD.pct ?? '?'}%** \u2014 ${sevenD.remain ?? '?'} \ub0a8\uc74c\n\ub9ac\uc14b: ${sevenD.reset ?? '?'} (${sevenD.resetIn ?? '?'} \ud6c4)`,
+            name: `7-day limit (${limits.sevenD?.toLocaleString() ?? '?'} msgs)`,
+            value: `\`${bar(sevenD.pct ?? 0)}\` **${sevenD.pct ?? '?'}%** \u2014 ${sevenD.remain ?? '?'} remaining\nResets: ${sevenD.reset ?? '?'} (${sevenD.resetIn ?? '?'} later)`,
             inline: false,
           },
           {
-            name: `Sonnet 7\uc77c (${limits.sonnet7D?.toLocaleString() ?? '?'} msgs)`,
-            value: `\`${bar(sonnet.pct ?? 0)}\` **${sonnet.pct ?? '?'}%** \u2014 ${sonnet.remain ?? '?'} \ub0a8\uc74c\n\ub9ac\uc14b: ${sonnet.reset ?? '?'} (${sonnet.resetIn ?? '?'} \ud6c4)`,
+            name: `Sonnet 7-day (${limits.sonnet7D?.toLocaleString() ?? '?'} msgs)`,
+            value: `\`${bar(sonnet.pct ?? 0)}\` **${sonnet.pct ?? '?'}%** \u2014 ${sonnet.remain ?? '?'} remaining\nResets: ${sonnet.reset ?? '?'} (${sonnet.resetIn ?? '?'} later)`,
             inline: false,
           },
         )
-        .setFooter({ text: `\uce90\uc2dc \uae30\uc900: ${tsStr}` })
+        .setFooter({ text: `Cache updated: ${tsStr}` })
         .setTimestamp();
 
       if (existsSync(statsPath)) {
@@ -313,14 +313,14 @@ export async function handleInteraction(interaction, deps) {
           const recent = (stats.dailyActivity ?? []).slice(-3).reverse();
           if (recent.length > 0) {
             const rows = recent.map(d => `\`${d.date}\` ${d.messageCount}msg / ${d.toolCallCount}tools`).join('\n');
-            embed.addFields({ name: '\ucd5c\uadfc 3\uc77c \ud65c\ub3d9', value: rows, inline: false });
+            embed.addFields({ name: 'Last 3 days activity', value: rows, inline: false });
           }
         } catch { /* stats parsing failure ignored */ }
       }
 
       await interaction.editReply({ embeds: [embed] });
     } catch (err) {
-      await interaction.editReply('\u274c \uc0ac\uc6a9\ub7c9 \uc870\ud68c \uc2e4\ud328: ' + (err.message?.slice(0, 300) || 'Unknown error'));
+      await interaction.editReply('\u274c Usage query failed: ' + (err.message?.slice(0, 300) || 'Unknown error'));
       log('error', 'Usage command failed', { error: err.message?.slice(0, 200) });
     }
   }

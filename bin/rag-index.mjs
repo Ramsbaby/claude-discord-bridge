@@ -69,7 +69,7 @@ async function main() {
         targets.push(join(contextDir, e.name));
       }
     }
-    // discord-history: 최근 7일치만 (파일이 날마다 누적됨)
+    // discord-history: last 7 days only (files accumulate daily)
     const histDir = join(contextDir, 'discord-history');
     try {
       const histFiles = await readdir(histDir);
@@ -82,7 +82,7 @@ async function main() {
           if (ageDays <= 7) targets.push(fPath);
         }
       }
-    } catch { /* discord-history 아직 없으면 스킵 */ }
+    } catch { /* discord-history dir may not exist yet */ }
   } catch { /* dir may not exist */ }
 
   // 2. RAG memory files
@@ -90,12 +90,12 @@ async function main() {
     targets.push(join(BOT_HOME, 'rag', f));
   }
 
-  // 3. Config 파일 (company-dna, autonomy-levels)
+  // 3. Config files (company-dna, autonomy-levels)
   for (const f of ['company-dna.md', 'autonomy-levels.md']) {
     targets.push(join(BOT_HOME, 'config', f));
   }
 
-  // 4. 팀 보고서 & 공유 인박스 (팀 간 통신 이력)
+  // 4. Team reports & shared inbox (inter-team communication history)
   for (const dir of ['reports', 'shared-inbox']) {
     try {
       const dirPath = join(BOT_HOME, 'rag', 'teams', dir);
@@ -108,7 +108,7 @@ async function main() {
   // proposals-tracker
   targets.push(join(BOT_HOME, 'rag', 'teams', 'proposals-tracker.md'));
 
-  // 5. 프로젝트 문서 (README, ROADMAP, docs/) — Jarvis가 시스템 구조를 알 수 있도록
+  // 5. Project docs (README, ROADMAP, docs/) — so the bot understands system structure
   for (const f of ['README.md', 'ROADMAP.md']) {
     targets.push(join(BOT_HOME, f));
   }
@@ -118,10 +118,10 @@ async function main() {
     for (const f of docFiles) {
       if (extname(f) === '.md') targets.push(join(docsDir, f));
     }
-  } catch { /* docs/ 없으면 스킵 */ }
+  } catch { /* docs/ dir may not exist */ }
 
-  // 5b. 사용자 커스텀 메모리 (선택적 외부 경로)
-  // BOT_EXTRA_MEMORY 환경변수에 경로를 지정하면 해당 디렉토리도 인덱싱
+  // 5b. User custom memory (optional external path)
+  // Set BOT_EXTRA_MEMORY env var to a directory path to include it in indexing
   const extraMemoryPath = process.env.BOT_EXTRA_MEMORY;
   if (extraMemoryPath) {
     const extraFixed = [

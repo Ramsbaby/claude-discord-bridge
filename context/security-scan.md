@@ -1,20 +1,20 @@
 # Security Scan
 
-## 목적
-매일 새벽 02:30에 봇 시스템 보안 상태를 점검한다.
+## Purpose
+Check bot system security status daily at 2:30 AM.
 
-## 점검 항목
-1. **시크릿 노출**: .env 파일 외 비정상 위치에 API 키/토큰 파일 여부
-2. **파일 권한**: config/ 파일이 타인에게 읽히지 않는지 (600/640 권장)
-3. **접근 로그**: discord-bot.jsonl에서 비정상 패턴 (반복 실패, 이상 IP 등)
-4. **디스크 여유**: / 파티션 90% 초과 시 경고
+## Check Items
+1. **Secret exposure**: API key/token files in abnormal locations outside .env
+2. **File permissions**: config/ files not readable by others (600/640 recommended)
+3. **Access logs**: Abnormal patterns in discord-bot.jsonl (repeated failures, unusual IPs, etc.)
+4. **Disk space**: Warn if / partition exceeds 90%
 
-## 출력 규칙
-- 이상 없으면: `보안: 정상`
-- 이상 발견 시: 항목별 `⚠️ [항목]: [내용]` 형식
-- CRITICAL 이상(API 키 노출 등): ntfy 푸시 필요 — alert.sh로 에스컬레이션
+## Output Rules
+- Normal: `Security: OK`
+- Issue found: Per-item format `Warning [item]: [description]`
+- CRITICAL (API key exposure, etc.): Escalate via alert.sh for push notification
 
-## 주의사항
-- Bash만 사용. 파일 수정 금지 (읽기 전용 점검)
-- Company DNA DNA-C004: L1 태스크 — 결과는 파일에만 저장, 이상 시에만 Discord
-- 절대 경로 사용. 상대 경로 금지.
+## Notes
+- Bash only. No file modifications (read-only inspection)
+- L1 task -- results saved to file only, Discord only when anomaly found
+- Use absolute paths. No relative paths.

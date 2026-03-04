@@ -173,7 +173,7 @@ node discord/discord-bot.js
 For persistent 24/7 operation on macOS, register as a LaunchAgent:
 
 ```bash
-launchctl load ~/Library/LaunchAgents/ai.discord-bot.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.claude-discord-bot.plist
 ```
 
 See [discord/SETUP.md](discord/SETUP.md) for the full step-by-step setup.

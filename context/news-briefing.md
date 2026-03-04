@@ -1,10 +1,10 @@
 # News Briefing
 
-## 목적
-매일 아침 7:50에 AI/Tech 주요 뉴스 3가지를 요약하여 Discord로 전송한다.
+## Purpose
+Every morning at 7:50, summarize 3 key AI/Tech news items and send to Discord.
 
-## 주의사항
-- morning-standup(8:05) 전에 실행되어 브리핑에 참고 가능
-- 투자 관련 뉴스 우선 포함
-- 한 줄씩 간결하게 요약, 총 3개
-- WebSearch 도구 사용
+## Notes
+- Runs before morning-standup (8:05) so briefing can reference it
+- Prioritize investment-related news
+- One-line summary each, 3 items total
+- Use WebSearch tool

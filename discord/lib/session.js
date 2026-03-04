@@ -317,7 +317,7 @@ export class StreamingMessage {
     if (this.currentMessage) return;
     const row = this._stopRow();
     const payload = {
-      content: '`⏳` 분석 중...',
+      content: '`⏳` Processing...',
       components: row ? [row] : [],
     };
     try {
