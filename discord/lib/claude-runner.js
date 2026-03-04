@@ -416,7 +416,7 @@ export async function* createClaudeSession(prompt, {
 
   const queryOptions = {
     cwd: stableDir,
-    pathToClaudeCodeExecutable: process.env.CLAUDE_BINARY || '/Users/ramsbaby/.local/bin/claude',
+    pathToClaudeCodeExecutable: process.env.CLAUDE_BINARY || join(homedir(), '.local/bin/claude'),
     allowedTools: [
       'Bash', 'Read', 'Glob', 'Grep', 'WebSearch', 'Agent',
       'mcp__nexus__exec', 'mcp__nexus__scan', 'mcp__nexus__cache_exec',
