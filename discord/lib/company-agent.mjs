@@ -439,6 +439,7 @@ async function runTeam(name) {
 
   const opts = {
     cwd: BOT_HOME,
+    pathToClaudeCodeExecutable: process.env.CLAUDE_BINARY || '/Users/ramsbaby/.local/bin/claude',
     allowedTools: team.tools,
     permissionMode: 'bypassPermissions',
     allowDangerouslySkipPermissions: true,

@@ -183,6 +183,7 @@ launchctl load ~/Library/LaunchAgents/ai.discord-bot.plist
 
 ```env
 BOT_NAME=MyBot                       # Discord에 표시되는 봇 이름
+BOT_LOCALE=ko                        # 봇 언어: 'ko' (기본값) 또는 'en'
 DISCORD_TOKEN=your_bot_token
 GUILD_ID=your_server_id
 CHANNEL_IDS=channel_id_1,channel_id_2
@@ -332,7 +333,11 @@ RAG 엔진은 매시간 증분 인덱싱. 질문 시 관련 컨텍스트를 `cla
 ~/claude-discord-bridge/
 ├── discord/
 │   ├── discord-bot.js          # Discord 클라이언트, 슬래시 커맨드
+│   ├── locales/
+│   │   ├── en.json             # 영어 로케일 문자열
+│   │   └── ko.json             # 한국어 로케일 문자열 (기본값)
 │   └── lib/
+│       ├── i18n.js             # t() — 로케일 로더 (BOT_LOCALE)
 │       ├── handlers.js         # handleMessage — 핵심 메시지 로직
 │       ├── claude-runner.js    # spawnClaude(), RAG 주입, 대화 이력
 │       └── session.js          # SessionStore, RateTracker, Semaphore

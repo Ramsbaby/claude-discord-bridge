@@ -49,10 +49,23 @@ RESULT_RETENTION=$(echo "$TASK_CONFIG" | jq -r '.resultRetention // 7')
 RESULT_MAX_CHARS=$(echo "$TASK_CONFIG" | jq -r '.resultMaxChars // 2000')
 MODEL=$(echo "$TASK_CONFIG" | jq -r '.model // empty')
 DISCORD_CHANNEL=$(echo "$TASK_CONFIG" | jq -r '.discordChannel // empty')
+REQUIRES_MARKET=$(echo "$TASK_CONFIG" | jq -r '.requiresMarket // false')
 # output is a JSON array like ["discord","file"]
 OUTPUT_MODES=$(echo "$TASK_CONFIG" | jq -r '.output[]? // empty')
 
+# --- Market holiday guard (tasks with requiresMarket: true) ---
+if [[ "$REQUIRES_MARKET" == "true" ]]; then
+    if ! /bin/bash "$BOT_HOME/scripts/market-holiday-guard.sh" > /dev/null 2>&1; then
+        log "SKIPPED — market closed today (holiday or weekend)"
+        _TASK_DONE=true
+        exit 0
+    fi
+fi
+
 log "START"
+
+# --- Lounge announce: task started ---
+"$BOT_HOME/bin/lounge-announce.sh" "$TASK_ID" "running" 2>/dev/null || true
 
 # --- Execute via retry-wrapper ---
 RESULT=""
@@ -60,10 +73,12 @@ EXIT_CODE=0
 RESULT=$("$BOT_HOME/bin/retry-wrapper.sh" "$TASK_ID" "$PROMPT" "$ALLOWED_TOOLS" "$TIMEOUT" "$MAX_BUDGET" "$RESULT_RETENTION" "$MODEL") || EXIT_CODE=$?
 
 if [[ $EXIT_CODE -ne 0 ]]; then
+    "$BOT_HOME/bin/lounge-announce.sh" "$TASK_ID" "--done" 2>/dev/null || true
     log "FAILED (exit: $EXIT_CODE)"
     exit "$EXIT_CODE"
 fi
 
+"$BOT_HOME/bin/lounge-announce.sh" "$TASK_ID" "--done" 2>/dev/null || true
 log "SUCCESS"
 
 # --- Truncate result to maxChars before routing ---

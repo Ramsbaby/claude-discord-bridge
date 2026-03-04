@@ -182,22 +182,14 @@ check_disk() {
 }
 
 # --- Trigger 3: Claude Concurrency Alert ---
+# Ground truth: count actual claude -p processes (not the leak-prone counter file)
 check_claude_load() {
     if is_in_cooldown "claude-load" 1800; then
         return 0
     fi
 
-    local count_file="$BOT_HOME/state/claude-global.count"
-    if [[ ! -f "$count_file" ]]; then
-        return 0
-    fi
-
     local count
-    count=$(cat "$count_file" 2>/dev/null || echo "0")
-    # 숫자가 아니면 스킵
-    if ! [[ "$count" =~ ^[0-9]+$ ]]; then
-        return 0
-    fi
+    count=$(pgrep -f "claude -p" 2>/dev/null | wc -l | tr -d ' ')
 
     if (( count >= 3 )); then
         send_discord "🔥 **Claude 고부하** 동시 실행: ${count}/4"

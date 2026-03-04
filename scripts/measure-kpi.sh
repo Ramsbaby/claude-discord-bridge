@@ -2,28 +2,52 @@
 set -euo pipefail
 
 # measure-kpi.sh - 자비스 컴퍼니 팀별 KPI 자동 측정
-# Usage: measure-kpi.sh [--discord] [--days N]
+# Usage: measure-kpi.sh [--discord] [--json] [--days N]
 
 BOT_HOME="${BOT_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 LOG="${BOT_HOME}/logs/task-runner.jsonl"
 MONITORING="${BOT_HOME}/config/monitoring.json"
 DAYS=7
 SEND_DISCORD=false
+OUTPUT_JSON=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --discord) SEND_DISCORD=true; shift ;;
+        --json)    OUTPUT_JSON=true; shift ;;
         --days)    DAYS="$2"; shift 2 ;;
         *)         shift ;;
     esac
 done
 
-# 팀별 SUCCESS/FAIL 집계 (bash 3.x 호환, local 변수 명시)
-team_kpi() {
-    local label="$1"; shift
+# 날짜 필터 기준 (N일 전 ISO 타임스탬프)
+if date -v-1d '+%Y' >/dev/null 2>&1; then
+    SINCE=$(date -v-"${DAYS}"d '+%Y-%m-%dT00:00:00Z')
+else
+    SINCE=$(date -d "${DAYS} days ago" '+%Y-%m-%dT00:00:00Z')
+fi
+
+# 로그에서 최근 N일 분만 필터링 (macOS awk 호환)
+RECENT_LOG=""
+if [[ -f "$LOG" ]]; then
+    RECENT_LOG=$(awk -v since="$SINCE" '{
+        idx = index($0, "\"ts\":\"")
+        if (idx > 0) {
+            ts = substr($0, idx + 6)
+            end = index(ts, "\"")
+            if (end > 0) {
+                ts = substr(ts, 1, end - 1)
+                if (ts >= since) print
+            }
+        }
+    }' "$LOG") || RECENT_LOG=""
+fi
+
+# 팀별 성공/전체 건수 계산 (stdout에 "ok total" 출력)
+count_team() {
     local total=0 ok=0 t_total t_ok matched
     for task_id in "$@"; do
-        matched=$(grep "\"task\":\"${task_id}\"" "$LOG" 2>/dev/null) || matched=""
+        matched=$(printf '%s\n' "$RECENT_LOG" | grep "\"task\":\"${task_id}\"" 2>/dev/null) || matched=""
         if [[ -n "$matched" ]]; then
             t_total=$(printf '%s\n' "$matched" | grep -cv "\"status\":\"start\"" 2>/dev/null) || t_total=0
             t_ok=$(printf '%s\n' "$matched" | grep -c  "\"status\":\"success\"" 2>/dev/null) || t_ok=0
@@ -31,30 +55,85 @@ team_kpi() {
             ok=$((ok + t_ok))
         fi
     done
-    if [[ $total -eq 0 ]]; then
-        printf '%-20s ⚫ NO_DATA\n' "$label"
-    else
-        local rate=$((ok * 100 / total))
-        local icon="🔴 RED   "
-        [[ $rate -ge 90 ]] && icon="🟢 GREEN "
-        [[ $rate -ge 70 && $rate -lt 90 ]] && icon="🟡 YELLOW"
-        printf '%-20s %s %3d%% (%d/%d건)\n' "$label" "$icon" "$rate" "$ok" "$total"
-    fi
+    echo "$ok $total"
 }
 
-# 리포트 생성
+# 팀 정의: "key label task1 task2 ..."
+TEAMS=(
+    "council:Council:council-insight weekly-kpi"
+    "trend:Trend:news-briefing"
+    "career:Career:career-weekly"
+    "academy:Academy:academy-support"
+    "record:Record:record-daily memory-cleanup"
+    "infra:Infra:infra-daily system-health security-scan rag-health disk-alert"
+    "brand:Brand:brand-weekly weekly-report"
+)
+
+# 결과 수집
+OVERALL_OK=0
+OVERALL_TOTAL=0
+# bash 3.x 호환: 배열 대신 구분자 기반 문자열
+RESULTS=""
+
+for entry in "${TEAMS[@]}"; do
+    key="${entry%%:*}"
+    rest="${entry#*:}"
+    label="${rest%%:*}"
+    tasks_str="${rest#*:}"
+    # shellcheck disable=SC2086
+    read -r ok total <<< "$(count_team $tasks_str)"
+    OVERALL_OK=$((OVERALL_OK + ok))
+    OVERALL_TOTAL=$((OVERALL_TOTAL + total))
+    rate=0
+    if [[ $total -gt 0 ]]; then
+        rate=$((ok * 100 / total))
+    fi
+    RESULTS="${RESULTS}${key}|${label}|${ok}|${total}|${rate}
+"
+done
+
+# --- JSON 출력 모드 ---
+if $OUTPUT_JSON; then
+    local_date=$(date '+%Y-%m-%d')
+    overall_rate=0
+    if [[ $OVERALL_TOTAL -gt 0 ]]; then
+        overall_rate=$((OVERALL_OK * 100 / OVERALL_TOTAL))
+    fi
+
+    json_teams=""
+    while IFS='|' read -r key label ok total rate; do
+        if [[ -z "$key" ]]; then continue; fi
+        if [[ -n "$json_teams" ]]; then
+            json_teams="${json_teams},"
+        fi
+        json_teams="${json_teams}\"${key}\":{\"success\":${ok},\"total\":${total},\"rate\":${rate}}"
+    done <<< "$RESULTS"
+
+    printf '{"date":"%s","days":%d,"teams":{%s},"overall":{"success":%d,"total":%d,"rate":%d}}\n' \
+        "$local_date" "$DAYS" "$json_teams" "$OVERALL_OK" "$OVERALL_TOTAL" "$overall_rate"
+    exit 0
+fi
+
+# --- 텍스트 리포트 모드 ---
 NOW=$(date '+%Y-%m-%d %H:%M KST')
 REPORT=$(
     echo "📊 자비스 컴퍼니 KPI 리포트 (최근 ${DAYS}일)"
     echo "${NOW}"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    team_kpi "감사팀 (Council)"  council-insight weekly-kpi
-    team_kpi "정보팀 (Trend)"    news-briefing
-    team_kpi "성장팀 (Career)"   career-weekly
-    team_kpi "학습팀 (Academy)"  academy-support
-    team_kpi "기록팀 (Record)"   record-daily memory-cleanup
-    team_kpi "인프라팀 (Infra)"  infra-daily system-health security-scan rag-health disk-alert
-    team_kpi "브랜드팀 (Brand)"  brand-weekly weekly-report
+    while IFS='|' read -r key label ok total rate; do
+        if [[ -z "$key" ]]; then continue; fi
+        if [[ $total -eq 0 ]]; then
+            printf '%-20s ⚫ NO_DATA\n' "$label"
+        else
+            icon="🔴 RED   "
+            if [[ $rate -ge 90 ]]; then
+                icon="🟢 GREEN "
+            elif [[ $rate -ge 70 ]]; then
+                icon="🟡 YELLOW"
+            fi
+            printf '%-20s %s %3d%% (%d/%d건)\n' "$label" "$icon" "$rate" "$ok" "$total"
+        fi
+    done <<< "$RESULTS"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 )
 

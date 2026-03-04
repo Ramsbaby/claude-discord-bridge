@@ -13,6 +13,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, unlink
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { randomUUID } from 'node:crypto';
+import { t } from './i18n.js';
 
 const BOT_HOME = process.env.BOT_HOME || join(homedir(), '.jarvis');
 const PENDING_FILE = join(BOT_HOME, 'state', 'pending-approvals.json');
@@ -65,16 +66,16 @@ export async function requestApproval(channel, { label, description, script, arg
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`l3approve:${actionId}`)
-      .setLabel('✅ 승인')
+      .setLabel(t('l3.button.approve'))
       .setStyle(ButtonStyle.Success),
     new ButtonBuilder()
       .setCustomId(`l3reject:${actionId}`)
-      .setLabel('❌ 거부')
+      .setLabel(t('l3.button.reject'))
       .setStyle(ButtonStyle.Danger),
   );
 
   const msg = await channel.send({
-    content: `**[L3 자율실행 승인 요청]**\n**${label}**\n${description}`,
+    content: `${t('l3.request.title')}\n**${label}**\n${description}`,
     components: [row],
   });
 
@@ -110,7 +111,7 @@ export async function handleApprovalInteraction(interaction) {
   const entry = pending[actionId];
 
   if (!entry) {
-    await interaction.reply({ content: '⏰ 만료되었거나 이미 처리된 요청입니다.', ephemeral: true });
+    await interaction.reply({ content: t('l3.error.expired'), ephemeral: true });
     return true;
   }
 
@@ -120,7 +121,7 @@ export async function handleApprovalInteraction(interaction) {
   if (action === 'l3reject') {
     // Update original message to show rejection, remove buttons
     await interaction.update({
-      content: `❌ **거부됨** — ${entry.label}`,
+      content: t('l3.result.rejected', { label: entry.label }),
       components: [],
     });
     return true;
@@ -129,7 +130,7 @@ export async function handleApprovalInteraction(interaction) {
   // Approve: defer, execute, report result
   await interaction.deferReply();
   const result = execApprovedAction(entry);
-  await interaction.editReply({ content: `✅ **승인 완료** — ${entry.label}\n\`\`\`\n${result}\n\`\`\`` });
+  await interaction.editReply({ content: `${t('l3.result.approved', { label: entry.label })}\n\`\`\`\n${result}\n\`\`\`` });
 
   // Remove buttons from original message
   try {

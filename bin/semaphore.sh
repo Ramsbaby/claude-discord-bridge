@@ -87,7 +87,7 @@ _check_global_available() {
 }
 
 check_stale_locks() {
-    local i slot_dir pid pid_file mtime now
+    local i slot_dir pid pid_file mtime now active_slots
     now=$(date +%s)
     for i in $(seq 1 "$MAX_SLOTS"); do
         slot_dir="${LOCK_DIR}/slot-${i}"
@@ -111,6 +111,16 @@ check_stale_locks() {
             fi
         fi
     done
+    # Reconcile: count must not exceed actual slot dirs (handles crash-without-release)
+    active_slots=$(ls -d "${LOCK_DIR}/slot-"* 2>/dev/null | wc -l | tr -d ' ')
+    if _acquire_global_lock; then
+        local current_count
+        current_count=$(_read_global_count)
+        if [[ "$current_count" -gt "$active_slots" ]]; then
+            echo "$active_slots" > "$GLOBAL_COUNT_FILE"
+        fi
+        _release_global_lock
+    fi
 }
 
 acquire_slot() {

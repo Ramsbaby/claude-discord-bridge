@@ -26,6 +26,8 @@ import { SessionStore, RateTracker, Semaphore } from './lib/session.js';
 import { handleMessage } from './lib/handlers.js';
 import { handleInteraction } from './lib/commands.js';
 import { handleApprovalInteraction, pollL3Requests } from './lib/approval.js';
+import { t } from './lib/i18n.js';
+import { initAlertBatcher, botAlerts } from './lib/alert-batcher.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -54,55 +56,62 @@ const activeProcesses = new Map();
 // ---------------------------------------------------------------------------
 
 async function registerSlashCommands(clientId, guildId) {
+  const bn = { botName: BOT_NAME };
   const commands = [
     new SlashCommandBuilder()
       .setName('clear')
-      .setDescription(`Clear the ${BOT_NAME} session for this channel`),
+      .setDescription(t('cmd.clear.desc', bn)),
     new SlashCommandBuilder()
       .setName('stop')
-      .setDescription(`Stop the active ${BOT_NAME} process`),
+      .setDescription(t('cmd.stop.desc', bn)),
     new SlashCommandBuilder()
       .setName('memory')
-      .setDescription(`${BOT_NAME} 장기 기억 내용 보기`),
+      .setDescription(t('cmd.memory.desc', bn)),
     new SlashCommandBuilder()
       .setName('remember')
-      .setDescription('정보를 기억에 저장')
-      .addStringOption(opt => opt.setName('content').setDescription('기억할 내용').setRequired(true)),
+      .setDescription(t('cmd.remember.desc'))
+      .addStringOption(opt => opt.setName('content').setDescription(t('cmd.remember.opt.content')).setRequired(true)),
     new SlashCommandBuilder()
       .setName('search')
-      .setDescription('RAG 시맨틱 검색')
-      .addStringOption(opt => opt.setName('query').setDescription('검색할 내용').setRequired(true)),
+      .setDescription(t('cmd.search.desc'))
+      .addStringOption(opt => opt.setName('query').setDescription(t('cmd.search.opt.query')).setRequired(true)),
     new SlashCommandBuilder()
       .setName('threads')
-      .setDescription(`활성 ${BOT_NAME} 세션/스레드 목록`),
+      .setDescription(t('cmd.threads.desc', bn)),
     new SlashCommandBuilder()
       .setName('alert')
-      .setDescription('Galaxy 푸시 알림 전송')
-      .addStringOption(opt => opt.setName('message').setDescription('알림 내용').setRequired(true)),
+      .setDescription(t('cmd.alert.desc'))
+      .addStringOption(opt => opt.setName('message').setDescription(t('cmd.alert.opt.message')).setRequired(true)),
     new SlashCommandBuilder()
       .setName('status')
-      .setDescription('봇 상태 대시보드 (WebSocket, rate limit, uptime)'),
+      .setDescription(t('cmd.status.desc')),
     new SlashCommandBuilder()
       .setName('tasks')
-      .setDescription('오늘 크론 태스크 실행 현황'),
+      .setDescription(t('cmd.tasks.desc')),
     new SlashCommandBuilder()
       .setName('run')
-      .setDescription('크론 태스크 수동 실행')
+      .setDescription(t('cmd.run.desc'))
       .addStringOption(opt =>
-        opt.setName('id').setDescription('태스크 ID').setRequired(true).setAutocomplete(true)
+        opt.setName('id').setDescription(t('cmd.run.opt.id')).setRequired(true).setAutocomplete(true)
       ),
     new SlashCommandBuilder()
       .setName('schedule')
-      .setDescription('나중에 실행할 태스크 예약')
-      .addStringOption(opt => opt.setName('task').setDescription('실행할 내용').setRequired(true))
-      .addStringOption(opt => opt.setName('in').setDescription('지연 시간').setRequired(true)
+      .setDescription(t('cmd.schedule.desc'))
+      .addStringOption(opt => opt.setName('task').setDescription(t('cmd.schedule.opt.task')).setRequired(true))
+      .addStringOption(opt => opt.setName('in').setDescription(t('cmd.schedule.opt.in')).setRequired(true)
         .addChoices(
-          { name: '30분', value: '30m' }, { name: '1시간', value: '1h' }, { name: '2시간', value: '2h' },
-          { name: '4시간', value: '4h' }, { name: '8시간', value: '8h' },
+          { name: t('cmd.schedule.choice.30m'), value: '30m' },
+          { name: t('cmd.schedule.choice.1h'), value: '1h' },
+          { name: t('cmd.schedule.choice.2h'), value: '2h' },
+          { name: t('cmd.schedule.choice.4h'), value: '4h' },
+          { name: t('cmd.schedule.choice.8h'), value: '8h' },
         )),
     new SlashCommandBuilder()
       .setName('usage')
-      .setDescription('Claude Code API 사용량 조회'),
+      .setDescription(t('cmd.usage.desc')),
+    new SlashCommandBuilder()
+      .setName('lounge')
+      .setDescription(t('cmd.lounge.desc')),
   ];
 
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
@@ -137,6 +146,13 @@ client.once('clientReady', async () => {
   const guildId = process.env.GUILD_ID;
   if (guildId) {
     await registerSlashCommands(client.user.id, guildId);
+  }
+
+  // Init alert batcher — send batched alerts to first allowed channel
+  const firstChannelId = (process.env.CHANNEL_IDS || '').split(',')[0]?.trim();
+  if (firstChannelId) {
+    const alertCh = client.channels.cache.get(firstChannelId) || await client.channels.fetch(firstChannelId).catch(() => null);
+    if (alertCh) initAlertBatcher(alertCh);
   }
 
   // 10-minute heartbeat (shorter than bot-watchdog.sh 15-min threshold)
@@ -211,7 +227,7 @@ client.on('warn', (msg) => {
 
 client.on('shardDisconnect', (event, shardId) => {
   log('warn', 'Discord disconnected', { code: event.code, shardId });
-  sendNtfy(`${BOT_NAME} 연결 끊김`, `Shard ${shardId} disconnected (code: ${event.code})`, 'default').catch(() => {});
+  botAlerts.push({ title: `${BOT_NAME} 연결 끊김`, message: `Shard ${shardId} disconnected (code: ${event.code})`, level: 'default' });
 });
 
 client.on('shardReconnecting', (shardId) => {
@@ -224,7 +240,7 @@ client.on('shardResume', (shardId, replayedEvents) => {
 
 client.on('shardError', (err, shardId) => {
   log('error', `Shard ${shardId} error`, { error: err.message });
-  sendNtfy(`${BOT_NAME} Shard Error`, `Shard ${shardId}: ${err.message}`, 'high').catch(() => {});
+  botAlerts.push({ title: `${BOT_NAME} Shard Error`, message: `Shard ${shardId}: ${err.message}`, level: 'high' });
 });
 
 // ---------------------------------------------------------------------------
@@ -240,6 +256,7 @@ async function shutdown(signal) {
     entry.proc.kill('SIGTERM');
   }
   activeProcesses.clear();
+  await botAlerts.shutdown();
   sessions.save();
   client.destroy();
   log('info', 'Shutdown complete');

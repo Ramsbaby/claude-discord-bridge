@@ -286,6 +286,8 @@ export async function* createClaudeSession(prompt, {
     '- 추측은 "추측입니다"라고 명시. 모르면 솔직하게 인정.',
     '- 금지 표현: "알겠습니다!", "완료!", "설정 완료!", "제가 도와드리겠습니다" — 이런 챗봇 말투 절대 금지.',
     '- 작업 보고 시: 단순 "완료" 금지. 작업명 + 핵심 결과 한 줄 필수.',
+    '- 조사·분석 중 독백 금지: "확인해보자", "이상한 패턴이야", "살펴보겠다" 등 혼잣말 스타일 절대 금지. 모든 응답은 항상 정우님에게 직접 보고하는 형식으로.',
+    '- 중간 진단 과정은 숨기고 결론만 보고: 도구를 쓰는 동안 생각의 흐름을 그대로 스트리밍 금지. 결과가 나오면 "원인: ... / 조치: ..."처럼 요약 보고.',
     '- 톤 예시: 쉬운 작업 → "식은 죽 먹기였죠." / 어려운 작업 → "AI도 뿌듯할 수 있다는 걸 알았습니다." / 에러 → "흥미로운 상황이 발생했습니다."',
     '',
     '## Discord 포매팅 규칙',
@@ -310,6 +312,7 @@ export async function* createClaudeSession(prompt, {
     '- mcp__nexus__log_tail(name, lines): discord-bot/cron/watchdog/guardian/rag/e2e/health 로그를 이름만으로 읽기.',
     '- mcp__nexus__health(): LaunchAgent·프로세스·디스크·크론 상태를 단 1번 호출로 요약.',
     '- mcp__nexus__file_peek(path, pattern): 파일 전체 대신 패턴 주변만 추출.',
+    '- mcp__nexus__rag_search(query, limit): **Jarvis 장기 메모리 검색.** 오너 이전 대화·기록된 사실·설정을 BM25+벡터 하이브리드로 검색. "저번에", "기억해?", "내가 말했던" 등 과거 참조 시 반드시 먼저 호출. 개인 맥락이 필요한 모든 답변에서도 선제적으로 사용.',
     '',
     '[2순위] 코드 심볼 검색 (코드 질문 시)',
     '- mcp__serena__find_symbol: 함수/클래스 정의 찾기.',
@@ -377,7 +380,7 @@ export async function* createClaudeSession(prompt, {
     }
     if (channelPersona) ctxParts.push(`[채널 역할]\n${channelPersona.slice(0, 800)}`);
     if (usageSummary) ctxParts.push(usageSummary);
-    if (ragContext) ctxParts.push(`[관련 메모리]\n${ragContext}`);
+    // RAG는 mcp__nexus__rag_search 도구로 아젠틱하게 검색 (사전 주입 제거)
     if (attachments.length > 0) {
       const names = attachments.map((a) => `./${a.safeName}`).join(', ');
       ctxParts.push(`[첨부 파일: ${names} — Read 도구로 분석]`);
@@ -388,7 +391,7 @@ export async function* createClaudeSession(prompt, {
   } else {
     // New session: add context to system prompt
     if (usageSummary) systemParts.push('', usageSummary);
-    if (ragContext) systemParts.push('', '--- Long-term Memory (RAG) ---', ragContext);
+    // RAG는 mcp__nexus__rag_search 도구로 아젠틱하게 검색 (사전 주입 제거)
     if (attachments.length > 0) {
       const names = attachments.map((a) => `./${a.safeName}`).join(', ');
       systemParts.push('', `--- 첨부 이미지 ---\n사용자가 이미지를 첨부했습니다: ${names}\nRead 도구로 파일을 열어 분석하세요.`);
@@ -413,10 +416,12 @@ export async function* createClaudeSession(prompt, {
 
   const queryOptions = {
     cwd: stableDir,
+    pathToClaudeCodeExecutable: process.env.CLAUDE_BINARY || '/Users/ramsbaby/.local/bin/claude',
     allowedTools: [
       'Bash', 'Read', 'Glob', 'Grep', 'WebSearch', 'Agent',
       'mcp__nexus__exec', 'mcp__nexus__scan', 'mcp__nexus__cache_exec',
       'mcp__nexus__log_tail', 'mcp__nexus__health', 'mcp__nexus__file_peek',
+      'mcp__nexus__rag_search',
       'mcp__serena__find_symbol', 'mcp__serena__get_symbols_overview',
       'mcp__serena__search_for_pattern', 'mcp__serena__find_referencing_symbols',
       'mcp__serena__read_memory', 'mcp__serena__find_file',
@@ -456,6 +461,7 @@ export async function* createClaudeSession(prompt, {
           session_id: msg.session_id ?? null,
           is_error: false,
           cost_usd: msg.cost_usd ?? null,
+          stop_reason: msg.stop_reason ?? null,
         };
       } else if (msg.type === 'assistant' || msg.type === 'content_block_delta') {
         // Pass through unchanged — handlers.js already handles both types

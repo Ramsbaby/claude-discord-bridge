@@ -208,6 +208,65 @@ if (( stale_killed > 0 )); then
     log "Cleaned $stale_killed stale claude -p process(es)"
 fi
 
+# --- Zombie Claude Code agent cleanup (team agents that outlive their session) ---
+cleanup_zombie_agents() {
+    local killed=0
+    local now
+    now=$(date +%s)
+    while IFS= read -r line; do
+        local pid elapsed_min
+        pid=$(echo "$line" | awk '{print $1}')
+        elapsed_min=$(echo "$line" | awk '{print $2}')
+        # Agents running > 30 minutes are likely zombies
+        if (( elapsed_min >= 30 )); then
+            log "Killing zombie agent pid=$pid (age=${elapsed_min}m)"
+            graceful_kill "$pid"
+            killed=$(( killed + 1 ))
+        fi
+    done < <(pgrep -f "claude.*agent" 2>/dev/null | while read -r p; do
+        # Skip the discord-bot.js process itself
+        local cmdline
+        cmdline=$(ps -o args= -p "$p" 2>/dev/null || true)
+        if [[ "$cmdline" == *"discord-bot"* ]]; then continue; fi
+        local raw_etime elapsed_min
+        raw_etime=$(ps -o etime= -p "$p" 2>/dev/null | tr -d ' ')
+        if [[ -n "$raw_etime" ]]; then
+            elapsed_min=$(echo "$raw_etime" | awk -F'[-:]' '{
+                n = NF
+                if (n == 4) print ($1*1440 + $2*60 + $3 + $4/60)
+                else if (n == 3) print ($1*60 + $2 + $3/60)
+                else if (n == 2) print ($1 + $2/60)
+                else print 0
+            }' | awk '{printf "%d", $1}')
+            echo "$p $elapsed_min"
+        fi
+    done)
+    if (( killed > 0 )); then
+        log "Cleaned $killed zombie agent process(es)"
+    fi
+}
+cleanup_zombie_agents
+
+# Reconcile claude-global.count with actual lock slots (prevent counter drift)
+_reconcile_global_count() {
+    local lock_dir="/tmp/claude-discord-locks"
+    local count_file="$BOT_HOME/state/claude-global.count"
+    local actual_slots=0
+    if [[ -d "$lock_dir" ]]; then
+        actual_slots=$(ls -d "${lock_dir}/slot-"* 2>/dev/null | wc -l | tr -d ' ')
+    fi
+    local file_count=0
+    if [[ -f "$count_file" ]]; then
+        file_count=$(cat "$count_file" 2>/dev/null || echo "0")
+        if ! [[ "$file_count" =~ ^[0-9]+$ ]]; then file_count=0; fi
+    fi
+    if [[ "$file_count" -ne "$actual_slots" ]]; then
+        echo "$actual_slots" > "$count_file"
+        log "Counter reconciled: $file_count → $actual_slots"
+    fi
+}
+_reconcile_global_count
+
 bot_status=$(check_discord_bot)
 crash_count=$(get_crash_count)
 memory_mb=0

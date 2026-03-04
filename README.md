@@ -186,6 +186,7 @@ See [discord/SETUP.md](discord/SETUP.md) for the full step-by-step setup.
 
 ```env
 BOT_NAME=MyBot                       # Name shown in Discord messages
+BOT_LOCALE=ko                        # Bot language: 'ko' (default) or 'en'
 DISCORD_TOKEN=your_bot_token
 GUILD_ID=your_server_id
 CHANNEL_IDS=channel_id_1,channel_id_2
@@ -335,7 +336,11 @@ The RAG engine runs an incremental index hourly. When you ask a question, releva
 ~/claude-discord-bridge/
 ├── discord/
 │   ├── discord-bot.js          # Discord client, slash commands
+│   ├── locales/
+│   │   ├── en.json             # English locale strings
+│   │   └── ko.json             # Korean locale strings (default)
 │   └── lib/
+│       ├── i18n.js             # t() — locale loader (BOT_LOCALE)
 │       ├── handlers.js         # handleMessage — core message logic
 │       ├── claude-runner.js    # spawnClaude(), RAG injection, history
 │       └── session.js          # SessionStore, RateTracker, Semaphore

@@ -12,12 +12,12 @@ UID_NUM=$(id -u)
 
 # KeepAlive services: must always have a running PID
 KEEPALIVE_SERVICES=(
-    "ai.discord-bot"
+    "ai.jarvis.discord-bot"
 )
 
 # StartInterval services: run periodically, PID=- between runs is normal
 INTERVAL_SERVICES=(
-    "ai.discord-watchdog"
+    "ai.jarvis.watchdog"
 )
 
 PLIST_DIR="$HOME/Library/LaunchAgents"

@@ -4,15 +4,18 @@
  * Exports: SessionStore, RateTracker, Semaphore, StreamingMessage
  */
 
-import { readFileSync, writeFileSync, mkdirSync, rmdirSync, unlinkSync, renameSync, statSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, rmdirSync, unlinkSync, renameSync, statSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import {
   ActionRowBuilder,
+  AttachmentBuilder,
   ButtonBuilder,
   ButtonStyle,
 } from 'discord.js';
 import { log } from './claude-runner.js';
+import { t } from './i18n.js';
+import { formatForDiscord } from './format-pipeline.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -28,6 +31,15 @@ const MAX_GLOBAL_CONCURRENT = 4;
 const BOT_HOME = process.env.BOT_HOME || join(homedir(), '.jarvis');
 const GLOBAL_COUNT_FILE = join(BOT_HOME, 'state', 'claude-global.count');
 const GLOBAL_LOCK_FILE = join(BOT_HOME, 'state', 'claude-global.lock');
+const CODE_FILE_MIN_LINES = 30;
+const LANG_EXT = {
+  javascript: 'js', typescript: 'ts', python: 'py', py: 'py',
+  bash: 'sh', shell: 'sh', sh: 'sh', zsh: 'sh',
+  json: 'json', yaml: 'yml', yml: 'yml',
+  html: 'html', css: 'css', sql: 'sql',
+  rust: 'rs', go: 'go', java: 'java',
+  cpp: 'cpp', c: 'c', ruby: 'rb',
+};
 
 // ---------------------------------------------------------------------------
 // SessionStore
@@ -230,6 +242,30 @@ export class Semaphore {
     try {
       mkdirSync(join(BOT_HOME, 'state'), { recursive: true });
     } catch { /* already exists */ }
+
+    // Reconcile counter file with actual lock slots on startup
+    // Prevents stale counts from accumulating across restarts
+    this._reconcileCounter();
+  }
+
+  /** Reset counter file to match actual lock slot directories (ground truth). */
+  _reconcileCounter() {
+    if (_acquireFileLock()) {
+      try {
+        let actualSlots = 0;
+        const lockDir = '/tmp/claude-discord-locks';
+        try {
+          const entries = readdirSync(lockDir);
+          actualSlots = entries.filter(e => e.startsWith('slot-')).length;
+        } catch { /* dir missing = 0 slots */ }
+        const fileCount = _readGlobalCount();
+        if (fileCount !== actualSlots) {
+          _writeGlobalCount(actualSlots);
+        }
+      } finally {
+        _releaseFileLock();
+      }
+    }
   }
 
   acquire() {
@@ -280,10 +316,11 @@ export class Semaphore {
 // ---------------------------------------------------------------------------
 
 export class StreamingMessage {
-  constructor(channel, replyTo = null, sessionKey = null) {
+  constructor(channel, replyTo = null, sessionKey = null, channelId = null) {
     this.channel = channel;
     this.replyTo = replyTo;
     this.sessionKey = sessionKey;
+    this.channelId = channelId;
     this.buffer = '';
     this.currentMessage = null;
     this.sentLength = 0;
@@ -299,7 +336,7 @@ export class StreamingMessage {
     return new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId(`cancel_${this.sessionKey}`)
-        .setLabel('🛑 Stop')
+        .setLabel(t('stream.stop'))
         .setStyle(ButtonStyle.Danger)
     );
   }
@@ -309,7 +346,7 @@ export class StreamingMessage {
     if (this.currentMessage) return;
     const row = this._stopRow();
     const payload = {
-      content: '`⏳` 분석 중...',
+      content: t('stream.thinking'),
       components: row ? [row] : [],
     };
     try {
@@ -357,10 +394,15 @@ export class StreamingMessage {
       let chunk = this.buffer.slice(0, splitAt);
       this.buffer = this.buffer.slice(splitAt);
 
-      const openInChunk = (chunk.match(/```/g) || []).length % 2 === 1;
+      // fenceOpen: 이전 청크에서 이미 열린 펜스가 있는지 포함해서 계산
+      const fencesInChunk = (chunk.match(/```/g) || []).length;
+      const openInChunk = ((this.fenceOpen ? 1 : 0) + fencesInChunk) % 2 === 1;
       if (openInChunk) {
         chunk += '\n```';
         this.buffer = '```\n' + this.buffer;
+        this.fenceOpen = true;  // 버퍼는 다시 펜스 안에서 시작
+      } else {
+        this.fenceOpen = false; // 이 청크 끝에서 펜스 닫힘
       }
 
       await this._sendOrEdit(chunk, true);
@@ -375,28 +417,14 @@ export class StreamingMessage {
 
   _findSplitPoint(text, maxLen) {
     const candidate = text.lastIndexOf('\n', maxLen);
-    if (candidate > maxLen * 0.6) {
-      // Don't split inside a markdown table — find the end of the table block
-      const afterSplit = text.slice(candidate + 1).trimStart();
-      const inTable = text.slice(0, candidate).split('\n').slice(-3).some(l => l.trimStart().startsWith('|'));
-      if (inTable && afterSplit.startsWith('|')) {
-        // We're mid-table: backtrack to before the table begins
-        const lines = text.slice(0, candidate).split('\n');
-        let i = lines.length - 1;
-        while (i >= 0 && lines[i].trimStart().startsWith('|')) i--;
-        if (i >= 0) {
-          const safePoint = lines.slice(0, i + 1).join('\n').length;
-          if (safePoint > maxLen * 0.4) return safePoint + 1;
-        }
-      }
-      return candidate + 1;
-    }
+    if (candidate > maxLen * 0.6) return candidate + 1;
     const lastSpace = text.lastIndexOf(' ', maxLen);
     if (lastSpace > maxLen * 0.6) return lastSpace + 1;
     return maxLen;
   }
 
   async _sendOrEdit(content, isFinal) {
+    content = formatForDiscord(content, { channelId: this.channelId });
     const displayContent = (!this.finalized && !isFinal) ? content + ' ▌' : content;
     const row = this._stopRow();
     const components = (this.finalized || isFinal) ? [] : (row ? [row] : []);
@@ -439,6 +467,34 @@ export class StreamingMessage {
       try {
         await this.currentMessage.edit({ components: [] });
       } catch { /* ignore */ }
+    }
+    await this._extractCodeBlockFiles();
+  }
+
+  /** Post-finalize: extract long code blocks (30+ lines) as file attachments. */
+  async _extractCodeBlockFiles() {
+    if (!this.currentMessage) return;
+    const content = this.currentMessage.content || '';
+    const files = [];
+    let idx = 0;
+
+    const newContent = content.replace(/```(\w*)\n([\s\S]+?)```/g, (match, lang, code) => {
+      const lines = code.split('\n');
+      if (lines.length < CODE_FILE_MIN_LINES) return match;
+      idx++;
+      const ext = LANG_EXT[lang] || lang || 'txt';
+      const filename = `code-${idx}.${ext}`;
+      files.push(new AttachmentBuilder(Buffer.from(code, 'utf-8'), { name: filename }));
+      return `\u{1F4CE} \`${filename}\` (${lines.length} lines)`;
+    });
+
+    if (files.length === 0) return;
+
+    try {
+      await this.currentMessage.edit({ content: newContent, components: [] });
+      await this.channel.send({ files });
+    } catch (err) {
+      log('error', 'Code block file extraction failed', { error: err.message });
     }
   }
 }

@@ -12,11 +12,11 @@ import { log, sendNtfy } from './claude-runner.js';
 import { StreamingMessage } from './session.js';
 import {
   createClaudeSession,
-  execRagAsync,
   saveConversationTurn,
   processFeedback,
 } from './claude-runner.js';
 import { userMemory } from './user-memory.js';
+import { t } from './i18n.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -78,7 +78,7 @@ export async function handleMessage(message, { sessions, rateTracker, semaphore,
   if (!message.content && !hasImages) return;
   if (message.content.length > INPUT_MAX_CHARS) {
     await message.reply(
-      `Message too long (${message.content.length} chars). Maximum is ${INPUT_MAX_CHARS}.`,
+      t('msg.tooLong', { length: message.content.length, max: INPUT_MAX_CHARS }),
     );
     return;
   }
@@ -89,7 +89,7 @@ export async function handleMessage(message, { sessions, rateTracker, semaphore,
     const fact = rememberMatch[1].trim();
     if (fact) {
       userMemory.addFact(message.author.id, fact);
-      await message.reply('기억했습니다 🧠');
+      await message.reply(t('msg.remembered'));
       log('info', 'User memory saved via text command', { userId: message.author.id, fact: fact.slice(0, 100) });
     }
     return;
@@ -98,17 +98,17 @@ export async function handleMessage(message, { sessions, rateTracker, semaphore,
   // Rate limit check
   const rate = rateTracker.check();
   if (rate.reject) {
-    await message.reply('Rate limit approaching (90%). Please wait before sending more requests.');
+    await message.reply(t('rate.reject'));
     return;
   }
   if (rate.warn) {
     await message.channel.send(
-      `Warning: ${rate.count}/${rate.max} requests used in the last 5h (${Math.round(rate.pct * 100)}%).`,
+      t('rate.warn', { count: rate.count, max: rate.max, pct: Math.round(rate.pct * 100) }),
     );
   }
 
   if (!semaphore.acquire()) {
-    await message.reply(`${process.env.BOT_NAME || 'Claude Bot'} is busy (${semaphore.max} concurrent requests). Please wait.`);
+    await message.reply(t('msg.busy', { botName: process.env.BOT_NAME || 'Claude Bot', max: semaphore.max }));
     return;
   }
 
@@ -190,32 +190,22 @@ export async function handleMessage(message, { sessions, rateTracker, semaphore,
       }
     }
     if (!userPrompt.trim() && imageAttachments.length > 0) {
-      userPrompt = '이 이미지를 분석해줘.';
+      userPrompt = t('msg.analyzeImage');
     }
 
-    const streamer = new StreamingMessage(thread, message, sessionKey);
+    const effectiveChannelId = isThread ? message.channel.parentId : message.channel.id;
+    const streamer = new StreamingMessage(thread, message, sessionKey, effectiveChannelId);
     await streamer.sendPlaceholder();
 
-    // RAG context search
-    let ragContext = '';
-    try {
-      ragContext = await Promise.race([
-        execRagAsync(userPrompt),
-        new Promise(r => setTimeout(() => r(''), 8000)),
-      ]);
-    } catch (ragErr) {
-      log('warn', 'RAG search failed', { error: ragErr.message?.slice(0, 200) });
-    }
+    // RAG는 mcp__nexus__rag_search 도구로 아젠틱하게 검색 (사전 주입 제거)
+    // Claude가 대화 중 필요할 때 직접 rag_search를 호출한다.
 
     async function runClaude(sid, streamer) {
       log('info', 'Starting Claude session', {
         threadId: thread.id,
         resume: !!sid,
         promptLen: userPrompt.length,
-        ragChars: ragContext.length,
       });
-
-      const effectiveChannelId = isThread ? message.channel.parentId : message.channel.id;
 
       const LARGE_KEYWORDS = /코드|분석|파일|구조|함수|클래스|디버그|확인|리뷰|왜|어떻게|explain|debug|analyze|review/i;
       const contextBudget = userPrompt.length > 200 || LARGE_KEYWORDS.test(userPrompt) ? 'large' : 'medium';
@@ -265,7 +255,6 @@ export async function handleMessage(message, { sessions, rateTracker, semaphore,
         sessionId: sid,
         threadId: thread.id,
         channelId: effectiveChannelId,
-        ragContext,
         attachments: imageAttachments,
         userId: message.author.id,
         contextBudget,
@@ -329,6 +318,12 @@ export async function handleMessage(message, { sessions, rateTracker, semaphore,
             streamer.append(event.result);
           }
 
+          // Detect max-turns truncation
+          if (event.stop_reason === 'max_turns') {
+            streamer.append('\n\n' + t('msg.truncated'));
+            log('warn', 'Response truncated by max-turns', { threadId: thread.id, toolCount });
+          }
+
           await streamer.finalize();
 
           const cost = event.cost_usd ?? null;
@@ -364,7 +359,13 @@ export async function handleMessage(message, { sessions, rateTracker, semaphore,
       timeoutHandle = null;
       activeProcesses.delete(sessionKey);
 
-      if (!streamer.finalized && !retryNeeded) await streamer.finalize();
+      // Loop ended without result event — likely max-turns or abort
+      if (!streamer.finalized && !retryNeeded) {
+        if (streamer.hasRealContent && toolCount > 0) {
+          streamer.append('\n\n' + t('msg.truncated'));
+        }
+        await streamer.finalize();
+      }
 
       return { retryNeeded, lastAssistantText };
     }
@@ -377,6 +378,9 @@ export async function handleMessage(message, { sessions, rateTracker, semaphore,
       log('info', 'Retrying Claude with fresh session', { threadId: thread.id });
       sessionId = null;
       streamer.finalized = false;
+      streamer.buffer = '';
+      streamer.sentLength = 0;
+      streamer.hasRealContent = false;
       streamer.replyTo = message;
       runResult = await runClaude(null, streamer);
     }
@@ -387,8 +391,8 @@ export async function handleMessage(message, { sessions, rateTracker, semaphore,
       await react(EMOJI.ERROR);
       const embed = new EmbedBuilder()
         .setColor(0xed4245)
-        .setTitle('오류')
-        .setDescription('응답을 받지 못했습니다. 잠시 후 다시 시도해 주세요.')
+        .setTitle(t('error.title'))
+        .setDescription(t('error.noResponse'))
         .setTimestamp();
       if (streamer.currentMessage) {
         await streamer.currentMessage.edit({ content: null, embeds: [embed], components: [] });
@@ -405,7 +409,7 @@ export async function handleMessage(message, { sessions, rateTracker, semaphore,
     const target = thread || message.channel;
     const embed = new EmbedBuilder()
       .setColor(0xed4245)
-      .setTitle('Error')
+      .setTitle(t('error.generic'))
       .setDescription(err.message?.slice(0, 500) || 'Unknown error')
       .setTimestamp();
     try {
