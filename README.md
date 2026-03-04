@@ -232,13 +232,19 @@ Discord message
       ▼
 discord-bot.js ──► lib/handlers.js ──► lib/claude-runner.js
                          │                      │
-                         │               spawnClaude()
-                         │               claude -p --stream-json
+                         │              createClaudeSession()
+                         │              @anthropic-ai/claude-agent-sdk
                          │                      │
-                  StreamingMessage        parseStreamEvents()
+                  StreamingMessage         async event stream
                   (live edits,                  │
-                  2000-char chunks)      RAG context injection
+                  1900-char chunks)      RAG via MCP tool call
                          │              (LanceDB hybrid search)
+                         ▼
+                  formatForDiscord()
+                  (format-pipeline.js)
+                  tables→lists, heading normalize,
+                  link preview suppress, timestamps
+                         │
                          ▼
                   Discord thread reply
                          │
@@ -342,8 +348,10 @@ The RAG engine runs an incremental index hourly. When you ask a question, releva
 │   └── lib/
 │       ├── i18n.js             # t() — locale loader (BOT_LOCALE)
 │       ├── handlers.js         # handleMessage — core message logic
-│       ├── claude-runner.js    # spawnClaude(), RAG injection, history
-│       └── session.js          # SessionStore, RateTracker, Semaphore
+│       ├── claude-runner.js    # createClaudeSession() via Agent SDK
+│       ├── format-pipeline.js  # formatForDiscord() — 8 output transforms
+│       ├── session.js          # SessionStore, RateTracker, Semaphore
+│       └── user-memory.js      # Per-user persistent memory (/remember)
 ├── bin/
 │   ├── ask-claude.sh           # claude -p wrapper (RAG + token isolation)
 │   ├── bot-cron.sh             # Cron task runner (semaphore, retry, routing)

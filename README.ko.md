@@ -229,13 +229,19 @@ Discord 메시지
       ▼
 discord-bot.js ──► lib/handlers.js ──► lib/claude-runner.js
                          │                      │
-                         │               spawnClaude()
-                         │               claude -p --stream-json
+                         │              createClaudeSession()
+                         │              @anthropic-ai/claude-agent-sdk
                          │                      │
-                  StreamingMessage        parseStreamEvents()
+                  StreamingMessage         async 이벤트 스트림
                   (실시간 편집,                  │
-                  2000자 청킹)           RAG 컨텍스트 주입
+                  1900자 청킹)           RAG: MCP 툴 호출로 검색
                          │              (LanceDB 하이브리드 검색)
+                         ▼
+                  formatForDiscord()
+                  (format-pipeline.js)
+                  테이블→리스트, 헤딩 정규화,
+                  링크 미리보기 억제, 타임스탬프 변환
+                         │
                          ▼
                   Discord 스레드 답변
                          │
@@ -339,8 +345,10 @@ RAG 엔진은 매시간 증분 인덱싱. 질문 시 관련 컨텍스트를 `cla
 │   └── lib/
 │       ├── i18n.js             # t() — 로케일 로더 (BOT_LOCALE)
 │       ├── handlers.js         # handleMessage — 핵심 메시지 로직
-│       ├── claude-runner.js    # spawnClaude(), RAG 주입, 대화 이력
-│       └── session.js          # SessionStore, RateTracker, Semaphore
+│       ├── claude-runner.js    # createClaudeSession() Agent SDK 기반
+│       ├── format-pipeline.js  # formatForDiscord() — 8개 출력 변환
+│       ├── session.js          # SessionStore, RateTracker, Semaphore
+│       └── user-memory.js      # 유저별 영구 메모리 (/remember)
 ├── bin/
 │   ├── ask-claude.sh           # claude -p 래퍼 (RAG + 토큰 격리)
 │   ├── bot-cron.sh             # 크론 태스크 러너 (세마포어, 재시도, 라우팅)
