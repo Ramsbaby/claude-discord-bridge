@@ -21,3 +21,4 @@ services:
       - ./config:/app/config:ro
     environment:
       - NODE_ENV=production
+      - BOT_HOME=/app

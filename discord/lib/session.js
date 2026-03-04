@@ -4,7 +4,7 @@
  * Exports: SessionStore, RateTracker, Semaphore, StreamingMessage
  */
 
-import { readFileSync, writeFileSync, mkdirSync, rmdirSync, unlinkSync, renameSync, statSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, rmdirSync, unlinkSync, renameSync, statSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import {
@@ -20,7 +20,7 @@ import { log } from './claude-runner.js';
 
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12h
 const STREAM_EDIT_INTERVAL_MS = 1500;
-const STREAM_MAX_CHARS = 1900;
+const STREAM_MAX_CHARS = 1880;
 const RATE_WINDOW_HOURS = 5;
 const RATE_MAX_REQUESTS = 900;
 const PERSIST_DEBOUNCE_MS = 150;
@@ -130,7 +130,20 @@ export class RateTracker {
   }
 
   save() {
-    writeFileSync(this.filePath, JSON.stringify(this.requests));
+    if (this._saveTimer) return;
+    this._saveTimer = setTimeout(() => {
+      this._saveTimer = null;
+      try {
+        writeFileSync(this.filePath, JSON.stringify(this.requests));
+      } catch { /* ignore */ }
+    }, 1000);
+  }
+
+  saveSync() {
+    if (this._saveTimer) { clearTimeout(this._saveTimer); this._saveTimer = null; }
+    try {
+      writeFileSync(this.filePath, JSON.stringify(this.requests));
+    } catch { /* ignore */ }
   }
 
   prune() {
@@ -189,28 +202,23 @@ function _writeGlobalCount(n) {
  * Acquire exclusive lock via mkdir (atomic on all POSIX, compatible with bash side).
  * Stale locks older than 30s are cleaned automatically.
  */
-function _acquireFileLock(maxWaitMs = 3000) {
-  const start = Date.now();
-  while (Date.now() - start < maxWaitMs) {
+async function _acquireFileLock(maxWaitMs = 3000) {
+  const deadline = Date.now() + maxWaitMs;
+  while (Date.now() < deadline) {
     try {
       mkdirSync(GLOBAL_LOCK_FILE);
       return true;
     } catch (err) {
-      if (err.code === 'EEXIST') {
-        // Check for stale lock (> 30s old)
-        try {
-          const st = statSync(GLOBAL_LOCK_FILE);
-          if (Date.now() - st.mtimeMs > 30000) {
-            try { rmdirSync(GLOBAL_LOCK_FILE); } catch { /* race ok */ }
-          }
-        } catch { /* stat failed, lock may have been released */ }
-        // Busy-wait briefly
-        const wait = 5 + Math.floor(Math.random() * 10);
-        const deadline = Date.now() + wait;
-        while (Date.now() < deadline) { /* spin */ }
-        continue;
-      }
-      return false;
+      if (err.code !== 'EEXIST') return false;
+      // Check for stale lock (older than 30s)
+      try {
+        const lockStat = statSync(GLOBAL_LOCK_FILE);
+        if (Date.now() - lockStat.mtimeMs > 30000) {
+          rmSync(GLOBAL_LOCK_FILE, { recursive: true, force: true });
+          continue;
+        }
+      } catch { /* lock disappeared, retry */ continue; }
+      await new Promise(resolve => setTimeout(resolve, 50));
     }
   }
   return false;
@@ -232,12 +240,12 @@ export class Semaphore {
     } catch { /* already exists */ }
   }
 
-  acquire() {
+  async acquire() {
     // Check local limit
     if (this.current >= this.max) return false;
 
     // Check global cross-process limit
-    if (_acquireFileLock()) {
+    if (await _acquireFileLock()) {
       try {
         const globalCount = _readGlobalCount();
         if (globalCount >= MAX_GLOBAL_CONCURRENT) {

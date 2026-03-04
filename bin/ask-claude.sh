@@ -41,15 +41,17 @@ CAFFEINATE_PID=""
 
 # --- Logging helper ---
 log_jsonl() {
-    local status="$1" message="${2//\"/\'}" duration="${3:-0}" extra="${4:-}"
-    local base
-    base=$(printf '{"ts":"%s","task":"%s","status":"%s","msg":"%s","duration_s":%s,"pid":%d' \
-        "$(date -u +%FT%TZ)" "$TASK_ID" "$status" "$message" "$duration" "$$")
-    if [[ -n "$extra" ]]; then
-        printf '%s,%s}\n' "$base" "$extra" >> "$LOG_FILE"
-    else
-        printf '%s}\n' "$base" >> "$LOG_FILE"
-    fi
+    local status="$1" message="$2" duration="${3:-0}" extra="${4:-}"
+    local json
+    json=$(jq -nc \
+        --arg ts "$(date -u +%FT%TZ)" \
+        --arg task "$TASK_ID" \
+        --arg status "$status" \
+        --arg msg "$message" \
+        --argjson dur "$duration" \
+        --argjson pid "$$" \
+        '{ts:$ts, task:$task, status:$status, msg:$msg, duration_s:$dur, pid:$pid}')
+    echo "$json" >> "$LOG_FILE"
 }
 
 # --- Cleanup trap ---
@@ -64,7 +66,7 @@ trap cleanup EXIT
 
 # --- Setup ---
 mkdir -p "$WORK_DIR" "$RESULTS_DIR" "$(dirname "$LOG_FILE")" "$(dirname "$PID_FILE")"
-echo $$ > "$PID_FILE"
+echo "$$" > "$PID_FILE"
 
 # Layer 2: Git boundary - prevents claude from traversing to parent repos
 mkdir -p "$WORK_DIR/.git"
@@ -75,7 +77,7 @@ mkdir -p "$WORK_DIR/.empty-plugins"
 
 # Sleep prevention: macOS only (caffeinate); Linux skips gracefully
 if command -v caffeinate >/dev/null 2>&1; then
-    caffeinate -i -w $$ &
+    caffeinate -i -w "$$" &
     CAFFEINATE_PID=$!
 fi
 
@@ -265,7 +267,7 @@ update_rate_tracker() {
     # Use node if available (avoids python3 dependency)
     if command -v node >/dev/null 2>&1; then
         node -e "
-const fs = require('fs'), path = '${path}';
+const fs = require('fs'), path = process.argv[1];
 const cutoff = ${cutoff}, now = ${now_ms};
 let data = [];
 try { data = JSON.parse(fs.readFileSync(path, 'utf8')); } catch {}
@@ -273,11 +275,11 @@ if (!Array.isArray(data)) data = [];
 data = data.filter(t => t > cutoff);
 data.push(now);
 fs.writeFileSync(path, JSON.stringify(data));
-" 2>/dev/null || true
+" -- "$path" 2>/dev/null || true
     elif command -v python3 >/dev/null 2>&1; then
         python3 -c "
-import json, time, os
-path = '${path}'
+import json, sys, os
+path = sys.argv[1]
 cutoff = ${cutoff}
 now_ms = ${now_ms}
 os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -292,7 +294,7 @@ try:
 except (FileNotFoundError, json.JSONDecodeError):
     with open(path, 'w') as f:
         json.dump([now_ms], f)
-" 2>/dev/null || true
+" "$path" 2>/dev/null || true
     fi
 }
 update_rate_tracker "$RATE_TRACKER"

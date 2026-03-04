@@ -107,14 +107,16 @@ function loadUserProfile() {
 // ---------------------------------------------------------------------------
 
 export async function execRagAsync(query) {
-  const { execFileSync } = await import('node:child_process');
+  const { execFile } = await import('node:child_process');
+  const { promisify } = await import('node:util');
+  const execFileAsync = promisify(execFile);
   try {
-    const result = execFileSync(
+    const { stdout } = await execFileAsync(
       process.execPath,
       [join(BOT_HOME, 'lib', 'rag-query.mjs'), query],
       { timeout: 7000, encoding: 'utf-8', maxBuffer: 1024 * 200 },
     );
-    return result || '';
+    return stdout || '';
   } catch {
     // Fallback: raw memory.md (first 1500 chars)
     try {

@@ -24,8 +24,8 @@ COOLDOWN_FILE="$STATE_DIR/bot-watchdog-last-alert"
 SILENCE_THRESHOLD_SEC=900   # 15 minutes
 ALERT_COOLDOWN_SEC=900      # 15 minutes between alerts
 
-NTFY_TOPIC="${NTFY_TOPIC:-$(python3 -c "import json; d=json.load(open('$BOT_HOME/config/monitoring.json')); print(d.get('ntfy',{}).get('topic',''))" 2>/dev/null || true)}"
-NTFY_SERVER="${NTFY_SERVER:-$(python3 -c "import json; d=json.load(open('$BOT_HOME/config/monitoring.json')); print(d.get('ntfy',{}).get('server','https://ntfy.sh'))" 2>/dev/null || echo "https://ntfy.sh")}"
+NTFY_TOPIC="${NTFY_TOPIC:-$(jq -r '.ntfy.topic // ""' "$MONITORING_CONFIG" 2>/dev/null || true)}"
+NTFY_SERVER="${NTFY_SERVER:-$(jq -r '.ntfy.server // "https://ntfy.sh"' "$MONITORING_CONFIG" 2>/dev/null || echo "https://ntfy.sh")}"
 
 mkdir -p "$STATE_DIR" "$(dirname "$WATCHDOG_LOG")"
 
@@ -47,7 +47,7 @@ send_discord_webhook() {
     local message="$1"
     local webhook_url=""
     if [[ -f "$MONITORING_CONFIG" ]]; then
-        webhook_url=$(python3 -c "import json,sys; d=json.load(open('$MONITORING_CONFIG')); print(d.get('webhook',{}).get('url',''))" 2>/dev/null || true)
+        webhook_url=$(jq -r '.webhook.url // ""' "$MONITORING_CONFIG" 2>/dev/null || true)
     fi
     if [[ -n "$webhook_url" ]]; then
         local payload
@@ -70,7 +70,8 @@ is_in_alert_cooldown() {
 # Cross-platform ISO timestamp to epoch
 parse_iso_epoch() {
     local ts="$1"
-    local ts_clean="${ts%%.*}Z"
+    local ts_noz="${ts%Z}"
+    local ts_clean="${ts_noz%%.*}Z"
     local epoch=0
     # macOS BSD date
     if epoch=$(date -j -u -f "%Y-%m-%dT%H:%M:%SZ" "$ts_clean" "+%s" 2>/dev/null); then
@@ -105,6 +106,7 @@ restart_bot() {
         fi
     else
         log "ERROR: No service manager found (launchctl/systemctl)"
+        return 1
     fi
 }
 
@@ -130,7 +132,7 @@ fi
 # --- Check if process is running ---
 bot_pid=""
 if command -v launchctl >/dev/null 2>&1; then
-    bot_pid=$(launchctl list 2>/dev/null | grep "$DISCORD_SERVICE" | awk '{print $1}' || true)
+    bot_pid=$(launchctl list 2>/dev/null | grep -F "$DISCORD_SERVICE" | awk '{print $1}' || true)
 elif command -v systemctl >/dev/null 2>&1; then
     bot_pid=$(systemctl --user show "${DISCORD_SERVICE}" --property=MainPID --value 2>/dev/null || true)
     [[ "$bot_pid" == "0" ]] && bot_pid="-"
@@ -145,7 +147,7 @@ if [[ "$bot_pid" == "-" || -z "$bot_pid" ]]; then
 fi
 
 # --- Parse last log timestamp ---
-last_line=$(tail -20 "$BOT_LOG" | grep -oE '^\[[-0-9T:.Z]+\]' | tail -1 || true)
+last_line=$(tail -100 "$BOT_LOG" | grep -oE '^\[[-0-9T:.Z]+\]' | tail -1 || true)
 
 if [[ -z "$last_line" ]]; then
     log "WARN: No timestamp found in recent log lines"

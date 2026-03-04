@@ -13,9 +13,9 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-info()  { printf "${GREEN}[INFO]${NC}  %s\n" "$1"; }
-warn()  { printf "${YELLOW}[WARN]${NC}  %s\n" "$1"; }
-error() { printf "${RED}[ERROR]${NC} %s\n" "$1" >&2; }
+info()  { printf "${GREEN}[INFO]${NC}  %s\n" "$*"; }
+warn()  { printf "${YELLOW}[WARN]${NC}  %s\n" "$*"; }
+error() { printf "${RED}[ERROR]${NC} %s\n" "$*" >&2; }
 
 # --- Dependency checks ---
 check_command() {
@@ -119,8 +119,8 @@ install_launchagent() {
 </plist>
 EOF
 
-    launchctl unload "$plist_path" 2>/dev/null || true
-    launchctl load "$plist_path"
+    launchctl bootout "gui/$(id -u)/${service_name}" 2>/dev/null || true
+    launchctl bootstrap "gui/$(id -u)" "$plist_path"
     info "LaunchAgent installed: ${service_name}"
     info "  Start:   launchctl start ${service_name}"
     info "  Stop:    launchctl stop ${service_name}"
@@ -144,7 +144,7 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=${BOT_HOME}/discord
-ExecStart=${node_bin} ${BOT_HOME}/discord/discord-bot.js
+ExecStart="${node_bin}" "${BOT_HOME}/discord/discord-bot.js"
 Restart=always
 RestartSec=10
 Environment=BOT_HOME=${BOT_HOME}
@@ -180,14 +180,14 @@ install_cron() {
     current_cron=$(crontab -l 2>/dev/null || true)
 
     local new_cron="$current_cron"
-    if ! echo "$current_cron" | grep -q "bot-watchdog.sh"; then
+    if ! echo "$current_cron" | grep -qF "${BOT_HOME}/bin/bot-watchdog.sh"; then
         new_cron="${new_cron}
 ${watchdog_entry}"
         info "Added bot-watchdog.sh to cron (every 5 min)"
     else
         info "bot-watchdog.sh already in cron — skipped"
     fi
-    if ! echo "$current_cron" | grep -q "launchd-guardian.sh"; then
+    if ! echo "$current_cron" | grep -qF "${BOT_HOME}/scripts/launchd-guardian.sh"; then
         new_cron="${new_cron}
 ${guardian_entry}"
         info "Added launchd-guardian.sh to cron (every 3 min)"
@@ -203,9 +203,13 @@ install_docker() {
     info "Installing Claude Discord Bridge (Docker mode)"
 
     check_command docker "https://docs.docker.com/get-docker/" || exit 1
-    check_command "docker compose" "Docker Desktop or docker-compose-plugin" || {
-        check_command docker-compose "https://docs.docker.com/compose/install/" || exit 1
-    }
+    # Check for docker compose (V2 subcommand or V1 standalone)
+    if ! docker compose version >/dev/null 2>&1; then
+        if ! command -v docker-compose >/dev/null 2>&1; then
+            error "docker compose is required. Install Docker Desktop or docker-compose-plugin."
+            exit 1
+        fi
+    fi
 
     local env_ok=true
     setup_env || env_ok=false
@@ -245,15 +249,15 @@ install_local() {
 
     info "Installing Node dependencies..."
     cd "${BOT_HOME}/discord"
-    npm install --production
+    npm install --omit=dev
 
     # node_modules symlinks so lib/ and bin/ scripts can resolve packages
     if [ ! -e "${BOT_HOME}/lib/node_modules" ]; then
-        ln -s ../discord/node_modules "${BOT_HOME}/lib/node_modules"
+        ln -s "${BOT_HOME}/discord/node_modules" "${BOT_HOME}/lib/node_modules"
         info "Created lib/node_modules symlink"
     fi
     if [ ! -e "${BOT_HOME}/bin/node_modules" ]; then
-        ln -s ../discord/node_modules "${BOT_HOME}/bin/node_modules"
+        ln -s "${BOT_HOME}/discord/node_modules" "${BOT_HOME}/bin/node_modules"
         info "Created bin/node_modules symlink"
     fi
 

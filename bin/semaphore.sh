@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-set -euo pipefail
+# NOTE: This file is designed to be sourced. Caller should set -euo pipefail.
 
 # semaphore.sh - mkdir-based slot locking with cross-process global counter
 # Usage: source <BOT_HOME>/bin/semaphore.sh
 
 BOT_HOME="${BOT_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
-LOCK_DIR="/tmp/claude-discord-locks"
+LOCK_DIR="/tmp/claude-discord-locks-$(id -u)"
 MAX_SLOTS=2
 MAX_GLOBAL=4
 STALE_TIMEOUT=600  # 10 minutes
@@ -122,10 +122,9 @@ check_stale_locks() {
 
     # Reconcile: count must not exceed actual slot dirs.
     # Handles crash-without-release where slot dirs are gone but count is stale.
-    local active_slots
-    active_slots=$(ls -d "${LOCK_DIR}/slot-"* 2>/dev/null | wc -l | tr -d ' ')
     if _acquire_global_lock; then
-        local current_count
+        local active_slots current_count
+        active_slots=$(ls -d "${LOCK_DIR}/slot-"* 2>/dev/null | wc -l | tr -d ' ')
         current_count=$(_read_global_count)
         if [[ "$current_count" -gt "$active_slots" ]]; then
             echo "$active_slots" > "$GLOBAL_COUNT_FILE"

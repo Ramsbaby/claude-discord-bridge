@@ -14,7 +14,7 @@ WORKDIR /app
 
 # Install Node dependencies first (layer cache)
 COPY discord/package.json discord/package-lock.json ./discord/
-RUN cd discord && npm install --production
+RUN cd discord && npm install --omit=dev
 
 # Copy application code
 COPY bin/ ./bin/
@@ -23,7 +23,6 @@ COPY discord/discord-bot.js discord/.env.example discord/personas.json.example .
 COPY discord/lib/ ./discord/lib/
 COPY config/ ./config/
 COPY scripts/ ./scripts/
-COPY watchdog/ ./watchdog/
 
 # Fix lib/node_modules symlink for container paths
 RUN rm -f lib/node_modules && ln -s /app/discord/node_modules lib/node_modules
@@ -33,6 +32,7 @@ RUN mkdir -p /app/context /app/state/pids /app/logs /app/rag /app/results
 
 # Non-secret config defaults
 ENV NODE_ENV=production
+ENV BOT_HOME=/app
 ENV HOME=/root
 
 WORKDIR /app/discord

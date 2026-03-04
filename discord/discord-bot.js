@@ -246,10 +246,9 @@ process.on('uncaughtException', (err) => {
     error: err.message,
     stack: err.stack,
   });
-  try {
-    sendNtfy(`${BOT_NAME} uncaughtException`, err.message, 'urgent');
-  } catch { /* best effort */ }
-  process.exit(1);
+  sendNtfy(`${BOT_NAME} uncaughtException`, err.message, 'urgent')
+    .catch(() => {})
+    .finally(() => process.exit(1));
 });
 
 process.on('unhandledRejection', (reason) => {
@@ -262,7 +261,7 @@ process.on('unhandledRejection', (reason) => {
     log('error', 'TokenInvalid detected, exiting for launchd restart');
     process.exit(1);
   }
-  sendNtfy(`${BOT_NAME} Crash`, msg, 'urgent');
+  sendNtfy(`${BOT_NAME} Crash`, msg, 'urgent').catch(() => {});
 });
 
 // ---------------------------------------------------------------------------

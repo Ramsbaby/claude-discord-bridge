@@ -7,7 +7,7 @@ set -euo pipefail
 
 # === Cron environment setup ===
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:${HOME}/.local/bin:${PATH}"
-export HOME="${HOME:-/Users/$(id -un)}"  # macOS default; Linux: /home/$(id -un)
+export HOME="${HOME:-$(eval echo ~"$(id -un)")}"
 
 # Prevent nested claude detection
 unset CLAUDECODE CLAUDE_CODE_ENTRYPOINT CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS

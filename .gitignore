@@ -1,4 +1,4 @@
-# 민감 정보 (개인 설정)
+# Sensitive data (user-specific config)
 discord/.env
 config/monitoring.json
 config/tasks.json
@@ -11,7 +11,7 @@ context/tqqq-monitor.md
 context/market-alert.md
 scripts/tqqq-alert.sh
 
-# 런타임
+# Runtime data
 state/
 logs/
 rag/lancedb/
@@ -24,26 +24,15 @@ tmp/
 # Serena LSP
 .serena/
 
-# 개인 운영 문서
+# Internal reports
 REPORT.md
 docs/audit-report.md
 
-# node_modules 심링크 (설치 시 자동 생성)
+# node_modules symlinks (auto-created during install)
 bin/node_modules
 lib/node_modules
 
-# 빈 유틸 디렉토리
-2/
-queue/
-load/
-list/
-launchctl/
-ops/
-sleep/
-discord-sessions/
-heartbeats/
-
-# OS
+# OS files
 .DS_Store
 *.pid
 context/discord-history/

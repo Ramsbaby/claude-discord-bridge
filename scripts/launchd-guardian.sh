@@ -41,23 +41,30 @@ recovered=0
 
 # --- macOS launchd helpers ---
 
+_launchd_reload() {
+    local service="$1"
+    local plist_file="${PLIST_DIR}/${service}.plist"
+    log "RECOVERY: $service not loaded, re-registering"
+    if launchctl bootstrap "gui/${UID_NUM}" "$plist_file" 2>/dev/null; then
+        log "RECOVERY: $service registered via bootstrap"
+    elif launchctl load "$plist_file" 2>/dev/null; then
+        log "RECOVERY: $service registered via load (fallback)"
+    else
+        log "ERROR: Failed to register $service"
+        return 1
+    fi
+    recovered=$(( recovered + 1 ))
+    return 0
+}
+
 launchd_check_loaded() {
     local service="$1"
     local plist_file="${PLIST_DIR}/${service}.plist"
     [[ ! -f "$plist_file" ]] && return 0
     local status_line
-    status_line=$(launchctl list 2>/dev/null | grep "$service" || true)
+    status_line=$(launchctl list 2>/dev/null | grep -F "$service" || true)
     if [[ -z "$status_line" ]]; then
-        log "RECOVERY: $service not loaded, re-registering"
-        if launchctl bootstrap "gui/${UID_NUM}" "$plist_file" 2>/dev/null; then
-            log "RECOVERY: $service registered via bootstrap"
-        elif launchctl load "$plist_file" 2>/dev/null; then
-            log "RECOVERY: $service registered via load (fallback)"
-        else
-            log "ERROR: Failed to register $service"
-            return 0
-        fi
-        recovered=$(( recovered + 1 ))
+        _launchd_reload "$service" || true
     fi
 }
 
@@ -66,18 +73,9 @@ launchd_keepalive() {
     local plist_file="${PLIST_DIR}/${service}.plist"
     [[ ! -f "$plist_file" ]] && return 0
     local status_line
-    status_line=$(launchctl list 2>/dev/null | grep "$service" || true)
+    status_line=$(launchctl list 2>/dev/null | grep -F "$service" || true)
     if [[ -z "$status_line" ]]; then
-        log "RECOVERY: $service not loaded, re-registering"
-        if launchctl bootstrap "gui/${UID_NUM}" "$plist_file" 2>/dev/null; then
-            log "RECOVERY: $service registered via bootstrap"
-        elif launchctl load "$plist_file" 2>/dev/null; then
-            log "RECOVERY: $service registered via load (fallback)"
-        else
-            log "ERROR: Failed to register $service"
-            return 0
-        fi
-        recovered=$(( recovered + 1 ))
+        _launchd_reload "$service" || true
     else
         local pid
         pid=$(echo "$status_line" | awk '{print $1}')

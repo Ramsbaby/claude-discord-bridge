@@ -8,9 +8,10 @@
 import { writeFileSync, rmSync } from 'node:fs';
 import { join, extname } from 'node:path';
 import { EmbedBuilder } from 'discord.js';
-import { log, sendNtfy } from './claude-runner.js';
 import { StreamingMessage } from './session.js';
 import {
+  log,
+  sendNtfy,
   spawnClaude,
   parseStreamEvents,
   execRagAsync,
@@ -95,7 +96,7 @@ export async function handleMessage(message, { sessions, rateTracker, semaphore,
     );
   }
 
-  if (!semaphore.acquire()) {
+  if (!(await semaphore.acquire())) {
     await message.reply(`${process.env.BOT_NAME || 'Claude Bot'} is busy (${semaphore.max} concurrent requests). Please wait.`);
     return;
   }
@@ -175,7 +176,7 @@ export async function handleMessage(message, { sessions, rateTracker, semaphore,
       userPrompt = '이 이미지를 분석해줘.';
     }
 
-    const streamer = new StreamingMessage(thread, message, sessionKey);
+    let streamer = new StreamingMessage(thread, message, sessionKey);
     await streamer.sendPlaceholder();
 
     // RAG context search
@@ -350,8 +351,7 @@ export async function handleMessage(message, { sessions, rateTracker, semaphore,
     if (runResult.retryNeeded) {
       log('info', 'Retrying claude with fresh session', { threadId: thread.id });
       sessionId = null;
-      streamer.finalized = false;
-      streamer.replyTo = message;
+      streamer = new StreamingMessage(thread, message, sessionKey);
       runResult = await runClaude(null, streamer);
     }
 

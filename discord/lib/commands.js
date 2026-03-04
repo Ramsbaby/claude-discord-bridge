@@ -72,7 +72,7 @@ export async function handleInteraction(interaction, deps) {
 
   // Owner-only guard for sensitive commands
   const OWNER_ID = process.env.OWNER_DISCORD_ID;
-  const SENSITIVE = ['run', 'schedule', 'remember', 'alert', 'stop', 'clear'];
+  const SENSITIVE = ['run', 'schedule', 'remember', 'alert', 'stop', 'clear', 'memory', 'usage'];
   if (OWNER_ID && SENSITIVE.includes(interaction.commandName) && interaction.user.id !== OWNER_ID) {
     await interaction.reply({ content: '\u26d4 \uc774 \uba85\ub839\uc5b4\ub294 \ubd07 \uc624\ub108\ub9cc \uc0ac\uc6a9\ud560 \uc218 \uc788\uc2b5\ub2c8\ub2e4.', ephemeral: true });
     return;
@@ -180,10 +180,15 @@ export async function handleInteraction(interaction, deps) {
   } else if (commandName === 'tasks') {
     await interaction.deferReply({ ephemeral: true });
     try {
-      const { execSync } = await import('node:child_process');
       const logPath = join(BOT_HOME, 'logs', 'cron.log');
       const today = new Date().toISOString().slice(0, 10);
-      const raw = execSync(`grep "${today}" "${logPath}" 2>/dev/null | tail -100`, { encoding: 'utf-8' });
+      const raw = (() => {
+        try {
+          const content = readFileSync(logPath, 'utf-8');
+          const lines = content.split('\n').filter(l => l.includes(today));
+          return lines.slice(-100).join('\n');
+        } catch { return ''; }
+      })();
       const taskStats = {};
       for (const line of raw.split('\n')) {
         const m = line.match(/\[([^\]]+)\] (SUCCESS|FAIL)/);
