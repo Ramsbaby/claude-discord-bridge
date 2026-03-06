@@ -43,13 +43,15 @@
 
 ---
 
-## Planned
+### Phase 4: Developer Experience (2026-03-06)
+- [x] `install.sh` one-command setup (npm install, LaunchAgent generation, crontab setup)
+- [x] Obsidian Vault starter kit (template vault with Dataview queries)
+- [x] Per-task model assignment (`model` field in tasks.json)
+- [x] Docker Compose improvements (healthcheck, plugins volume, BOT_HOME env)
 
-### Phase 4: Developer Experience
-- [ ] `install.sh` one-command setup (npm install, LaunchAgent registration, crontab setup)
-- [ ] Obsidian Vault starter kit (template vault with Dataview queries)
-- [ ] Per-task model assignment (use cheaper models for simple tasks)
-- [ ] Docker Compose improvements (volume mounts, health checks)
+---
+
+## Planned
 
 ### Phase 5: Intelligence & Autonomy
 - [ ] Decision dispatcher with team accountability scoring
