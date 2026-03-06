@@ -5,12 +5,14 @@ set -euo pipefail
 # Usage: ./install.sh [--docker | --local]
 
 BOT_HOME="$(cd "$(dirname "$0")" && pwd)"
-MODE="${1:---docker}"
+MODE="${1:---local}"
 
 # --- Colors ---
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
 NC='\033[0m'
 
 info()  { printf "${GREEN}[INFO]${NC}  %s\n" "$1"; }
@@ -29,12 +31,18 @@ check_command() {
 check_common_deps() {
     local ok=true
     check_command node "https://nodejs.org/ or nvm" || ok=false
-    check_command claude "npm install -g @anthropic-ai/claude-code" || ok=false
+    check_command jq "brew install jq / apt install jq" || ok=false
     if [ "$ok" = false ]; then
         error "Missing dependencies. Install them and re-run."
         exit 1
     fi
-    info "Common dependencies OK (node $(node -v), claude CLI)"
+    # claude CLI is optional (needed for cron tasks, not install)
+    if command -v claude >/dev/null 2>&1; then
+        info "Dependencies OK (node $(node -v), jq, claude CLI)"
+    else
+        info "Dependencies OK (node $(node -v), jq)"
+        warn "claude CLI not found — install later: npm install -g @anthropic-ai/claude-code"
+    fi
 }
 
 # --- Setup env files ---
@@ -63,13 +71,167 @@ setup_personas() {
     fi
 }
 
+# --- LaunchAgent setup (macOS only) ---
+setup_launchagents() {
+    if [[ "$(uname)" != "Darwin" ]]; then
+        warn "LaunchAgents are macOS only — skipping"
+        return 0
+    fi
+
+    local LA_DIR="${HOME}/Library/LaunchAgents"
+    local NODE_PATH
+    NODE_PATH="$(command -v node)"
+    local BASH_PATH="/bin/bash"
+    mkdir -p "$LA_DIR"
+
+    # Discord bot (KeepAlive)
+    local BOT_PLIST="${LA_DIR}/ai.jarvis.discord-bot.plist"
+    if [ ! -f "$BOT_PLIST" ]; then
+        cat > "$BOT_PLIST" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>ai.jarvis.discord-bot</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>${NODE_PATH}</string>
+        <string>${BOT_HOME}/discord/discord-bot.js</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>${BOT_HOME}/discord</string>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+        <key>Crashed</key>
+        <true/>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>NODE_ENV</key>
+        <string>production</string>
+        <key>PATH</key>
+        <string>$(dirname "$NODE_PATH"):/usr/local/bin:/usr/bin:/bin</string>
+        <key>HOME</key>
+        <string>${HOME}</string>
+        <key>BOT_HOME</key>
+        <string>${BOT_HOME}</string>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>${BOT_HOME}/logs/discord-bot.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>${BOT_HOME}/logs/discord-bot.err.log</string>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+    <key>ExitTimeOut</key>
+    <integer>20</integer>
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>
+PLIST
+        info "Created LaunchAgent: ai.jarvis.discord-bot"
+    else
+        info "LaunchAgent ai.jarvis.discord-bot already exists"
+    fi
+
+    # Watchdog (KeepAlive, runs every 180s)
+    local WD_PLIST="${LA_DIR}/ai.jarvis.watchdog.plist"
+    if [ ! -f "$WD_PLIST" ]; then
+        cat > "$WD_PLIST" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>ai.jarvis.watchdog</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>${BASH_PATH}</string>
+        <string>${BOT_HOME}/scripts/watchdog.sh</string>
+    </array>
+    <key>KeepAlive</key>
+    <true/>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>$(dirname "$NODE_PATH"):/usr/local/bin:/usr/bin:/bin</string>
+        <key>HOME</key>
+        <string>${HOME}</string>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>${BOT_HOME}/logs/watchdog.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>${BOT_HOME}/logs/watchdog.err.log</string>
+    <key>ProcessType</key>
+    <string>Standard</string>
+</dict>
+</plist>
+PLIST
+        info "Created LaunchAgent: ai.jarvis.watchdog"
+    else
+        info "LaunchAgent ai.jarvis.watchdog already exists"
+    fi
+
+    echo ""
+    echo -e "  ${CYAN}To activate LaunchAgents:${NC}"
+    echo "    launchctl bootstrap gui/\$(id -u) ${BOT_PLIST}"
+    echo "    launchctl bootstrap gui/\$(id -u) ${WD_PLIST}"
+    echo ""
+    echo -e "  ${CYAN}To check status:${NC}"
+    echo "    launchctl list | grep jarvis"
+}
+
+# --- Crontab setup ---
+setup_crontab() {
+    local EXISTING
+    EXISTING=$(crontab -l 2>/dev/null || true)
+
+    if echo "$EXISTING" | grep -q "jarvis-cron.sh"; then
+        info "Crontab already contains jarvis-cron entries"
+        return 0
+    fi
+
+    echo ""
+    echo -e "${BOLD}Would you like to install the default crontab entries?${NC}"
+    echo "  This adds 3 basic cron jobs: morning-standup, daily-summary, system-health"
+    echo -en "  Install crontab? (y/n) [n]: "
+    read -r INSTALL_CRON
+    if [[ "$INSTALL_CRON" != "y" && "$INSTALL_CRON" != "Y" ]]; then
+        warn "Crontab setup skipped — add entries manually later"
+        return 0
+    fi
+
+    local CRON_ENTRIES
+    CRON_ENTRIES=$(cat <<CRON
+# --- Jarvis AI Assistant ---
+5 8 * * * ${BOT_HOME}/bin/jarvis-cron.sh morning-standup >> ${BOT_HOME}/logs/cron.log 2>&1
+0 20 * * * ${BOT_HOME}/bin/jarvis-cron.sh daily-summary >> ${BOT_HOME}/logs/cron.log 2>&1
+1,31 * * * * ${BOT_HOME}/bin/jarvis-cron.sh system-health >> ${BOT_HOME}/logs/cron.log 2>&1
+*/3 * * * * ${BOT_HOME}/scripts/launchd-guardian.sh >> ${BOT_HOME}/logs/launchd-guardian.log 2>&1
+CRON
+)
+
+    if [ -n "$EXISTING" ]; then
+        echo "$EXISTING"$'\n'"$CRON_ENTRIES" | crontab -
+    else
+        echo "$CRON_ENTRIES" | crontab -
+    fi
+    info "Crontab entries installed (4 jobs)"
+}
+
 # --- Docker mode ---
 install_docker() {
     info "Installing Jarvis (Docker mode)"
 
     check_command docker "https://docs.docker.com/get-docker/" || exit 1
     check_command "docker compose" "Docker Desktop or docker-compose-plugin" || {
-        # fallback: check docker-compose
         check_command docker-compose "https://docs.docker.com/compose/install/" || exit 1
     }
 
@@ -105,15 +267,14 @@ install_local() {
     setup_personas
 
     if [ "$env_ok" = false ]; then
-        error "Fix discord/.env first, then re-run: ./install.sh --local"
-        exit 1
+        warn "discord/.env needs configuration — continuing with setup..."
     fi
 
     info "Installing Node dependencies..."
     cd "${BOT_HOME}/discord"
     npm install --production
 
-    # Ensure relative node_modules symlinks (relative paths work regardless of install location)
+    # Ensure relative node_modules symlinks
     if [ ! -e "${BOT_HOME}/lib/node_modules" ]; then
         ln -s ../discord/node_modules "${BOT_HOME}/lib/node_modules"
         info "Created lib/node_modules symlink"
@@ -125,12 +286,26 @@ install_local() {
 
     # Create runtime directories
     mkdir -p "${BOT_HOME}/context" "${BOT_HOME}/state/pids" \
-             "${BOT_HOME}/logs" "${BOT_HOME}/rag" "${BOT_HOME}/results"
+             "${BOT_HOME}/logs" "${BOT_HOME}/rag" "${BOT_HOME}/results" \
+             "${BOT_HOME}/plugins"
+
+    # Generate effective-tasks.json
+    if [ -x "${BOT_HOME}/bin/plugin-loader.sh" ]; then
+        "${BOT_HOME}/bin/plugin-loader.sh" 2>/dev/null && info "Plugin system initialized" || true
+    fi
+
+    # Platform-specific setup
+    setup_launchagents
+    setup_crontab
 
     echo ""
-    info "Installation complete!"
-    info "Run the setup wizard: ${BOT_HOME}/bin/jarvis-init.sh"
-    info "Then start the bot:   cd ${BOT_HOME}/discord && node discord-bot.js"
+    echo -e "${GREEN}${BOLD}Installation complete!${NC}"
+    echo ""
+    echo -e "  ${CYAN}Next steps:${NC}"
+    echo "  1. Run the setup wizard: ${BOT_HOME}/bin/jarvis-init.sh"
+    echo "  2. Edit discord/.env with your tokens"
+    echo "  3. Start the bot: cd ${BOT_HOME}/discord && node discord-bot.js"
+    echo ""
 }
 
 # --- Main ---
@@ -139,8 +314,8 @@ case "$MODE" in
     --local)  install_local ;;
     *)
         echo "Usage: ./install.sh [--docker | --local]"
-        echo "  --docker  Build and run with Docker Compose (default)"
-        echo "  --local   Install dependencies locally and run directly"
+        echo "  --local   Install dependencies locally (default, recommended)"
+        echo "  --docker  Build and run with Docker Compose"
         exit 1
         ;;
 esac

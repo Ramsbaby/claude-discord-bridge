@@ -1,4 +1,6 @@
 {
+  "_comment": "Lite mode: 3 essential tasks. Add more or switch to Company mode with jarvis-init.sh",
+  "_model_options": "claude-sonnet-4-20250514 (default, fast+cheap) | claude-opus-4-20250514 (complex analysis) | omit for default",
   "tasks": [
     {
       "id": "morning-standup",
@@ -6,9 +8,10 @@
       "schedule": "5 8 * * *",
       "timeout": 300,
       "prompt": "Generate a morning briefing: 1) Today's calendar events 2) Pending tasks 3) System status. Keep it concise.",
-      "allowedTools": "Read,Bash,WebSearch",
+      "allowedTools": "Read,Bash",
       "output": ["discord", "file"],
       "discordChannel": "ai-bot",
+      "model": "claude-sonnet-4-20250514",
       "retry": { "max": 3, "backoff": "exponential" },
       "maxBudget": "1.00",
       "priority": "critical",
@@ -25,6 +28,7 @@
       "allowedTools": "Read,Bash",
       "output": ["discord", "file"],
       "discordChannel": "ai-bot",
+      "model": "claude-sonnet-4-20250514",
       "retry": { "max": 3, "backoff": "exponential" },
       "maxBudget": "1.00",
       "priority": "daily",
@@ -37,9 +41,10 @@
       "name": "System Health Check",
       "schedule": "1,31 * * * *",
       "timeout": 120,
-      "prompt": "Check system health: disk usage, memory, running LaunchAgents. Alert if anything is wrong.",
+      "prompt": "Check system health: disk usage, memory, running processes. Alert if anything is wrong.",
       "allowedTools": "Bash",
       "output": ["file"],
+      "model": "claude-sonnet-4-20250514",
       "retry": { "max": 2, "backoff": "linear" },
       "maxBudget": "0.50",
       "priority": "monitoring",

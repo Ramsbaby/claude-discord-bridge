@@ -16,8 +16,16 @@ services:
       - ./logs:/app/logs
       - ./rag:/app/rag
       - ./results:/app/results
+      - ./plugins:/app/plugins:ro
       # Config overrides (read-only)
       - ./discord/personas.json:/app/discord/personas.json:ro
       - ./config:/app/config:ro
     environment:
       - NODE_ENV=production
+      - BOT_HOME=/app
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "discord-bot.js"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
