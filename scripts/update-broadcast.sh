@@ -116,7 +116,66 @@ strip_prefix() {
     echo "$msg" | sed -E 's/^[a-z]+(\([^)]*\))?:[[:space:]]*//'
 }
 
-# --- 커밋 요약 포맷 ---
+# --- 변경 영향 분석 (규칙 기반) ---
+analyze_impact() {
+    local last_sha="$1"
+    local files
+    files=$(git -C "$BOT_HOME" diff --name-only "$last_sha..HEAD" 2>/dev/null || echo "")
+    [[ -z "$files" ]] && return
+
+    local impacts=()
+
+    # Discord 봇 변경
+    if echo "$files" | grep -qE '^discord/(discord-bot|lib/)'; then
+        impacts+=("💬 Discord 봇 동작이 변경됨")
+    fi
+
+    # 크론/태스크 변경
+    if echo "$files" | grep -qE '^(bin/jarvis-cron|bin/retry-wrapper|bin/ask-claude)'; then
+        impacts+=("⏰ 크론 태스크 실행 방식이 변경됨")
+    fi
+
+    # 설정 변경
+    if echo "$files" | grep -qE '^config/'; then
+        impacts+=("⚙️ 설정이 변경됨 — 봇 재시작 필요할 수 있음")
+    fi
+
+    # LLM/AI 변경
+    if echo "$files" | grep -qE '^lib/llm-gateway'; then
+        impacts+=("🤖 AI 엔진(LLM Gateway) 변경됨")
+    fi
+
+    # 플러그인 변경
+    if echo "$files" | grep -qE '^(plugins/|bin/plugin-loader)'; then
+        impacts+=("🔌 플러그인 시스템 변경됨")
+    fi
+
+    # 인프라/스크립트 변경
+    if echo "$files" | grep -qE '^scripts/(watchdog|launchd-guardian|e2e)'; then
+        impacts+=("🛡️ 시스템 안정성 관련 변경")
+    fi
+
+    # RAG 변경
+    if echo "$files" | grep -qE '^(lib/rag-|bin/rag-)'; then
+        impacts+=("🔍 RAG 검색 엔진 변경됨")
+    fi
+
+    # 문서만 변경
+    if echo "$files" | grep -vqE '\.(md|txt)$'; then
+        : # 코드 변경도 있음
+    else
+        impacts+=("📄 문서만 변경됨 — 시스템 영향 없음")
+    fi
+
+    # 영향 없으면 기본 메시지
+    if [[ ${#impacts[@]} -eq 0 ]]; then
+        impacts+=("📦 코드 정리/개선")
+    fi
+
+    printf '%s\n' "${impacts[@]}"
+}
+
+# --- 커밋 요약 포맷 (핵심만) ---
 format_commits() {
     local last_sha="$1"
     local commits
@@ -136,13 +195,12 @@ format_commits() {
 
     local formatted=""
     while IFS= read -r line; do
-        local sha="${line%% *}"
         local msg="${line#* }"
         local category
         category=$(commit_category "$msg")
         local clean_msg
         clean_msg=$(strip_prefix "$msg")
-        formatted+="${category} — ${clean_msg}"$'\n'
+        formatted+="${category} ${clean_msg}"$'\n'
     done <<< "$commits"
 
     if (( total > MAX_COMMITS )); then
@@ -280,7 +338,7 @@ log "변경 감지: ${last_sha:0:8} → ${current_sha:0:8}"
 
 commit_list=$(format_commits "$last_sha")
 config_changes=$(detect_config_changes "$last_sha")
-diff_stat=$(diff_stat_summary "$last_sha")
+impact_summary=$(analyze_impact "$last_sha")
 
 # 커밋 수
 commit_count=$(git -C "$BOT_HOME" rev-list --count "$last_sha..HEAD" 2>/dev/null || echo "0")
@@ -291,16 +349,16 @@ branch=$(git -C "$BOT_HOME" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unk
 # GitHub 비교 링크
 compare_url="${GITHUB_REPO_URL}/compare/${last_sha:0:8}...${current_sha:0:8}"
 
-# description: 변경 요약 + diff 규모 + GitHub 링크
-description="${commit_list}"
-if [[ -n "$diff_stat" ]]; then
-    description+=$'\n'"${diff_stat}"
+# description: 영향 분석 (사용자가 알아야 할 내용) → 커밋 목록 (참고용)
+description="**무엇이 바뀌었나**"$'\n'"${impact_summary}"$'\n'
+if [[ -n "$commit_list" ]]; then
+    description+=$'\n'"**변경 내역** (${commit_count}건)"$'\n'"${commit_list}"
 fi
-description+=$'\n'"[전체 변경 보기](${compare_url})"
+description+="[GitHub에서 보기](${compare_url})"
 
 # --- 설정 변경 여부에 따라 색상/제목 분기 ---
 if [[ -n "$config_changes" ]]; then
-    title="⚙️ Jarvis 설정 변경 (${commit_count}건, ${branch})"
+    title="⚙️ Jarvis 설정 변경"
     color=16776960  # 노랑 (주의)
 
     fields=$(jq -n \
@@ -309,7 +367,7 @@ if [[ -n "$config_changes" ]]; then
             {"name":"📋 변경된 설정","value":$configs,"inline":false}
         ]')
 else
-    title="🔄 Jarvis 업데이트 (${commit_count}건, ${branch})"
+    title="🔄 Jarvis 업데이트"
     color=3447003  # 파랑 (일반)
     fields=""
 fi
