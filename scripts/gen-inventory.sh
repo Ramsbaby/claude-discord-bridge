@@ -43,7 +43,7 @@ generate_cron_catalog() {
 
   # --- tasks.json 파싱 ---
   local task_count
-  task_count="$(jq '.tasks | length' "$TASKS_JSON")"
+  task_count="$(jq '[.tasks[] | select(.schedule != null and .schedule != "")] | length' "$TASKS_JSON")"
 
   local task_table=""
   task_table="$(jq -r '

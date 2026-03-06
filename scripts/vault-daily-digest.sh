@@ -87,7 +87,8 @@ ${changed_files}
 마크다운으로 작성하되 frontmatter는 제외하세요. 간결하게."
 
 # ask-claude.sh 사용
-SUMMARY=$("$BOT_HOME/bin/ask-claude.sh" "vault-digest" "$PROMPT" "Read" "120" "0.50" "1" 2>/dev/null || echo "요약 생성 실패. 수동 확인 필요.")
+STDERR_LOG="$BOT_HOME/logs/claude-stderr-vault-digest.log"
+SUMMARY=$("$BOT_HOME/bin/ask-claude.sh" "vault-digest" "$PROMPT" "Read" "120" "0.50" "1" 2>>"$STDERR_LOG" || echo "요약 생성 실패. 수동 확인 필요.")
 
 # 결과 파일에서 내용 추출 (ask-claude.sh는 results/ 에 저장)
 RESULT_DIR="$BOT_HOME/results/vault-digest"

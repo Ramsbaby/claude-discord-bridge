@@ -324,7 +324,7 @@ run_antipattern_audit() {
     local antipattern_found=0
 
     while IFS= read -r pjson; do
-        [[ -z "$pjson" ]] && continue
+        if [[ -z "$pjson" ]]; then continue; fi
 
         # Parse all scalar fields in 1 jq call using SOH delimiter
         local fields
@@ -335,7 +335,7 @@ run_antipattern_audit() {
         # Parse exclude_lines (1 more jq call per pattern)
         local -a exclude_arr=()
         while IFS= read -r excl; do
-            [[ -n "$excl" ]] && exclude_arr+=("$excl")
+            if [[ -n "$excl" ]]; then exclude_arr+=("$excl"); fi
         done < <(echo "$pjson" | jq -r '.exclude_lines[]? // empty' 2>/dev/null)
 
         # Expand brace globs for grep --include (*.{js,mjs} -> --include=*.js --include=*.mjs)
@@ -363,7 +363,7 @@ run_antipattern_audit() {
                     local prev_file=""
                     local file_has_context=false
                     while IFS= read -r match_line; do
-                        [[ -z "$match_line" ]] && continue
+                        if [[ -z "$match_line" ]]; then continue; fi
                         local match_file="${match_line%%:*}"
                         if [[ "$match_file" != "$prev_file" ]]; then
                             prev_file="$match_file"
@@ -395,7 +395,7 @@ run_antipattern_audit() {
             local shown=0
             local pattern_found=0
             while IFS= read -r line; do
-                [[ -z "$line" ]] && continue
+                if [[ -z "$line" ]]; then continue; fi
                 local rel_line="${line#"$BOT_HOME"/}"
                 report "- \`$rel_line\`"
                 pattern_found=$(( pattern_found + 1 ))
@@ -421,7 +421,7 @@ run_antipattern_audit() {
                 # Collect unique files for fixing
                 local -a fix_files=()
                 while IFS= read -r line; do
-                    [[ -z "$line" ]] && continue
+                    if [[ -z "$line" ]]; then continue; fi
                     local f="${line%%:*}"
                     local already=false
                     for existing in "${fix_files[@]+"${fix_files[@]}"}"; do

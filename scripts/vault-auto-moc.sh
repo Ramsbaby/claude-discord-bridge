@@ -49,13 +49,21 @@ while IFS= read -r -d '' file; do
     relpath="${file#$VAULT/}"
     filename=$(basename "$file" .md)
 
-    # _index, Home, README, 템플릿은 스킵
+    # _index, Home, README, 템플릿, 아카이브는 스킵
     case "$relpath" in
         _templates/*|README.md|Home.md) continue ;;
         */_index.md) continue ;;
+        99-archive/*) continue ;;
     esac
 
-    # 이 파일을 참조하는 다른 파일이 있는지 검색
+    # Dataview 쿼리(FROM "dir")가 커버하는 디렉토리 내 파일은 orphan 아님
+    parent_dir=$(dirname "$relpath")
+    parent_index="$VAULT/${parent_dir}/_index.md"
+    if [[ -f "$parent_index" ]] && grep -q "FROM.*\"${parent_dir}\"" "$parent_index" 2>/dev/null; then
+        continue
+    fi
+
+    # 이 파일을 참조하는 다른 파일이 있는지 검색 (escape된 \| 도 포함)
     ref_count=$( { grep -rl "\[\[.*${filename}" "$VAULT" --include="*.md" 2>/dev/null || true; } | { grep -v "$file" || true; } | wc -l | tr -d ' ')
 
     if [[ "$ref_count" -eq 0 ]]; then

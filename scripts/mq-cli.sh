@@ -34,6 +34,12 @@ cmd_send() {
   local payload="${3:?payload_json required}"
   local priority="${4:-normal}"
 
+  # SQL injection 방지: single quote 이스케이프
+  sender="${sender//\'/\'\'}"
+  channel="${channel//\'/\'\'}"
+  payload="${payload//\'/\'\'}"
+  priority="${priority//\'/\'\'}"
+
   "$SQLITE" "$DB_PATH" <<SQL
 INSERT INTO messages (sender, channel, payload, priority)
 VALUES ('${sender}', '${channel}', '${payload}', '${priority}');
@@ -44,6 +50,10 @@ SQL
 cmd_receive() {
   local recipient="${1:?recipient required}"
   local channel="${2:-}"
+
+  # SQL injection 방지: single quote 이스케이프
+  recipient="${recipient//\'/\'\'}"
+  channel="${channel//\'/\'\'}"
 
   local where="status='pending' AND (recipient='${recipient}' OR recipient IS NULL)"
   if [[ -n "$channel" ]]; then
@@ -64,11 +74,17 @@ SQL
 cmd_ack() {
   local id="${1:?message id required}"
 
+  # SQL injection 방지: 숫자만 허용
+  if [[ ! "$id" =~ ^[0-9]+$ ]]; then
+    echo "ERROR: id must be a number" >&2
+    return 1
+  fi
+
   "$SQLITE" "$DB_PATH" <<SQL
 UPDATE messages
 SET status='done', processed_at=strftime('%Y-%m-%dT%H:%M:%SZ','now')
 WHERE id=${id};
-SELECT 'acked id=${id}, changes=' || changes();
+SELECT 'acked id=' || ${id} || ', changes=' || changes();
 SQL
 }
 

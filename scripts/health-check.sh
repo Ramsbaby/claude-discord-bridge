@@ -95,5 +95,5 @@ else
 fi
 
 # 8. Log sizes
-total_logs=$(du -sh "$BOT_HOME/logs" 2>/dev/null | awk '{print $1}')
+total_logs=$(du -sh "$BOT_HOME/logs" 2>/dev/null | awk '{print $1}' || echo "0")
 check "log-size" "ok" "${total_logs:-0}"

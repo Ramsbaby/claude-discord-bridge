@@ -25,11 +25,10 @@
 1. 주간 지원 보고서 저장:
    ~/.jarvis/rag/teams/reports/academy-$(date +%F).md
 
-2. 커리어 관련 인사이트 있으면 career팀에 공유:
-   ~/.jarvis/rag/teams/shared-inbox/$(date +%Y-%m-%d)_academy_to_career.md
+2. [필수] 커리어 관련 인사이트 1건 이상 career팀에 공유 (특이사항 없으면 "이번 주 안정" OK):
+   echo "내용" > ~/.jarvis/rag/teams/shared-inbox/$(date +%Y-%m-%d)_academy_to_career.md
 
-3. career-weekly에서 중요 시장 변화 감지 시 council에 공유:
-   → 채용 트렌드 급변, 주요 기업 대량 채용/감원, 기술 스택 수요 변화 등
+3. 시장 변화 감지 시 council에 공유 (채용 트렌드 급변, 대량 채용/감원, 기술 수요 변화 등):
    echo "내용" > ~/.jarvis/rag/teams/shared-inbox/$(date +%Y-%m-%d)_academy_to_council.md
 ```
 

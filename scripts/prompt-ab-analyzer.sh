@@ -44,10 +44,12 @@ if [[ ! -f "$MESSAGES_DB" ]]; then
 fi
 command -v sqlite3 >/dev/null 2>&1 || { echo "ERROR: sqlite3 not found" >&2; exit 1; }
 
-# --- Build optional task filter ---
+# --- Build optional task filter (sanitize to prevent SQL injection) ---
 TASK_WHERE=""
 if [[ -n "$FILTER_TASK" ]]; then
-    TASK_WHERE="AND json_extract(payload, '$.taskId') = '${FILTER_TASK}'"
+    # 허용: 영문, 숫자, 하이픈, 언더스코어만 (task ID 형식)
+    SAFE_TASK=$(echo "$FILTER_TASK" | sed 's/[^a-zA-Z0-9_-]//g')
+    TASK_WHERE="AND json_extract(payload, '$.taskId') = '${SAFE_TASK}'"
 fi
 
 # --- Query outcomes from kpi channel ---

@@ -7,6 +7,27 @@ set -euo pipefail
 
 BOT_HOME="${BOT_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 TODAY="$(date +%F)"
+
+# 의존성 검증
+for _cmd in jq python3; do
+    if ! command -v "$_cmd" >/dev/null 2>&1; then
+        echo "FATAL: $_cmd not found" >&2
+        exit 2
+    fi
+done
+
+# 동시 실행 방지 (scorecard read-modify-write 경쟁조건 차단)
+LOCK_FILE="/tmp/jarvis-dispatcher.lock"
+if [[ -f "$LOCK_FILE" ]]; then
+    lock_pid=$(cat "$LOCK_FILE" 2>/dev/null || echo "")
+    if [[ -n "$lock_pid" ]] && kill -0 "$lock_pid" 2>/dev/null; then
+        echo "Another dispatcher is running (PID $lock_pid), exiting" >&2
+        exit 0
+    fi
+    rm -f "$LOCK_FILE"
+fi
+echo $$ > "$LOCK_FILE"
+trap 'rm -f "$LOCK_FILE"' EXIT
 DECISIONS_FILE="${BOT_HOME}/state/decisions/${TODAY}.jsonl"
 SCORECARD="${BOT_HOME}/state/team-scorecard.json"
 DISPATCH_LOG="${BOT_HOME}/logs/decision-dispatcher.log"
@@ -41,15 +62,16 @@ stale|kill-stale
 
 match_action() {
     local decision="$1"
-    echo "$ACTION_REGISTRY" | while IFS='|' read -r keyword action; do
-        keyword=$(echo "$keyword" | xargs) # trim
+    local result=""
+    while IFS='|' read -r keyword action; do
+        keyword=$(echo "$keyword" | xargs)
         action=$(echo "$action" | xargs)
         if [[ -n "$keyword" ]] && echo "$decision" | grep -qi "$keyword"; then
-            echo "$action"
-            return 0
+            result="$action"
+            break
         fi
-    done
-    echo ""
+    done <<< "$ACTION_REGISTRY"
+    echo "$result"
 }
 
 # 실행 불가 키워드 (보고만)
@@ -223,57 +245,57 @@ update_scorecard() {
     local ts
     ts=$(date -u +%FT%TZ)
 
+    SCORECARD_TEAM="$team" SCORECARD_OUTCOME="$outcome" SCORECARD_DECISION="$decision" \
+    SCORECARD_TS="$ts" SCORECARD_PATH="$SCORECARD" \
     python3 -c "
-import json, fcntl
+import json, os, tempfile
 
-path = '${SCORECARD}'
-team = '${team}'
-outcome = '${outcome}'
-decision = '''${decision}'''
-ts = '${ts}'
+path = os.environ['SCORECARD_PATH']
+team = os.environ['SCORECARD_TEAM']
+outcome = os.environ['SCORECARD_OUTCOME']
+decision = os.environ['SCORECARD_DECISION']
+ts = os.environ['SCORECARD_TS']
 
-with open(path, 'r+') as f:
-    fcntl.flock(f, fcntl.LOCK_EX)
+with open(path, 'r') as f:
     data = json.load(f)
 
-    if team not in data['teams']:
-        # 팀이 없으면 생성
-        data['teams'][team] = {
-            'lead': team + '-lead',
-            'merit': 0, 'penalty': 0,
-            'status': 'NORMAL', 'history': []
-        }
+if team not in data['teams']:
+    data['teams'][team] = {
+        'lead': team + '-lead',
+        'merit': 0, 'penalty': 0,
+        'status': 'NORMAL', 'history': []
+    }
 
-    t = data['teams'][team]
+t = data['teams'][team]
 
-    if outcome == 'success':
-        t['merit'] += 1
-    elif outcome == 'failure':
-        t['penalty'] += 1
+if outcome == 'success':
+    t['merit'] += 1
+elif outcome == 'failure':
+    t['penalty'] += 1
 
-    # history에 최근 20건만 유지
-    t['history'].append({
-        'ts': ts,
-        'decision': decision[:100],
-        'outcome': outcome
-    })
-    t['history'] = t['history'][-20:]
+t['history'].append({
+    'ts': ts,
+    'decision': decision[:100],
+    'outcome': outcome
+})
+t['history'] = t['history'][-20:]
 
-    # 상태 판정
-    p = t['penalty']
-    thresholds = data['thresholds']
-    if p >= thresholds['disciplinary']:
-        t['status'] = 'DISCIPLINARY'
-    elif p >= thresholds['probation']:
-        t['status'] = 'PROBATION'
-    elif p >= thresholds['warning']:
-        t['status'] = 'WARNING'
-    else:
-        t['status'] = 'NORMAL'
+p = t['penalty']
+thresholds = data['thresholds']
+if p >= thresholds['disciplinary']:
+    t['status'] = 'DISCIPLINARY'
+elif p >= thresholds['probation']:
+    t['status'] = 'PROBATION'
+elif p >= thresholds['warning']:
+    t['status'] = 'WARNING'
+else:
+    t['status'] = 'NORMAL'
 
-    f.seek(0)
-    f.truncate()
+dir_name = os.path.dirname(path)
+fd, tmp = tempfile.mkstemp(dir=dir_name, suffix='.json')
+with os.fdopen(fd, 'w') as f:
     json.dump(data, f, ensure_ascii=False, indent=2)
+os.replace(tmp, path)
 " 2>/dev/null || log "WARN: scorecard update failed for ${team}"
 }
 
@@ -285,49 +307,47 @@ maybe_decay_penalties() {
         return 0
     fi
 
-    python3 -c "
-import json, fcntl, math
+    SCORECARD_PATH="$SCORECARD" python3 -c "
+import json, math, os, tempfile
 from datetime import date
 
-path = '${SCORECARD}'
+path = os.environ['SCORECARD_PATH']
 
-with open(path, 'r+') as f:
-    fcntl.flock(f, fcntl.LOCK_EX)
+with open(path, 'r') as f:
     data = json.load(f)
 
-    if data.get('lastDecay') == str(date.today()):
-        # 이미 오늘 감쇠함
-        pass
-    else:
-        rate = data.get('decayRate', 0.7)
-        for team_name, t in data['teams'].items():
-            old_p = t['penalty']
-            t['penalty'] = math.floor(t['penalty'] * rate)
-            t['merit'] = math.floor(t['merit'] * rate)
-            # 상태 재판정
-            p = t['penalty']
-            thresholds = data['thresholds']
-            if p >= thresholds['disciplinary']:
-                t['status'] = 'DISCIPLINARY'
-            elif p >= thresholds['probation']:
-                t['status'] = 'PROBATION'
-            elif p >= thresholds['warning']:
-                t['status'] = 'WARNING'
-            else:
-                t['status'] = 'NORMAL'
-        data['lastDecay'] = str(date.today())
+if data.get('lastDecay') == str(date.today()):
+    pass  # 이미 오늘 감쇠함
+else:
+    rate = data.get('decayRate', 0.7)
+    for team_name, t in data['teams'].items():
+        t['penalty'] = math.floor(t['penalty'] * rate)
+        t['merit'] = math.floor(t['merit'] * rate)
+        p = t['penalty']
+        thresholds = data['thresholds']
+        if p >= thresholds['disciplinary']:
+            t['status'] = 'DISCIPLINARY'
+        elif p >= thresholds['probation']:
+            t['status'] = 'PROBATION'
+        elif p >= thresholds['warning']:
+            t['status'] = 'WARNING'
+        else:
+            t['status'] = 'NORMAL'
+    data['lastDecay'] = str(date.today())
 
-    f.seek(0)
-    f.truncate()
-    json.dump(data, f, ensure_ascii=False, indent=2)
+    dir_name = os.path.dirname(path)
+    fd, tmp = tempfile.mkstemp(dir=dir_name, suffix='.json')
+    with os.fdopen(fd, 'w') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, path)
 " 2>/dev/null || log "WARN: penalty decay failed"
 }
 
 # --- 징계위원회 알림 생성 ---
 check_disciplinary() {
-    python3 -c "
-import json
-path = '${SCORECARD}'
+    SCORECARD_PATH="$SCORECARD" python3 -c "
+import json, os
+path = os.environ['SCORECARD_PATH']
 with open(path) as f:
     data = json.load(f)
 alerts = []
@@ -364,7 +384,7 @@ SUMMARY=""
 
 while IFS= read -r line || [[ -n "$line" ]]; do
     # 빈 줄 건너뛰기
-    [[ -z "$line" ]] && continue
+    if [[ -z "$line" ]]; then continue; fi
 
     # 이미 처리된 결정인지 체크 (decision 해시)
     line_hash=$(echo "$line" | md5 -q 2>/dev/null || echo "$line" | md5sum | cut -d' ' -f1)
@@ -402,6 +422,11 @@ while IFS= read -r line || [[ -n "$line" ]]; do
         update_scorecard "$team" "skipped" "$decision"
         SKIP_COUNT=$((SKIP_COUNT + 1))
         SUMMARY="${SUMMARY}\n  - [SKIP] ${decision} (${action_type})"
+    elif [[ "$dispatch_exit" -eq 2 ]]; then
+        # exit 2 = 대상 미인식 (SKIP) — 팀 책임 아님
+        update_scorecard "$team" "skipped" "$decision"
+        SKIP_COUNT=$((SKIP_COUNT + 1))
+        SUMMARY="${SUMMARY}\n  - [SKIP] ${decision}: ${result_detail}"
     elif [[ "$dispatch_exit" -eq 0 ]] && echo "$result_detail" | grep -q "^OK"; then
         update_scorecard "$team" "success" "$decision"
         SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
@@ -413,7 +438,10 @@ while IFS= read -r line || [[ -n "$line" ]]; do
     fi
 
     # dispatch 결과 기록
-    echo "{\"ts\":\"$(date -u +%FT%TZ)\",\"decision\":\"${decision}\",\"team\":\"${team}\",\"action\":\"${action_type}\",\"result\":\"${result_detail}\",\"exit\":${dispatch_exit}}" >> "$DISPATCH_RESULTS"
+    jq -n --arg ts "$(date -u +%FT%TZ)" --arg decision "$decision" --arg team "$team" \
+        --arg action "$action_type" --arg result "$result_detail" --argjson exit "$dispatch_exit" \
+        '{ts:$ts, decision:$decision, team:$team, action:$action, result:$result, exit:$exit}' \
+        >> "$DISPATCH_RESULTS"
 
     # 처리 완료 마크
     echo "$line_hash" >> "$PROCESSED_FILE"
@@ -441,7 +469,7 @@ echo -e "$REPORT"
 
 # Discord 전송 (jarvis-ceo 채널)
 WEBHOOK=$(jq -r '.webhooks["jarvis-ceo"]' "${BOT_HOME}/config/monitoring.json" 2>/dev/null || echo "")
-if [[ -n "$WEBHOOK" ]] && [[ "$WEBHOOK" != "null" ]] && (( SUCCESS_COUNT + FAIL_COUNT > 0 )); then
+if [[ -n "$WEBHOOK" ]] && [[ "$WEBHOOK" != "null" ]] && [[ $((SUCCESS_COUNT + FAIL_COUNT)) -gt 0 ]]; then
     DISCORD_MSG=$(echo -e "$REPORT" | head -c 1950)
     curl -s -X POST "$WEBHOOK" \
         -H "Content-Type: application/json" \

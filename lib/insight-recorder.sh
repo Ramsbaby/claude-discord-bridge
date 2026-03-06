@@ -52,10 +52,10 @@ record_insight() {
 
     # Extract insight keywords
     local insight_lines
-    insight_lines=$(echo "$output" | grep -iE '(결론|핵심|학습|발견|중요|인사이트|insight|summary|key|takeaway)' | head -10)
+    insight_lines=$(echo "$output" | grep -iE '(결론|핵심|학습|발견|중요|인사이트|insight|summary|key|takeaway)' | head -3)
 
     if [[ -z "$insight_lines" ]]; then
-        insight_lines=$(echo "$output" | head -3)
+        insight_lines=$(echo "$output" | head -2)
     fi
 
     if [[ -z "$insight_lines" ]]; then

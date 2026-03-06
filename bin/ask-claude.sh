@@ -198,9 +198,9 @@ find "$RESULTS_DIR" -name "*.md" -mtime +"$RESULT_RETENTION" -delete 2>/dev/null
 
 # --- Update rate-tracker (shared with Discord bot, 5-hour sliding window) ---
 RATE_TRACKER="${BOT_HOME}/state/rate-tracker.json"
-python3 -c "
+RATE_PATH="$RATE_TRACKER" python3 -c "
 import json, time, fcntl, os, tempfile
-path = '${RATE_TRACKER}'
+path = os.environ['RATE_PATH']
 cutoff = int(time.time() * 1000) - 5 * 3600 * 1000
 now_ms = int(time.time() * 1000)
 os.makedirs(os.path.dirname(path), exist_ok=True)

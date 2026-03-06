@@ -26,7 +26,7 @@ if [[ ! -f "$MONITORING_CONFIG" ]]; then
     exit 1
 fi
 
-WEBHOOK_URL=$(python3 -c "import json; print(json.load(open('$MONITORING_CONFIG'))['webhooks']['jarvis-system'])")
+WEBHOOK_URL=$(CFG_PATH="$MONITORING_CONFIG" python3 -c "import json,os; print(json.load(open(os.environ['CFG_PATH']))['webhooks']['jarvis-system'])")
 
 # ============================================================================
 # 함수
@@ -83,10 +83,10 @@ report_lines+=("")
 report_lines+=("## 1. 소스 편향 감지")
 report_lines+=("")
 
-bias_result=$(node -e "
+bias_result=$(LANCEDB_DIR="$LANCEDB_PATH" node -e "
 const lancedb = require('@lancedb/lancedb');
 (async () => {
-    const db = await lancedb.connect('$LANCEDB_PATH');
+    const db = await lancedb.connect(process.env.LANCEDB_DIR);
     const table = await db.openTable('documents');
     const total = await table.countRows();
     if (total === 0) {
@@ -178,11 +178,11 @@ if [[ ! -f "$today_file" ]]; then
 else
     # 파일이 있으면 index-state.json에 등록됐는지 확인
     if [[ -f "$INDEX_STATE" ]]; then
-        indexed=$(python3 -c "
-import json
-with open('$INDEX_STATE') as f:
+        indexed=$(IDX_PATH="$INDEX_STATE" IDX_KEY="$today_file" python3 -c "
+import json, os
+with open(os.environ['IDX_PATH']) as f:
     d = json.load(f)
-key = '$today_file'
+key = os.environ['IDX_KEY']
 if key in d:
     print('yes')
 else:
@@ -212,7 +212,7 @@ report_lines+=("## 3. Index State vs DB 청크 수 일치 확인")
 report_lines+=("")
 
 if [[ -f "$INDEX_STATE" ]]; then
-    state_count=$(python3 -c "import json; print(len(json.load(open('$INDEX_STATE'))))" 2>/dev/null || echo "0")
+    state_count=$(IDX_PATH="$INDEX_STATE" python3 -c "import json,os; print(len(json.load(open(os.environ['IDX_PATH']))))" 2>/dev/null || echo "0")
 else
     state_count="0"
     report_lines+=("- WARN: index-state.json 없음")
@@ -226,10 +226,10 @@ else
 fi
 
 # LanceDB 실제 행 수
-db_chunks=$(node -e "
+db_chunks=$(LANCEDB_DIR="$LANCEDB_PATH" node -e "
 const lancedb = require('@lancedb/lancedb');
 (async () => {
-    const db = await lancedb.connect('$LANCEDB_PATH');
+    const db = await lancedb.connect(process.env.LANCEDB_DIR);
     const table = await db.openTable('documents');
     console.log(await table.countRows());
 })().catch(() => console.log('0'));

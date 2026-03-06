@@ -187,3 +187,13 @@ if [[ -d "$DISCORD_HISTORY" ]]; then
 fi
 
 log "Sync complete: ${synced} files synced, ${pruned} old reports pruned"
+
+# --- Auto-commit to git (if changes exist) ---
+if cd "$VAULT_BASE" && git diff --quiet && git diff --cached --quiet && [[ -z "$(git ls-files --others --exclude-standard)" ]]; then
+    log "Git: no changes to commit"
+else
+    cd "$VAULT_BASE"
+    git add -A
+    git commit -m "vault-sync: auto-commit $(date +%F_%H%M)" --no-gpg-sign -q 2>/dev/null || true
+    log "Git: auto-committed changes"
+fi

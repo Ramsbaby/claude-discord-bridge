@@ -55,7 +55,7 @@ fi
 
 # Webhook URL 가져오기
 WEBHOOK_URL=""
-if ! WEBHOOK_URL="$(python3 -c "import json; print(json.load(open('${WEBHOOK_CONFIG}'))['webhook']['url'])" 2>/dev/null)"; then
+if ! WEBHOOK_URL="$(CFG_PATH="$WEBHOOK_CONFIG" python3 -c "import json,os; print(json.load(open(os.environ['CFG_PATH']))['webhook']['url'])" 2>/dev/null)"; then
     log "ERROR: webhook URL parse failed"
     exit 0
 fi

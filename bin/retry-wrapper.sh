@@ -63,7 +63,7 @@ classify_error() {
     local result_file="$1"
     local stderr_file="${result_file}.stderr"
     local check_files=("$result_file")
-    [[ -f "$stderr_file" ]] && check_files+=("$stderr_file")
+    if [[ -f "$stderr_file" ]]; then check_files+=("$stderr_file"); fi
     if grep -qi "rate_limit\|rate limit\|429\|hit your limit\|you've hit\|usage limit" "${check_files[@]}" 2>/dev/null; then echo "RATE_LIMITED"
     elif grep -qi "overloaded\|503\|capacity" "${check_files[@]}" 2>/dev/null; then echo "OVERLOADED"
     elif grep -qi "authentication\|unauthorized\|401" "${check_files[@]}" 2>/dev/null; then echo "AUTH_ERROR"
@@ -237,7 +237,7 @@ human_reason() {
                     | grep -v '^{' \
                     | tail -1 \
                     | cut -c1-120)
-                [[ -n "$snippet" ]] && break
+                if [[ -n "$snippet" ]]; then break; fi
             done
             # result JSON에서 "result" 필드 추출 시도
             if [[ -z "$snippet" && -f "$result_file" ]]; then

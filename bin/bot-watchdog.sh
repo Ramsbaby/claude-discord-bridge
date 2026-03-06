@@ -23,8 +23,8 @@ SILENCE_THRESHOLD_SEC=900   # 15 minutes
 ALERT_COOLDOWN_SEC=900      # 15 minutes between alerts
 
 # Read ntfy config from monitoring.json (fallback to env)
-NTFY_TOPIC="${NTFY_TOPIC:-$(python3 -c "import json; d=json.load(open('$BOT_HOME/config/monitoring.json')); print(d.get('ntfy',{}).get('topic',''))" 2>/dev/null || true)}"
-NTFY_SERVER="${NTFY_SERVER:-$(python3 -c "import json; d=json.load(open('$BOT_HOME/config/monitoring.json')); print(d.get('ntfy',{}).get('server','https://ntfy.sh'))" 2>/dev/null || echo "https://ntfy.sh")}"
+NTFY_TOPIC="${NTFY_TOPIC:-$(CFG_PATH="$BOT_HOME/config/monitoring.json" python3 -c "import json,os; d=json.load(open(os.environ['CFG_PATH'])); print(d.get('ntfy',{}).get('topic',''))" 2>/dev/null || true)}"
+NTFY_SERVER="${NTFY_SERVER:-$(CFG_PATH="$BOT_HOME/config/monitoring.json" python3 -c "import json,os; d=json.load(open(os.environ['CFG_PATH'])); print(d.get('ntfy',{}).get('server','https://ntfy.sh'))" 2>/dev/null || echo "https://ntfy.sh")}"
 
 mkdir -p "$STATE_DIR" "$(dirname "$WATCHDOG_LOG")"
 
@@ -45,7 +45,7 @@ send_discord_webhook() {
     local message="$1"
     local webhook_url=""
     if [[ -f "$MONITORING_CONFIG" ]]; then
-        webhook_url=$(python3 -c "import json,sys; d=json.load(open('$MONITORING_CONFIG')); print(d.get('webhook',{}).get('url',''))" 2>/dev/null || true)
+        webhook_url=$(CFG_PATH="$MONITORING_CONFIG" python3 -c "import json,os; d=json.load(open(os.environ['CFG_PATH'])); print(d.get('webhook',{}).get('url',''))" 2>/dev/null || true)
     fi
     if [[ -n "$webhook_url" ]]; then
         local payload

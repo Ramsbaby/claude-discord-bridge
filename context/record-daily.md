@@ -30,12 +30,12 @@
 
 2. ~/.jarvis/rag/memory.md 중요 내용 업데이트
 
-3. 다른 팀에 전달할 내용 있으면 shared-inbox에 작성:
-   ~/.jarvis/rag/teams/shared-inbox/$(date +%Y-%m-%d)_record_to_[팀명].md
-
-4. 2개 이상 팀에서 동일 이슈 반복 발견 시 council에 공유:
-   → 크론 로그/보고서 취합 중 복수 팀 공통 장애, 동일 에러 패턴 등
+3. [필수] council에 일일 핵심 관찰 1건 이상 공유 (정상이면 "특이사항 없음"도 OK):
    echo "내용" > ~/.jarvis/rag/teams/shared-inbox/$(date +%Y-%m-%d)_record_to_council.md
+   포함 내용: 크론 성공률, 눈에 띄는 패턴, 복수 팀 공통 이슈
+
+4. 다른 팀에 전달할 내용 있으면 shared-inbox에 작성:
+   ~/.jarvis/rag/teams/shared-inbox/$(date +%Y-%m-%d)_record_to_[팀명].md
 ```
 
 ## Discord 전송 채널

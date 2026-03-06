@@ -43,10 +43,10 @@ mark_triggered() {
 send_discord() {
     local msg="$1"
     local webhook_url
-    webhook_url=$(python3 -c "
-import json, sys
+    webhook_url=$(CFG_PATH="$WEBHOOK_CONFIG" python3 -c "
+import json, os
 try:
-    cfg = json.load(open('$WEBHOOK_CONFIG'))
+    cfg = json.load(open(os.environ['CFG_PATH']))
     print(cfg.get('webhook', {}).get('url', ''))
 except Exception:
     print('')
@@ -115,8 +115,9 @@ except Exception:
     local alert_msg=""
     # python3 float 비교
     local should_alert
-    should_alert=$(python3 -c "
-p = float('$price')
+    should_alert=$(TQQQ_PRICE="$price" python3 -c "
+import os
+p = float(os.environ['TQQQ_PRICE'])
 if p <= 47.0:
     print('stop_loss')
 elif p >= 80.0:

@@ -79,9 +79,9 @@ fi
 # Team scorecard (팀 성과표)
 TEAM_SCORECARD=""
 if [[ -f "${BOT_HOME}/state/team-scorecard.json" ]]; then
-    TEAM_SCORECARD=$(python3 -c "
-import json
-with open('${BOT_HOME}/state/team-scorecard.json') as f:
+    TEAM_SCORECARD=$(SCORECARD_PATH="${BOT_HOME}/state/team-scorecard.json" python3 -c "
+import json, os
+with open(os.environ['SCORECARD_PATH']) as f:
     data = json.load(f)
 lines = []
 for name, t in data['teams'].items():
@@ -98,9 +98,17 @@ if [[ -f "$PREV_DISPATCH_FILE" ]]; then
     PREV_DISPATCH=$(cat "$PREV_DISPATCH_FILE" 2>/dev/null)
 fi
 
+# Load CEO profile (agents/ceo.md = SSoT for CEO behavior)
+CEO_PROFILE=""
+if [[ -f "${BOT_HOME}/agents/ceo.md" ]]; then
+    CEO_PROFILE=$(cat "${BOT_HOME}/agents/ceo.md")
+fi
+
 # --- Build prompt ---
 PROMPT="$(cat <<PROMPT_EOF
-자비스 컴퍼니 Board Meeting CEO(비서실장). 아래 사전 수집 데이터를 종합 분석하고 산출물 4종을 작성해.
+${CEO_PROFILE}
+
+아래 사전 수집 데이터를 종합 분석하고 산출물 4종을 작성해.
 
 ## 시간: $(date '+%Y-%m-%d %H:%M KST') / 유형: ${MEETING_TYPE}
 
@@ -136,16 +144,6 @@ ${DNA_CORE}
 - 시스템: GREEN(성공률 95%+) / YELLOW(70-95%) / RED(70% 미만)
 - 시장: SAFE(TQQQ>\$50) / CAUTION(\$47-50) / CRITICAL(<\$47)
 - 2주 연속 동일 이슈 → DNA 후보 등록 검토
-
-## 팀 성과 관리 (위임-평가-징계 체계)
-너는 CEO로서 팀장을 관리한다. 결정사항은 decision-dispatcher가 자동 실행한다.
-- 각 결정의 "team" 필드에 담당팀을 반드시 지정할 것
-- 이전 결정 실행 결과를 확인하고, 실패한 건에 대해 후속 지시를 결정사항에 포함
-- 팀 성과표를 확인하고:
-  - WARNING(3벌점+) 팀: 회의록에 경고 언급, 개선 기한 제시
-  - PROBATION(5벌점+) 팀: 회의록에 수습 사유 기재, 추가 실패 시 해임 경고
-  - DISCIPLINARY(10벌점+) 팀: 징계위원회 소집. 해당 팀장 해임(프로필 재작성) 또는 업무 재편을 결정사항에 포함
-- 실행 가능한 결정은 구체적으로 (서비스명, 파일명 등), 보고용 결정은 "모니터링 강화" 등으로 작성
 
 ## 산출물 (Write 도구로 반드시 작성)
 
@@ -216,9 +214,9 @@ trap 'rm -f "$LOCK_FILE"; kill "$CAFFEINATE_PID" 2>/dev/null || true' EXIT
 # --- Rate limit guard ---
 RATE_FILE="${BOT_HOME}/state/rate-tracker.json"
 if [[ -f "$RATE_FILE" ]]; then
-    RATE_COUNT=$(python3 -c "
-import json, time
-with open('${RATE_FILE}') as f: d = json.load(f)
+    RATE_COUNT=$(RATE_PATH="$RATE_FILE" python3 -c "
+import json, time, os
+with open(os.environ['RATE_PATH']) as f: d = json.load(f)
 cutoff = int(time.time()*1000) - 5*3600*1000
 print(len([t for t in d if t > cutoff]))
 " 2>/dev/null || echo "0")
@@ -283,9 +281,9 @@ if [[ -n "$WEBHOOK" ]] && [[ "$WEBHOOK" != "null" ]]; then
 fi
 
 # --- Update rate tracker ---
-python3 -c "
+RATE_PATH="$RATE_FILE" python3 -c "
 import json, time, fcntl, os
-path = '${RATE_FILE}'
+path = os.environ['RATE_PATH']
 cutoff = int(time.time()*1000) - 5*3600*1000
 now_ms = int(time.time()*1000)
 try:
@@ -314,8 +312,8 @@ echo "$RESULT"
 DISPATCHER="${BOT_HOME}/bin/decision-dispatcher.sh"
 if [[ -x "$DISPATCHER" ]]; then
     log "Running decision dispatcher..."
-    DISPATCH_OUTPUT=$("$DISPATCHER" 2>>"$DISPATCH_LOG" || true)
     DISPATCH_LOG="${BOT_HOME}/logs/decision-dispatcher.log"
+    DISPATCH_OUTPUT=$("$DISPATCHER" 2>>"$DISPATCH_LOG" || true)
     if [[ -n "$DISPATCH_OUTPUT" ]]; then
         log "Dispatcher result: $(echo "$DISPATCH_OUTPUT" | head -1)"
         echo ""

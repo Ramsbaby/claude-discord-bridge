@@ -20,7 +20,7 @@ if [[ ! -f "$MONITORING_CONFIG" ]]; then
     exit 1
 fi
 
-WEBHOOK_URL=$(python3 -c "import json; print(json.load(open('$MONITORING_CONFIG'))['webhooks']['jarvis-system'])")
+WEBHOOK_URL=$(CFG_PATH="$MONITORING_CONFIG" python3 -c "import json,os; print(json.load(open(os.environ['CFG_PATH']))['webhooks']['jarvis-system'])")
 
 # ============================================================================
 # 함수
@@ -155,11 +155,11 @@ fi
 # 4) LanceDB 실제 쿼리 검증 — 행 수 0이면 FAIL
 DB_PATH="$BOT_HOME/rag/lancedb"
 if [[ -d "$DB_PATH" ]]; then
-    row_count=$(cd "$BOT_HOME/lib" && /opt/homebrew/bin/node -e "
+    row_count=$(cd "$BOT_HOME/lib" && LANCEDB_DIR="$DB_PATH" /opt/homebrew/bin/node -e "
       const lancedb = require('@lancedb/lancedb');
       (async () => {
         try {
-          const db = await lancedb.connect('$DB_PATH');
+          const db = await lancedb.connect(process.env.LANCEDB_DIR);
           const t = await db.openTable('documents');
           const rows = await t.query().limit(1).toArray();
           console.log(rows.length > 0 ? 'OK' : '0');

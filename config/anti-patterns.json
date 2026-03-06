@@ -80,6 +80,42 @@
       "fix_hint": "Add Array.isArray() check before typeof 'object'",
       "exclude_files": [],
       "exclude_lines": ["//", "/*", "Array.isArray"]
+    },
+    {
+      "id": "inline-var-injection",
+      "description": "Bash variable in inline script string literal — use env var (os.environ / process.env)",
+      "grep_pattern": "'\\$\\{?[A-Za-z_]+\\}?'",
+      "file_glob": "*.sh",
+      "tier": 2,
+      "severity": "high",
+      "fix_hint": "Python: VAR=\"$val\" python3 -c \"os.environ['VAR']\". Node: VAR=\"$val\" node -e \"process.env.VAR\"",
+      "context_check": "python3\\|node ",
+      "exclude_files": [],
+      "exclude_lines": ["#", "echo ", "printf ", "log "]
+    },
+    {
+      "id": "python-triple-quote-injection",
+      "description": "Triple-quote bash injection in Python — arbitrary code execution possible",
+      "grep_pattern": "'''\\$\\{?[A-Za-z_]",
+      "file_glob": "*.sh",
+      "tier": 2,
+      "severity": "critical",
+      "fix_hint": "Pass via env var: VAR=\"$val\" python3 -c \"import os; v = os.environ['VAR']\"",
+      "context_check": "python3",
+      "exclude_files": [],
+      "exclude_lines": ["#"]
+    },
+    {
+      "id": "non-atomic-json-write",
+      "description": "f.truncate() in inline script — likely non-atomic write, data loss on crash",
+      "grep_pattern": "\\.truncate\\(\\)",
+      "file_glob": "*.sh",
+      "tier": 2,
+      "severity": "high",
+      "fix_hint": "Use tempfile.mkstemp() + os.replace() for atomic writes",
+      "context_check": "python3",
+      "exclude_files": [],
+      "exclude_lines": ["#", "os.replace"]
     }
   ]
 }
