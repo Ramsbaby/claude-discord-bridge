@@ -16,7 +16,8 @@ fi
 # Helper function to prune old entries
 prune_entries() {
   local json="$1"
-  local now=$(python3 -c 'import time; print(int(time.time()*1000))')
+  local now
+  now=$(python3 -c 'import time; print(int(time.time()*1000))')
 
   echo "$json" | jq --arg now "$now" '.activities |= map(select(($now | tonumber) - .ts < '"$PRUNE_THRESHOLD"'))'
 }

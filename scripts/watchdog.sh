@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -uo pipefail
 
 # watchdog.sh - Discord bot process monitor & self-healer
-# Runs every 180s via launchd. Monitors discord-bot, cleans stale claude -p.
+# KeepAlive launchd service with internal 180s loop. Monitors discord-bot, cleans stale claude -p.
 
 # --- Configuration ---
 BOT_HOME="${BOT_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
@@ -36,7 +36,6 @@ send_alert() {
 
 acquire_lock() {
     if mkdir "$HEALING_LOCK" 2>/dev/null; then
-        trap 'rmdir "$HEALING_LOCK" 2>/dev/null' EXIT
         return 0
     fi
     # Stale lock detection (600s = 10 min)
@@ -47,12 +46,15 @@ acquire_lock() {
             log "WARN: Removing stale lock (age=${lock_age}s)"
             rmdir "$HEALING_LOCK" 2>/dev/null || true
             mkdir "$HEALING_LOCK" 2>/dev/null || return 1
-            trap 'rmdir "$HEALING_LOCK" 2>/dev/null' EXIT
             return 0
         fi
     fi
-    log "Another healing in progress, exiting"
+    log "Another healing in progress, skipping"
     return 1
+}
+
+release_lock() {
+    rmdir "$HEALING_LOCK" 2>/dev/null || true
 }
 
 get_crash_count() {
@@ -128,8 +130,6 @@ graceful_kill() {
 # --- Stale claude -p cleanup ---
 cleanup_stale_claude() {
     local stale_killed=0
-    local now
-    now=$(date +%s)
     while IFS= read -r line; do
         local pid elapsed_min
         pid=$(echo "$line" | awk '{print $1}')
@@ -159,8 +159,6 @@ cleanup_stale_claude() {
 
 # --- Discord bot status check ---
 check_discord_bot() {
-    local uid
-    uid=$(id -u)
     local status_line
     status_line=$(launchctl list 2>/dev/null | grep "$DISCORD_SERVICE" || true)
 
@@ -199,20 +197,9 @@ check_memory() {
     echo $(( total_rss / 1024 ))  # Convert KB to MB
 }
 
-# --- Main ---
-acquire_lock || exit 0
-check_crash_decay
-
-stale_killed=$(cleanup_stale_claude)
-if (( stale_killed > 0 )); then
-    log "Cleaned $stale_killed stale claude -p process(es)"
-fi
-
 # --- Zombie Claude Code agent cleanup (team agents that outlive their session) ---
 cleanup_zombie_agents() {
     local killed=0
-    local now
-    now=$(date +%s)
     while IFS= read -r line; do
         local pid elapsed_min
         pid=$(echo "$line" | awk '{print $1}')
@@ -245,7 +232,6 @@ cleanup_zombie_agents() {
         log "Cleaned $killed zombie agent process(es)"
     fi
 }
-cleanup_zombie_agents
 
 # Reconcile claude-global.count with actual lock slots (prevent counter drift)
 _reconcile_global_count() {
@@ -253,7 +239,7 @@ _reconcile_global_count() {
     local count_file="$BOT_HOME/state/claude-global.count"
     local actual_slots=0
     if [[ -d "$lock_dir" ]]; then
-        actual_slots=$(ls -d "${lock_dir}/slot-"* 2>/dev/null | wc -l | tr -d ' ')
+        actual_slots=$(find "$lock_dir" -maxdepth 1 -name 'slot-*' -type d 2>/dev/null | wc -l | tr -d ' ')
     fi
     local file_count=0
     if [[ -f "$count_file" ]]; then
@@ -265,73 +251,88 @@ _reconcile_global_count() {
         log "Counter reconciled: $file_count → $actual_slots"
     fi
 }
-_reconcile_global_count
 
-bot_status=$(check_discord_bot)
-crash_count=$(get_crash_count)
-memory_mb=0
-health_status="unknown"
+# --- Single monitoring pass ---
+run_one_check() {
+    check_crash_decay
 
-case "$bot_status" in
-    RUNNING:*)
-        pid="${bot_status#RUNNING:}"
-        memory_mb=$(check_memory "$pid")
-        health_status="healthy"
-        decrement_crash
+    local stale_killed
+    stale_killed=$(cleanup_stale_claude)
+    if (( stale_killed > 0 )); then
+        log "Cleaned $stale_killed stale claude -p process(es)"
+    fi
 
-        if (( memory_mb >= MEMORY_CRITICAL_MB )); then
-            send_alert "[Bot Watchdog] CRITICAL: Discord bot memory=${memory_mb}MB (>=${MEMORY_CRITICAL_MB}MB). Restarting."
-            graceful_kill "$pid"
-            launchctl kickstart -k "gui/$(id -u)/$DISCORD_SERVICE" 2>/dev/null || true
-            health_status="restarted:memory"
-        elif (( memory_mb >= MEMORY_WARN_MB )); then
-            log "WARN: Discord bot memory=${memory_mb}MB (>=${MEMORY_WARN_MB}MB)"
-            health_status="warning:memory"
-        fi
-        ;;
+    cleanup_zombie_agents
+    _reconcile_global_count
 
-    NOT_LOADED|CRASHED:*|STOPPED)
-        health_status="down:$bot_status"
-        increment_crash
-        crash_count=$(get_crash_count)
+    local bot_status crash_count memory_mb health_status
+    bot_status=$(check_discord_bot)
+    crash_count=$(get_crash_count)
+    memory_mb=0
+    health_status="unknown"
 
-        if (( crash_count >= MAX_RETRIES )); then
-            local fatal_last="$STATE_DIR/fatal-alert-last"
-            local now_ts
-            now_ts=$(date +%s)
-            local last_ts=0
-            [[ -f "$fatal_last" ]] && last_ts=$(cat "$fatal_last")
-            if (( now_ts - last_ts >= FATAL_ALERT_COOLDOWN_SEC )); then
-                send_alert "[Bot Watchdog] FATAL: Discord bot crashed ${crash_count} times, max retries reached. Manual intervention required."
-                echo "$now_ts" > "$fatal_last"
-            else
-                log "FATAL alert suppressed (cooldown: $(( FATAL_ALERT_COOLDOWN_SEC - (now_ts - last_ts) ))s remaining)"
-            fi
-            health_status="fatal:max_retries"
-        elif is_in_cooldown; then
-            health_status="cooldown"
-        else
-            backoff=$(get_backoff "$crash_count")
-            log "Attempting restart #${crash_count} (backoff=${backoff}s)"
-            date +%s > "$STATE_DIR/last-restart"
+    case "$bot_status" in
+        RUNNING:*)
+            local pid
+            pid="${bot_status#RUNNING:}"
+            memory_mb=$(check_memory "$pid")
+            health_status="healthy"
+            decrement_crash
 
-            if [[ "$bot_status" == "NOT_LOADED" && -f "$DISCORD_PLIST" ]]; then
-                launchctl bootstrap "gui/$(id -u)" "$DISCORD_PLIST" 2>/dev/null \
-                    || launchctl load "$DISCORD_PLIST" 2>/dev/null || true
-            else
+            if (( memory_mb >= MEMORY_CRITICAL_MB )); then
+                send_alert "[Bot Watchdog] CRITICAL: Discord bot memory=${memory_mb}MB (>=${MEMORY_CRITICAL_MB}MB). Restarting."
+                graceful_kill "$pid"
                 launchctl kickstart -k "gui/$(id -u)/$DISCORD_SERVICE" 2>/dev/null || true
+                health_status="restarted:memory"
+            elif (( memory_mb >= MEMORY_WARN_MB )); then
+                log "WARN: Discord bot memory=${memory_mb}MB (>=${MEMORY_WARN_MB}MB)"
+                health_status="warning:memory"
             fi
+            ;;
 
-            if (( crash_count >= 3 )); then
-                send_alert "[Bot Watchdog] Discord bot restart #${crash_count}. Status was: $bot_status"
+        NOT_LOADED|CRASHED:*|STOPPED)
+            health_status="down:$bot_status"
+            increment_crash
+            crash_count=$(get_crash_count)
+
+            if (( crash_count >= MAX_RETRIES )); then
+                local fatal_last now_ts last_ts
+                fatal_last="$STATE_DIR/fatal-alert-last"
+                now_ts=$(date +%s)
+                last_ts=0
+                if [[ -f "$fatal_last" ]]; then last_ts=$(cat "$fatal_last"); fi
+                if (( now_ts - last_ts >= FATAL_ALERT_COOLDOWN_SEC )); then
+                    send_alert "[Bot Watchdog] FATAL: Discord bot crashed ${crash_count} times, max retries reached. Manual intervention required."
+                    echo "$now_ts" > "$fatal_last"
+                else
+                    log "FATAL alert suppressed (cooldown: $(( FATAL_ALERT_COOLDOWN_SEC - (now_ts - last_ts) ))s remaining)"
+                fi
+                health_status="fatal:max_retries"
+            elif is_in_cooldown; then
+                health_status="cooldown"
+            else
+                local backoff
+                backoff=$(get_backoff "$crash_count")
+                log "Attempting restart #${crash_count} (backoff=${backoff}s)"
+                date +%s > "$STATE_DIR/last-restart"
+
+                if [[ "$bot_status" == "NOT_LOADED" && -f "$DISCORD_PLIST" ]]; then
+                    launchctl bootstrap "gui/$(id -u)" "$DISCORD_PLIST" 2>/dev/null \
+                        || launchctl load "$DISCORD_PLIST" 2>/dev/null || true
+                else
+                    launchctl kickstart -k "gui/$(id -u)/$DISCORD_SERVICE" 2>/dev/null || true
+                fi
+
+                if (( crash_count >= 3 )); then
+                    send_alert "[Bot Watchdog] Discord bot restart #${crash_count}. Status was: $bot_status"
+                fi
+                health_status="restarting:attempt_$crash_count"
             fi
-            health_status="restarting:attempt_$crash_count"
-        fi
-        ;;
-esac
+            ;;
+    esac
 
-# Write health status
-cat > "$BOT_HOME/state/health.json" <<HEALTHEOF
+    # Write health status
+    cat > "$BOT_HOME/state/health.json" <<HEALTHEOF
 {
   "last_check": "$(date -u '+%Y-%m-%dT%H:%M:%SZ')",
   "discord_bot": "$health_status",
@@ -341,4 +342,14 @@ cat > "$BOT_HOME/state/health.json" <<HEALTHEOF
 }
 HEALTHEOF
 
-log "Check complete: bot=$health_status mem=${memory_mb}MB stale_killed=$stale_killed crashes=$crash_count"
+    log "Check complete: bot=$health_status mem=${memory_mb}MB stale_killed=$stale_killed crashes=$crash_count"
+}
+
+# --- Main loop (KeepAlive service: runs forever, checks every 180s) ---
+while true; do
+    if acquire_lock; then
+        run_one_check || log "WARN: check iteration error"
+        release_lock
+    fi
+    sleep 180
+done

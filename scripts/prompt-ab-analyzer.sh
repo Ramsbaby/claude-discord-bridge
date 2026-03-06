@@ -79,7 +79,7 @@ TOTAL_SUCCESSES=0
 
 if [[ -n "$results" ]]; then
     while IFS="|" read -r task_id total success_count avg_ms total_cost; do
-        [[ -z "$task_id" ]] && continue
+        if [[ -z "$task_id" ]]; then continue; fi
         TOTAL_TASKS=$(( TOTAL_TASKS + 1 ))
         TOTAL_RUNS=$(( TOTAL_RUNS + total ))
         TOTAL_SUCCESSES=$(( TOTAL_SUCCESSES + success_count ))

@@ -30,8 +30,9 @@
 1. 주간 브랜드 보고서 저장:
    ~/.jarvis/rag/teams/reports/brand-$(date +%Y-W%V).md
 
-2. 트렌드 인사이트 있으면 council에 공유:
-   ~/.jarvis/rag/teams/shared-inbox/$(date +%Y-%m-%d)_brand_to_council.md
+2. council에 공유할 트렌드 발견 시 shared-inbox에 작성:
+   → GitHub Trending/스타 급증, 경쟁 프로젝트 등장, 블로그 트래픽 이상 등
+   echo "내용" > ~/.jarvis/rag/teams/shared-inbox/$(date +%Y-%m-%d)_brand_to_council.md
 ```
 
 ## Discord 전송 채널

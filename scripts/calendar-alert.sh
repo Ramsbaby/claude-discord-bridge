@@ -10,7 +10,7 @@ STATE_DIR="$BOT_HOME/state"
 ALERTED_FILE="$STATE_DIR/alerted-events.json"
 WEBHOOK_CONFIG="$BOT_HOME/config/monitoring.json"
 LOG="$BOT_HOME/logs/calendar-alert.log"
-GOOGLE_ACCOUNT="yuiopnm1931@gmail.com"
+GOOGLE_ACCOUNT="${GOOGLE_ACCOUNT:-$(grep '^GOOGLE_ACCOUNT=' "$BOT_HOME/discord/.env" 2>/dev/null | cut -d= -f2 || echo "")}"
 ALERT_WINDOW_MIN=25
 ALERT_WINDOW_MAX=35
 
@@ -40,15 +40,25 @@ WINDOW_TO="$(date -v+"${ALERT_WINDOW_MAX}"M '+%Y-%m-%dT%H:%M:%S')"
 FROM_DATE="$(date -v+"${ALERT_WINDOW_MIN}"M '+%Y-%m-%d')"
 TO_DATE="$(date -v+"${ALERT_WINDOW_MAX}"M '+%Y-%m-%d %H:%M')"
 
-# Google Calendar에서 이벤트 조회
-CALENDAR_OUTPUT="$(gog calendar list \
+# Google Calendar에서 이벤트 조회 (gog 실패 시 빈 결과 반환)
+CALENDAR_OUTPUT=""
+if CALENDAR_OUTPUT="$(gog calendar list \
     --from "$FROM_DATE" \
     --to "$TO_DATE" \
     --account "$GOOGLE_ACCOUNT" \
-    --json 2>/dev/null || echo '{"events":[]}')"
+    --json 2>/dev/null)"; then
+    :
+else
+    log "WARN: gog calendar failed (exit $?), using empty events"
+    CALENDAR_OUTPUT='{"events":[]}'
+fi
 
 # Webhook URL 가져오기
-WEBHOOK_URL="$(python3 -c "import json; print(json.load(open('${WEBHOOK_CONFIG}'))['webhook']['url'])")"
+WEBHOOK_URL=""
+if ! WEBHOOK_URL="$(python3 -c "import json; print(json.load(open('${WEBHOOK_CONFIG}'))['webhook']['url'])" 2>/dev/null)"; then
+    log "ERROR: webhook URL parse failed"
+    exit 0
+fi
 
 # 이벤트 처리: 필터링 + 중복 체크 + 알림 전송 + 정리
 python3 - "$CALENDAR_OUTPUT" "$ALERTED_FILE" "$WEBHOOK_URL" "$WINDOW_FROM" "$WINDOW_TO" "$LOG" << 'PYEOF'

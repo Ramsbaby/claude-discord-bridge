@@ -87,6 +87,7 @@ const NTFY_CFG   = monitoring.ntfy ?? {};
 
 async function sendWebhook(webhookUrl, content) {
   if (!webhookUrl || !content) return;
+  content = content.replace(/https?:\/\/[^ )>\n]+/g, '');
   // Discord 2000-char limit: chunk if needed
   for (let i = 0; i < content.length; i += 1990) {
     const chunk = content.slice(i, i + 1990);

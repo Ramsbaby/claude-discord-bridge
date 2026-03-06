@@ -7,7 +7,7 @@
  *   pollL3Requests(client)                  — pick up bash-originated .json requests
  */
 
-import { ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
+import { ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'discord.js';
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
@@ -111,7 +111,7 @@ export async function handleApprovalInteraction(interaction) {
   const entry = pending[actionId];
 
   if (!entry) {
-    await interaction.reply({ content: t('l3.error.expired'), ephemeral: true });
+    await interaction.reply({ content: t('l3.error.expired'), flags: MessageFlags.Ephemeral });
     return true;
   }
 

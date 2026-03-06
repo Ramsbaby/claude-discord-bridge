@@ -152,4 +152,40 @@ MSG
     exit 0
 fi
 
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] RAG quality check: OK (last index ${elapsed_min}min ago)"
+# 4) LanceDB 실제 쿼리 검증 — 행 수 0이면 FAIL
+DB_PATH="$BOT_HOME/rag/lancedb"
+if [[ -d "$DB_PATH" ]]; then
+    row_count=$(cd "$BOT_HOME/lib" && /opt/homebrew/bin/node -e "
+      const lancedb = require('@lancedb/lancedb');
+      (async () => {
+        try {
+          const db = await lancedb.connect('$DB_PATH');
+          const t = await db.openTable('documents');
+          const rows = await t.query().limit(1).toArray();
+          console.log(rows.length > 0 ? 'OK' : '0');
+        } catch(e) { console.log('ERROR:' + e.message.slice(0,100)); }
+      })();
+    " 2>/dev/null || echo "ERROR:node-exec-failed")
+
+    if [[ "$row_count" == "0" ]]; then
+        alert_and_exit "$(cat <<'MSG'
+🔴 RAG 데이터 이상 감지
+상태: LanceDB 테이블에 데이터 0행 (인덱싱은 작동하나 실제 데이터 없음)
+조치: rag-index.mjs 로그 확인 및 OpenAI Embedding API 상태 점검
+MSG
+)"
+        exit 0
+    fi
+
+    if [[ "$row_count" == ERROR:* ]]; then
+        alert_and_exit "$(cat <<MSG
+🔴 RAG LanceDB 쿼리 실패
+에러: ${row_count#ERROR:}
+조치: LanceDB 파일 손상 여부 확인 (rm -rf $DB_PATH 후 rag-index 재실행)
+MSG
+)"
+        exit 0
+    fi
+fi
+
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] RAG quality check: OK (last index ${elapsed_min}min ago, DB query OK)"

@@ -13,7 +13,15 @@ export HOME="${HOME:-/Users/$(id -un)}"  # macOS default; Linux: /home/$(id -un)
 unset CLAUDECODE CLAUDE_CODE_ENTRYPOINT CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS
 
 BOT_HOME="${BOT_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
-TASKS_FILE="${BOT_HOME}/config/tasks.json"
+# ADR-007: Plugin system — regenerate effective-tasks.json, then use it
+if [[ -x "${BOT_HOME}/bin/plugin-loader.sh" ]]; then
+    "${BOT_HOME}/bin/plugin-loader.sh" 2>/dev/null || true
+fi
+if [[ -f "${BOT_HOME}/config/effective-tasks.json" ]]; then
+    TASKS_FILE="${BOT_HOME}/config/effective-tasks.json"
+else
+    TASKS_FILE="${BOT_HOME}/config/tasks.json"
+fi
 CRON_LOG="${BOT_HOME}/logs/cron.log"
 TASK_ID="${1:?Usage: bot-cron.sh TASK_ID}"
 
@@ -50,6 +58,7 @@ RESULT_MAX_CHARS=$(echo "$TASK_CONFIG" | jq -r '.resultMaxChars // 2000')
 MODEL=$(echo "$TASK_CONFIG" | jq -r '.model // empty')
 DISCORD_CHANNEL=$(echo "$TASK_CONFIG" | jq -r '.discordChannel // empty')
 REQUIRES_MARKET=$(echo "$TASK_CONFIG" | jq -r '.requiresMarket // false')
+SCRIPT=$(echo "$TASK_CONFIG" | jq -r '.script // empty')
 # output is a JSON array like ["discord","file"]
 OUTPUT_MODES=$(echo "$TASK_CONFIG" | jq -r '.output[]? // empty')
 
@@ -67,10 +76,21 @@ log "START"
 # --- Lounge announce: task started ---
 "$BOT_HOME/bin/lounge-announce.sh" "$TASK_ID" "running" 2>/dev/null || true
 
-# --- Execute via retry-wrapper ---
+# --- Execute: script 필드가 있으면 직접 실행, 없으면 retry-wrapper ---
 RESULT=""
 EXIT_CODE=0
-RESULT=$("$BOT_HOME/bin/retry-wrapper.sh" "$TASK_ID" "$PROMPT" "$ALLOWED_TOOLS" "$TIMEOUT" "$MAX_BUDGET" "$RESULT_RETENTION" "$MODEL") || EXIT_CODE=$?
+if [[ -n "$SCRIPT" ]]; then
+    # script 경로의 ~ 확장
+    SCRIPT_PATH="${SCRIPT/#\~/$HOME}"
+    if [[ ! -x "$SCRIPT_PATH" ]]; then
+        log "ERROR: script not found or not executable: $SCRIPT_PATH"
+        _TASK_DONE=true
+        exit 1
+    fi
+    RESULT=$("$SCRIPT_PATH" "daily" 2>>"${BOT_HOME}/logs/cron.log") || EXIT_CODE=$?
+else
+    RESULT=$("$BOT_HOME/bin/retry-wrapper.sh" "$TASK_ID" "$PROMPT" "$ALLOWED_TOOLS" "$TIMEOUT" "$MAX_BUDGET" "$RESULT_RETENTION" "$MODEL") || EXIT_CODE=$?
+fi
 
 if [[ $EXIT_CODE -ne 0 ]]; then
     "$BOT_HOME/bin/lounge-announce.sh" "$TASK_ID" "--done" 2>/dev/null || true

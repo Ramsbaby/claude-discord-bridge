@@ -1,0 +1,19 @@
+{
+  "id": "news-briefing",
+  "name": "Daily News Briefing",
+  "version": "1.0.0",
+  "description": "Morning AI/Tech news digest — 3 headlines summarized in one line each",
+  "schedule": "50 7 * * *",
+  "timeout": 120,
+  "prompt": "Summarize today's top 3 AI/Tech news in one line each. Include investment-related news if available. Be concise.",
+  "allowedTools": "WebSearch",
+  "output": ["discord", "file"],
+  "discordChannel": "jarvis",
+  "retry": { "max": 2, "backoff": "exponential" },
+  "maxBudget": "0.50",
+  "priority": "daily",
+  "depends": [],
+  "resultRetention": 7,
+  "resultMaxChars": 500,
+  "tags": ["news", "daily", "lite"]
+}

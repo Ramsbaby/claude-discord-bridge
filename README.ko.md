@@ -140,8 +140,8 @@ Nexus CIG가 모든 툴 호출 결과를 Claude 컨텍스트에 들어가기 전
 ### A안: Docker (가장 간단)
 
 ```bash
-git clone https://github.com/Ramsbaby/claude-discord-bridge ~/claude-discord-bridge
-cd ~/claude-discord-bridge
+git clone https://github.com/YOUR_USERNAME/jarvis ~/.jarvis
+cd ~/.jarvis
 cp discord/.env.example discord/.env
 # discord/.env 편집 — 토큰 입력
 docker compose up -d
@@ -153,8 +153,8 @@ docker compose up -d
 
 ```bash
 # 1. 클론
-git clone https://github.com/Ramsbaby/claude-discord-bridge ~/claude-discord-bridge
-cd ~/claude-discord-bridge
+git clone https://github.com/YOUR_USERNAME/jarvis ~/.jarvis
+cd ~/.jarvis
 
 # 2. 설치 스크립트 실행
 ./install.sh --local
@@ -336,7 +336,7 @@ RAG 엔진은 매시간 증분 인덱싱. 질문 시 관련 컨텍스트를 `cla
 ## 파일 구조
 
 ```
-~/claude-discord-bridge/
+~/.jarvis/
 ├── discord/
 │   ├── discord-bot.js          # Discord 클라이언트, 슬래시 커맨드
 │   ├── locales/
@@ -352,6 +352,8 @@ RAG 엔진은 매시간 증분 인덱싱. 질문 시 관련 컨텍스트를 `cla
 ├── bin/
 │   ├── ask-claude.sh           # claude -p 래퍼 (RAG + 토큰 격리)
 │   ├── bot-cron.sh             # 크론 태스크 러너 (세마포어, 재시도, 라우팅)
+│   ├── board-meeting.sh        # Board Meeting CEO 에이전트 (08:10, 21:55)
+│   ├── decision-dispatcher.sh  # 결정사항 자동 실행 + 팀 성과 평가
 │   └── rag-index.mjs           # 증분 RAG 인덱서
 ├── lib/
 │   ├── rag-engine.mjs          # LanceDB 하이브리드 검색 엔진
@@ -365,7 +367,12 @@ RAG 엔진은 매시간 증분 인덱싱. 질문 시 관련 컨텍스트를 `cla
 │   └── e2e-test.sh             # 43개 E2E 테스트
 ├── context/                    # 태스크별 배경 지식 파일
 ├── results/                    # 크론 태스크 결과 이력
+├── agents/                    # 팀장 에이전트 프로필 (CEO, Infra Chief 등)
 └── state/                      # sessions.json, rate-tracker.json
+    ├── team-scorecard.json     # 팀 성과표 (공적/벌점/상태)
+    ├── decisions/              # Board Meeting 의사결정 감사 로그
+    ├── board-minutes/          # Board Meeting 회의록
+    └── dispatch-results/       # 결정 실행 결과 + 크론 분석
 ```
 
 ---
@@ -385,7 +392,7 @@ RAG 엔진은 매시간 증분 인덱싱. 질문 시 관련 컨텍스트를 `cla
 
 ```bash
 # 1. Fork + 클론
-git clone https://github.com/YOUR_USERNAME/claude-discord-bridge
+git clone https://github.com/YOUR_USERNAME/jarvis
 
 # 2. 변경 작업
 

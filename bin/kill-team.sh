@@ -22,10 +22,10 @@ fi
 # 대상 PID 수집
 # ============================================================
 if [[ "$TEAM" == "--all" ]]; then
-    PIDS=$(ps axo pid,command | grep 'team-name ' | grep -v grep | awk '{print $1}' || true)
+    PIDS=$(pgrep -f 'team-name ' || true)
     LABEL="모든 팀 에이전트"
 else
-    PIDS=$(ps axo pid,command | grep "team-name $TEAM" | grep -v grep | awk '{print $1}' || true)
+    PIDS=$(pgrep -f "team-name $TEAM" || true)
     LABEL="팀: $TEAM"
 fi
 
@@ -35,7 +35,7 @@ if [[ -z "$PIDS" ]]; then
 fi
 
 COUNT=$(echo "$PIDS" | wc -l | tr -d ' ')
-echo "[kill-team] $LABEL — ${COUNT}개 에이전트 발견: $(echo $PIDS | tr '\n' ' ')"
+echo "[kill-team] $LABEL — ${COUNT}개 에이전트 발견: $(echo "$PIDS" | tr '\n' ' ')"
 
 # ============================================================
 # SIGTERM (정상 종료 요청)
@@ -48,9 +48,9 @@ sleep 3
 # 잔여 확인 → SIGKILL
 # ============================================================
 if [[ "$TEAM" == "--all" ]]; then
-    REMAINING=$(ps axo pid,command | grep 'team-name ' | grep -v grep | awk '{print $1}' || true)
+    REMAINING=$(pgrep -f 'team-name ' || true)
 else
-    REMAINING=$(ps axo pid,command | grep "team-name $TEAM" | grep -v grep | awk '{print $1}' || true)
+    REMAINING=$(pgrep -f "team-name $TEAM" || true)
 fi
 
 if [[ -n "$REMAINING" ]]; then
@@ -64,14 +64,14 @@ fi
 # 최종 확인
 # ============================================================
 if [[ "$TEAM" == "--all" ]]; then
-    FINAL=$(ps axo pid,command | grep 'team-name ' | grep -v grep | awk '{print $1}' || true)
+    FINAL=$(pgrep -f 'team-name ' || true)
 else
-    FINAL=$(ps axo pid,command | grep "team-name $TEAM" | grep -v grep | awk '{print $1}' || true)
+    FINAL=$(pgrep -f "team-name $TEAM" || true)
 fi
 
 if [[ -z "$FINAL" ]]; then
     echo "[kill-team] ✅ $LABEL 정리 완료"
 else
-    echo "[kill-team] ⚠️  일부 프로세스 잔여: $(echo $FINAL | tr '\n' ' ')"
+    echo "[kill-team] ⚠️  일부 프로세스 잔여: $(echo "$FINAL" | tr '\n' ' ')"
     exit 1
 fi

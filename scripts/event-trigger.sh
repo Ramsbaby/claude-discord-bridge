@@ -70,10 +70,9 @@ except Exception:
 check_tqqq() {
     # 평일 장중만 체크 (KST 기준 월-금 09:30-16:00 → UTC 00:30-07:00)
     # macOS date: day of week (1=Mon, 7=Sun)
-    local dow hour min
+    local dow hour
     dow=$(date +%u)
     hour=$(date +%-H)
-    min=$(date +%-M)
 
     # 주말이면 스킵
     if (( dow > 5 )); then
@@ -142,7 +141,8 @@ else:
 # --- L3 승인 요청 헬퍼 ---
 request_l3_approval() {
     local action_key="$1" label="$2" description="$3" script="$4"
-    local request_file="$BOT_HOME/state/l3-requests/$(date +%s)-${action_key}.json"
+    local request_file
+    request_file="$BOT_HOME/state/l3-requests/$(date +%s)-${action_key}.json"
     mkdir -p "$BOT_HOME/state/l3-requests"
     cat > "$request_file" << JSON
 {
@@ -178,6 +178,15 @@ check_disk() {
             "cleanup-logs.sh"
         mark_triggered "disk-space"
         log "디스크 트리거: ${usage}% → L3 승인 요청"
+
+        # 이벤트 드리븐: 인프라팀 자동 활성화
+        COMPANY_AGENT="$BOT_HOME/discord/lib/company-agent.mjs"
+        if [[ -f "$COMPANY_AGENT" ]]; then
+            log "Event dispatch: disk-critical → company-agent"
+            /opt/homebrew/bin/node "$COMPANY_AGENT" --event disk-critical \
+                --data "{\"usage\":${usage}}" \
+                >> "$BOT_HOME/logs/company-agent.log" 2>&1 &
+        fi
     fi
 }
 
@@ -189,12 +198,14 @@ check_claude_load() {
     fi
 
     local count
-    count=$(pgrep -f "claude -p" 2>/dev/null | wc -l | tr -d ' ')
+    count=$(pgrep -fc "claude -p" 2>/dev/null || echo "0")
 
     if (( count >= 3 )); then
         send_discord "🔥 **Claude 고부하** 동시 실행: ${count}/4"
         mark_triggered "claude-load"
         log "Claude 부하 트리거: ${count}/4"
+        # 주의: claude-overload 이벤트는 팀(claude -p)을 추가 실행하면 과부하 악화
+        # → Discord 알림만 발송, 팀 디스패치 안 함
     fi
 }
 

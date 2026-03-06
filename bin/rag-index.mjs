@@ -130,33 +130,38 @@ async function main() {
     }
   } catch { /* docs/ 없으면 스킵 */ }
 
-  // 5b. Jarvis-Vault (Obsidian Knowledge Hub) — 01-system, 06-knowledge 우선
-  try {
-    const vaultBase = join(homedir(), 'Jarvis-Vault');
-    for (const dir of ['01-system', '04-owner', '05-career', '06-knowledge']) {
-      try {
-        const dirPath = join(vaultBase, dir);
-        const entries = await readdir(dirPath, { withFileTypes: true });
-        for (const e of entries) {
-          if (!e.isDirectory() && extname(e.name) === '.md') {
-            targets.push(join(dirPath, e.name));
-          }
-        }
-      } catch { /* subdir may not exist */ }
-    }
-    // 02-daily/insights: 최근 7일
+  // 5b. Jarvis-Vault (Obsidian Knowledge Hub) — 재귀 탐색
+  async function collectVaultMd(dirPath, opts = {}) {
+    const { maxAgeDays } = opts;
     try {
-      const insightsDir = join(vaultBase, '02-daily', 'insights');
-      const files = await readdir(insightsDir);
-      for (const f of files) {
-        if (extname(f) !== '.md') continue;
-        const fPath = join(insightsDir, f);
-        const mtime = await getMtime(fPath);
-        if (mtime && (Date.now() - mtime) / (1000 * 60 * 60 * 24) <= 7) {
-          targets.push(fPath);
+      const entries = await readdir(dirPath, { withFileTypes: true });
+      for (const e of entries) {
+        if (e.name.startsWith('.')) continue; // .obsidian 등 제외
+        const fullPath = join(dirPath, e.name);
+        if (e.isDirectory()) {
+          await collectVaultMd(fullPath, opts); // 재귀 탐색
+        } else if (extname(e.name) === '.md') {
+          if (maxAgeDays) {
+            const mtime = await getMtime(fullPath);
+            if (!mtime || (Date.now() - mtime) / (1000 * 60 * 60 * 24) > maxAgeDays) continue;
+          }
+          targets.push(fullPath);
         }
       }
-    } catch { /* insights/ 없으면 스킵 */ }
+    } catch { /* dir may not exist */ }
+  }
+  try {
+    const vaultBase = join(homedir(), 'Jarvis-Vault');
+    // 상시 인덱싱: 01-system, 03-teams, 04-owner, 05-career, 06-knowledge (재귀)
+    for (const dir of ['01-system', '03-teams', '04-owner', '05-career', '06-knowledge']) {
+      await collectVaultMd(join(vaultBase, dir));
+    }
+    // 02-daily/insights: 최근 7일
+    await collectVaultMd(join(vaultBase, '02-daily', 'insights'), { maxAgeDays: 7 });
+    // 02-daily/kpi: 최근 30일
+    await collectVaultMd(join(vaultBase, '02-daily', 'kpi'), { maxAgeDays: 30 });
+    // 02-daily/standup: 최근 7일
+    await collectVaultMd(join(vaultBase, '02-daily', 'standup'), { maxAgeDays: 7 });
   } catch { /* vault may not exist */ }
 
   // 5c. 사용자 커스텀 메모리 (선택적 외부 경로)

@@ -15,10 +15,17 @@ function _path(userId) {
 }
 
 function _load(userId) {
+  const defaults = { userId, facts: [], preferences: [], corrections: [], updatedAt: null };
   try {
-    return JSON.parse(readFileSync(_path(userId), 'utf-8'));
+    const data = JSON.parse(readFileSync(_path(userId), 'utf-8'));
+    const merged = { ...defaults, ...data };
+    // null/non-array 값이 파일에 있으면 spread가 기본 배열을 덮어쓰므로 재보정
+    merged.facts = Array.isArray(merged.facts) ? merged.facts : [];
+    merged.preferences = Array.isArray(merged.preferences) ? merged.preferences : [];
+    merged.corrections = Array.isArray(merged.corrections) ? merged.corrections : [];
+    return merged;
   } catch {
-    return { userId, facts: [], preferences: [], corrections: [], updatedAt: null };
+    return defaults;
   }
 }
 

@@ -112,7 +112,7 @@ check_stale_locks() {
         fi
     done
     # Reconcile: count must not exceed actual slot dirs (handles crash-without-release)
-    active_slots=$(ls -d "${LOCK_DIR}/slot-"* 2>/dev/null | wc -l | tr -d ' ')
+    active_slots=$(find "$LOCK_DIR" -maxdepth 1 -name 'slot-*' -type d 2>/dev/null | wc -l | tr -d ' ')
     if _acquire_global_lock; then
         local current_count
         current_count=$(_read_global_count)

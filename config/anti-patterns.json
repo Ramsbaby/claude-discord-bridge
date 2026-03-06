@@ -1,0 +1,85 @@
+{
+  "version": 2,
+  "patterns": [
+    {
+      "id": "ls-glob-pipe",
+      "description": "ls glob + pipe in pipefail context — glob mismatch causes exit 1",
+      "grep_pattern": "ls\\s+(-[a-zA-Z]*\\s+)?[\"${}a-zA-Z/._-]*\\*.*\\|",
+      "file_glob": "*.sh",
+      "tier": 2,
+      "severity": "high",
+      "fix_hint": "Replace with: find DIR -maxdepth 1 -name 'PATTERN' | ...",
+      "exclude_files": [],
+      "exclude_lines": ["#", "echo "]
+    },
+    {
+      "id": "set-e-and-cmd",
+      "description": "[[ cond ]] && cmd in set -e script — false condition exits script",
+      "grep_pattern": "\\[\\[.*\\]\\]\\s*&&\\s*[^|]",
+      "file_glob": "*.sh",
+      "tier": 2,
+      "severity": "high",
+      "fix_hint": "Replace with: if [[ cond ]]; then cmd; fi",
+      "context_check": "^set -[a-zA-Z]*e",
+      "exclude_files": [],
+      "exclude_lines": ["#", "set -uo pipefail", "set -u", "if ", "elif ", "echo ", "printf "]
+    },
+    {
+      "id": "ephemeral-true",
+      "description": "Deprecated ephemeral: true — use MessageFlags.Ephemeral",
+      "grep_pattern": "ephemeral:\\s*true",
+      "file_glob": "*.js",
+      "tier": 1,
+      "severity": "medium",
+      "fix_hint": "Replace ephemeral: true with flags: MessageFlags.Ephemeral",
+      "sed_fix": "s/ephemeral:\\s*true/flags: MessageFlags.Ephemeral/g",
+      "exclude_files": [],
+      "exclude_lines": ["//", "/*"]
+    },
+    {
+      "id": "ephemeral-true-mjs",
+      "description": "Deprecated ephemeral: true in .mjs — use MessageFlags.Ephemeral",
+      "grep_pattern": "ephemeral:\\s*true",
+      "file_glob": "*.mjs",
+      "tier": 1,
+      "severity": "medium",
+      "fix_hint": "Replace ephemeral: true with flags: MessageFlags.Ephemeral",
+      "sed_fix": "s/ephemeral:\\s*true/flags: MessageFlags.Ephemeral/g",
+      "exclude_files": [],
+      "exclude_lines": ["//", "/*"]
+    },
+    {
+      "id": "shellcheck-quoting",
+      "description": "SC2086 unquoted variable in shell script",
+      "tool": "shellcheck",
+      "shellcheck_codes": ["SC2086", "SC2046"],
+      "file_glob": "*.sh",
+      "tier": 1,
+      "severity": "medium",
+      "fix_hint": "Quote variables: \"$var\"",
+      "exclude_files": []
+    },
+    {
+      "id": "typeof-no-array",
+      "description": "typeof === 'object' without Array.isArray guard",
+      "grep_pattern": "typeof\\s+\\w+\\s*===?\\s*['\"]object['\"]",
+      "file_glob": "*.js",
+      "tier": 2,
+      "severity": "low",
+      "fix_hint": "Add Array.isArray() check before typeof 'object'",
+      "exclude_files": [],
+      "exclude_lines": ["//", "/*", "Array.isArray"]
+    },
+    {
+      "id": "typeof-no-array-mjs",
+      "description": "typeof === 'object' without Array.isArray guard in .mjs",
+      "grep_pattern": "typeof\\s+\\w+\\s*===?\\s*['\"]object['\"]",
+      "file_glob": "*.mjs",
+      "tier": 2,
+      "severity": "low",
+      "fix_hint": "Add Array.isArray() check before typeof 'object'",
+      "exclude_files": [],
+      "exclude_lines": ["//", "/*", "Array.isArray"]
+    }
+  ]
+}

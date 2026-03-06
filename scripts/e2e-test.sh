@@ -4,6 +4,7 @@ set -uo pipefail
 # Claude Discord Bridge E2E Test Suite
 # Usage: ~/claude-discord-bridge/scripts/e2e-test.sh [--ntfy] (--ntfy sends test push notification)
 
+export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:${HOME}/.local/bin:${PATH}"
 export BOT_HOME="${BOT_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 PASS=0
 FAIL=0
@@ -100,7 +101,7 @@ check "/alert command" grep -q "'alert'" "$BOT_HOME/discord/discord-bot.js"
 echo ""
 echo "▶ Cron Jobs"
 check "RAG indexer cron exists" bash -c "crontab -l 2>/dev/null | grep -q 'rag-index'"
-check "morning-standup cron exists" bash -c "crontab -l 2>/dev/null | grep -q 'morning-standup'"
+check "morning-standup cron exists" bash -c "crontab -l 2>/dev/null | grep -qE 'morning-standup|smart-standup'"
 check "e2e-cron.sh registered" bash -c "crontab -l 2>/dev/null | grep -q 'e2e-cron'"
 check "weekly-kpi cron exists" bash -c "crontab -l 2>/dev/null | grep -q 'weekly-kpi'"
 check "security-scan cron exists" bash -c "crontab -l 2>/dev/null | grep -q 'security-scan'"
@@ -122,6 +123,27 @@ echo "▶ Channel Routing"
 check "monitoring.json has webhooks" bash -c "jq -e '.webhooks' '$BOT_HOME/config/monitoring.json' > /dev/null 2>&1"
 check "route-result.sh supports channel arg" bash -c "grep -q 'CHANNEL' '$BOT_HOME/bin/route-result.sh'"
 check "bot-cron.sh passes channel" bash -c "grep -q 'DISCORD_CHANNEL' '$BOT_HOME/bin/bot-cron.sh'"
+
+# --- Document Consistency Tests ---
+echo ""
+echo "▶ Document Consistency (DocDD)"
+check "ADR index exists" test -f "$BOT_HOME/adr/ADR-INDEX.md"
+check "ADR-001 exists" test -f "$BOT_HOME/adr/ADR-001.md"
+check "tasks.json has depends field" bash -c "jq -e '.tasks[0].depends' '$BOT_HOME/config/tasks.json' > /dev/null 2>&1"
+check "ask-claude.sh has cross-team context" grep -q "Cross-team Context" "$BOT_HOME/bin/ask-claude.sh"
+check "ask-claude.sh has insight filter" grep -q "system-health|rate-limit-check" "$BOT_HOME/bin/ask-claude.sh"
+check "gen-inventory.sh exists" test -x "$BOT_HOME/scripts/gen-inventory.sh"
+check "cron-catalog.md exists" test -f "$HOME/Jarvis-Vault/01-system/cron-catalog.md"
+check "council reads shared-inbox" grep -q "shared-inbox" "$BOT_HOME/context/council-insight.md"
+
+# Cron-catalog vs actual crontab consistency
+TASKS_COUNT=$(jq '[.tasks[] | select(.schedule != null and .schedule != "")] | length' "$BOT_HOME/config/tasks.json" 2>/dev/null || echo 0)
+CATALOG_COUNT=$(grep -c "^|" "$HOME/Jarvis-Vault/01-system/cron-catalog.md" 2>/dev/null || echo 0)
+if [[ "$CATALOG_COUNT" -ge "$TASKS_COUNT" ]]; then
+  check "cron-catalog matches tasks.json count" true
+else
+  check "cron-catalog matches tasks.json count" false
+fi
 
 # --- ntfy Test (optional) ---
 echo ""

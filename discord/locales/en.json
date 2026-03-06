@@ -77,6 +77,7 @@
   "msg.busy": "{botName} is busy ({max} concurrent requests). Please wait.",
   "msg.analyzeImage": "Analyze this image.",
   "msg.truncated": "\u26a0\ufe0f Response was cut short due to turn limit. Try asking again or be more specific.",
+  "msg.timeout": "\u23f0 Response timed out (8 min). Try breaking your question into smaller parts.",
   "error.title": "Error",
   "error.noResponse": "No response received. Please try again later.",
   "error.generic": "Error",

@@ -112,6 +112,21 @@ async function registerSlashCommands(clientId, guildId) {
     new SlashCommandBuilder()
       .setName('lounge')
       .setDescription(t('cmd.lounge.desc')),
+    new SlashCommandBuilder()
+      .setName('team')
+      .setDescription('자비스 컴퍼니 팀장을 소환합니다')
+      .addStringOption(opt =>
+        opt.setName('name').setDescription('팀 이름').setRequired(true)
+          .addChoices(
+            { name: '감사팀 (Council)', value: 'council' },
+            { name: '인프라팀 (Infra)', value: 'infra' },
+            { name: '기록팀 (Record)', value: 'record' },
+            { name: '브랜드팀 (Brand)', value: 'brand' },
+            { name: '성장팀 (Career)', value: 'career' },
+            { name: '학습팀 (Academy)', value: 'academy' },
+            { name: '정보팀 (Trend)', value: 'trend' },
+          )
+      ),
   ];
 
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
@@ -249,7 +264,14 @@ client.on('shardError', (err, shardId) => {
 
 async function shutdown(signal) {
   log('info', `Received ${signal}, shutting down`);
+  // 활성 세션 사용자에게 재시작 안내 메시지 전송
   for (const [threadId, entry] of activeProcesses) {
+    try {
+      const channel = await client.channels.fetch(threadId).catch(() => null);
+      if (channel) {
+        await channel.send('⚠️ 봇이 재시작됩니다. 잠시 후 다시 시도해주세요.').catch(() => {});
+      }
+    } catch { /* best effort */ }
     log('info', 'Killing active process', { threadId });
     clearTimeout(entry.timeout);
     if (entry.typingInterval) clearInterval(entry.typingInterval);

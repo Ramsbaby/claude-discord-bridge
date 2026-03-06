@@ -37,11 +37,13 @@ is_in_cooldown() {
         return 1
     fi
 
-    local last_hash=$(head -1 "$LAST_ALERT_FILE" 2>/dev/null || echo "")
-    local last_time=$(tail -1 "$LAST_ALERT_FILE" 2>/dev/null || echo "0")
+    local last_hash last_time
+    last_hash=$(head -1 "$LAST_ALERT_FILE" 2>/dev/null || echo "")
+    last_time=$(tail -1 "$LAST_ALERT_FILE" 2>/dev/null || echo "0")
     # 빈 값이나 숫자가 아닌 경우 0으로 처리
-    [[ ! "$last_time" =~ ^[0-9]+$ ]] && last_time=0
-    local now=$(date +%s)
+    if [[ ! "$last_time" =~ ^[0-9]+$ ]]; then last_time=0; fi
+    local now
+    now=$(date +%s)
     local elapsed=$((now - last_time))
 
     # 동일 메시지 + 쿨다운 시간 내
@@ -89,16 +91,18 @@ send_alert() {
     local fields="${4:-}"  # JSON array string
 
     # 쿨다운 체크
-    local message_hash=$(echo "$level$title$message" | /sbin/md5 -q)
+    local message_hash
+    message_hash=$(echo "$level$title$message" | /sbin/md5 -q)
     if is_in_cooldown "$message_hash"; then
         echo "Alert skipped (cooldown): $title"
         return 0
     fi
 
-    local color=$(get_color "$level")
-    local emoji=$(get_emoji "$level")
-    local timestamp=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
-    local hostname=$(hostname -s)
+    local color emoji timestamp hostname
+    color=$(get_color "$level")
+    emoji=$(get_emoji "$level")
+    timestamp=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
+    hostname=$(hostname -s)
 
     # Embed JSON 생성 (jq로 특수문자 안전 처리)
     local embed_json
@@ -131,7 +135,8 @@ send_alert() {
         set_last_alert "$message_hash"
         echo "Alert sent (Discord): $title"
     else
-        local body=$(cat /tmp/webhook_response.txt 2>/dev/null || echo "")
+        local body
+        body=$(cat /tmp/webhook_response.txt 2>/dev/null || echo "")
         echo "Alert failed (Discord HTTP $http_code): $body" >&2
     fi
 

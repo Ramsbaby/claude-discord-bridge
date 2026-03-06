@@ -12,6 +12,7 @@ import {
   AttachmentBuilder,
   ButtonBuilder,
   ButtonStyle,
+  MessageFlags,
 } from 'discord.js';
 import { log } from './claude-runner.js';
 import { t } from './i18n.js';
@@ -328,6 +329,13 @@ export class StreamingMessage {
     this.fenceOpen = false;
     this.finalized = false;
     this.hasRealContent = false;
+    this._statusLines = [];
+    this._statusTimer = null;
+    this._thinkingMsg = t('stream.thinking');
+    this._initialThinkingMsg = t('stream.thinking');
+    this._placeholderSentAt = 0;
+    this._progressTimer = null;
+    this._toolCount = 0;
   }
 
   /** Build the Stop button row (null if no sessionKey) */
@@ -341,13 +349,24 @@ export class StreamingMessage {
     );
   }
 
-  /** Send an immediate "thinking" placeholder with Stop button. */
+  /** Set context-aware initial thinking message (call before sendPlaceholder). */
+  setContext(msg) {
+    this._thinkingMsg = msg;
+    this._initialThinkingMsg = msg;
+  }
+
+  /** Send an embed placeholder with Stop button and start progress timer. */
   async sendPlaceholder() {
     if (this.currentMessage) return;
+    this._placeholderSentAt = Date.now();
     const row = this._stopRow();
+    const embed = new EmbedBuilder()
+      .setColor(0x5865f2)
+      .setDescription(this._thinkingMsg);
     const payload = {
-      content: t('stream.thinking'),
+      embeds: [embed],
       components: row ? [row] : [],
+      flags: MessageFlags.SuppressEmbeds,
     };
     try {
       if (this.replyTo) {
@@ -356,9 +375,67 @@ export class StreamingMessage {
       } else {
         this.currentMessage = await this.channel.send(payload);
       }
+      // Progressive messages: start only after successful send
+      this._progressTimer = setInterval(() => this._progressTick(), 5000);
     } catch (err) {
       log('error', 'Placeholder send failed', { error: err.message });
     }
+  }
+
+  /** Check elapsed time and update thinking message progressively. */
+  _progressTick() {
+    if (this.hasRealContent || this.finalized) {
+      clearInterval(this._progressTimer);
+      this._progressTimer = null;
+      return;
+    }
+    const elapsed = Date.now() - this._placeholderSentAt;
+    const newMsg = this._getProgressMessage(elapsed);
+    if (newMsg !== this._thinkingMsg) {
+      this._thinkingMsg = newMsg;
+      this._flushStatus();
+    }
+  }
+
+  _getProgressMessage(elapsedMs) {
+    const s = elapsedMs / 1000;
+    if (s >= 60) return t('stream.thinking.almostDone');
+    if (s >= 30) return t('stream.thinking.deep');
+    if (s >= 15) return t('stream.thinking.complex');
+    if (s >= 8) return t('stream.thinking.careful');
+    return this._initialThinkingMsg;
+  }
+
+  /** Update placeholder embed with a tool status line (before streaming starts). */
+  updateStatus(line) {
+    if (this.hasRealContent || this.finalized || !this.currentMessage) return;
+    this._toolCount++;
+    this._statusLines.push(line);
+    // Keep only the 3 most recent tool lines to avoid clutter
+    if (this._statusLines.length > 3) {
+      this._statusLines = this._statusLines.slice(-3);
+    }
+    if (this._statusTimer) return;
+    this._statusTimer = setTimeout(() => {
+      this._statusTimer = null;
+      this._flushStatus();
+    }, 800);
+  }
+
+  async _flushStatus() {
+    if (this.hasRealContent || !this.currentMessage) return;
+    const parts = [this._thinkingMsg, ''];
+    if (this._toolCount > 3) {
+      parts.push(t('stream.toolCount', { count: this._toolCount }));
+    }
+    parts.push(...this._statusLines);
+    const embed = new EmbedBuilder()
+      .setColor(0x5865f2)
+      .setDescription(parts.join('\n'));
+    const row = this._stopRow();
+    try {
+      await this.currentMessage.edit({ embeds: [embed], components: row ? [row] : [] });
+    } catch { /* ignore */ }
   }
 
   append(text) {
@@ -424,6 +501,15 @@ export class StreamingMessage {
   }
 
   async _sendOrEdit(content, isFinal) {
+    // Clear timers on transition from placeholder to streaming
+    if (this._statusTimer) {
+      clearTimeout(this._statusTimer);
+      this._statusTimer = null;
+    }
+    if (this._progressTimer) {
+      clearInterval(this._progressTimer);
+      this._progressTimer = null;
+    }
     content = formatForDiscord(content, { channelId: this.channelId });
     const displayContent = (!this.finalized && !isFinal) ? content + ' ▌' : content;
     const row = this._stopRow();
@@ -431,7 +517,7 @@ export class StreamingMessage {
 
     try {
       if (!this.currentMessage) {
-        const payload = { content: displayContent, embeds: [], components };
+        const payload = { content: displayContent, embeds: [], components, flags: MessageFlags.SuppressEmbeds };
         if (this.replyTo) {
           this.currentMessage = await this.replyTo.reply(payload);
           this.replyTo = null;
@@ -440,12 +526,10 @@ export class StreamingMessage {
         }
         this.sentLength = content.length;
       } else {
-        await this.currentMessage.edit({ content: displayContent, embeds: [], components });
+        await this.currentMessage.edit({ content: displayContent, embeds: [], components, flags: MessageFlags.SuppressEmbeds });
         this.sentLength = content.length;
       }
-      if (isFinal) {
-        this.buffer = '';
-      }
+      // buffer 관리는 _flush()에서 처리 — 여기서 지우면 분할 시 나머지 유실
     } catch (err) {
       log('error', 'StreamingMessage send/edit failed', { error: err.message });
     }
@@ -456,6 +540,14 @@ export class StreamingMessage {
     if (this.timer) {
       clearTimeout(this.timer);
       this.timer = null;
+    }
+    if (this._statusTimer) {
+      clearTimeout(this._statusTimer);
+      this._statusTimer = null;
+    }
+    if (this._progressTimer) {
+      clearInterval(this._progressTimer);
+      this._progressTimer = null;
     }
     if (this.fenceOpen) {
       this.buffer += '\n```';
@@ -492,7 +584,7 @@ export class StreamingMessage {
 
     try {
       await this.currentMessage.edit({ content: newContent, components: [] });
-      await this.channel.send({ files });
+      await this.channel.send({ files, flags: MessageFlags.SuppressEmbeds });
     } catch (err) {
       log('error', 'Code block file extraction failed', { error: err.message });
     }

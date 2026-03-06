@@ -30,7 +30,7 @@ SKIP_COUNT=$(echo "$OUTPUT" | grep -c "⏭️  SKIP" || true)
 TOTAL=$((PASS_COUNT + FAIL_COUNT + SKIP_COUNT))
 
 SUMMARY="${PASS_COUNT}/${TOTAL} passed"
-[[ $FAIL_COUNT -gt 0 ]] && SUMMARY="${SUMMARY}, ${FAIL_COUNT} FAILED"
+if [[ $FAIL_COUNT -gt 0 ]]; then SUMMARY="${SUMMARY}, ${FAIL_COUNT} FAILED"; fi
 
 log "RESULT: ${SUMMARY} (exit: ${EXIT_CODE})"
 

@@ -7,7 +7,7 @@
 
 import { readFileSync, existsSync, appendFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { EmbedBuilder } from 'discord.js';
+import { EmbedBuilder, MessageFlags } from 'discord.js';
 import { log, sendNtfy } from './claude-runner.js';
 import { userMemory } from './user-memory.js';
 import { t } from './i18n.js';
@@ -52,9 +52,9 @@ export async function handleInteraction(interaction, deps) {
     const proc = activeProcesses.get(key);
     if (proc?.proc) {
       proc.proc.kill('SIGTERM');
-      await interaction.reply({ content: t('cmd.cancel.stopped'), ephemeral: true });
+      await interaction.reply({ content: t('cmd.cancel.stopped'), flags: MessageFlags.Ephemeral });
     } else {
-      await interaction.reply({ content: t('cmd.cancel.noProcess'), ephemeral: true });
+      await interaction.reply({ content: t('cmd.cancel.noProcess'), flags: MessageFlags.Ephemeral });
     }
     return;
   }
@@ -77,7 +77,7 @@ export async function handleInteraction(interaction, deps) {
   const OWNER_ID = process.env.OWNER_DISCORD_ID;
   const SENSITIVE = ['run', 'schedule', 'remember', 'alert', 'stop', 'clear'];
   if (OWNER_ID && SENSITIVE.includes(interaction.commandName) && interaction.user.id !== OWNER_ID) {
-    await interaction.reply({ content: t('error.ownerOnly'), ephemeral: true });
+    await interaction.reply({ content: t('error.ownerOnly'), flags: MessageFlags.Ephemeral });
     return;
   }
 
@@ -102,7 +102,7 @@ export async function handleInteraction(interaction, deps) {
       await interaction.reply(t('cmd.stop.stopping', { botName: BOT_NAME }));
       log('info', 'Process stopped via /stop', { sessionKey: sk });
     } else {
-      await interaction.reply({ content: t('cmd.stop.noProcess'), ephemeral: true });
+      await interaction.reply({ content: t('cmd.stop.noProcess'), flags: MessageFlags.Ephemeral });
     }
 
   } else if (commandName === 'memory') {
@@ -128,7 +128,16 @@ export async function handleInteraction(interaction, deps) {
         'node', [join(BOT_HOME, 'lib', 'rag-query.mjs'), query],
         { timeout: 10000, encoding: 'utf-8' },
       );
-      await interaction.editReply(result.slice(0, 1900) || t('cmd.search.noResult'));
+      if (!result.trim()) {
+        await interaction.editReply(t('cmd.search.noResult'));
+      } else {
+        const embed = new EmbedBuilder()
+          .setColor(0x5865f2)
+          .setTitle(`\ud83d\udd0d ${query.slice(0, 250)}`)
+          .setDescription(result.slice(0, 4000))
+          .setTimestamp();
+        await interaction.editReply({ embeds: [embed] });
+      }
     } catch (err) {
       await interaction.editReply(t('cmd.search.error', { error: err.message?.slice(0, 200) || 'Unknown error' }));
     }
@@ -136,25 +145,27 @@ export async function handleInteraction(interaction, deps) {
   } else if (commandName === 'threads') {
     const entries = Object.entries(sessions.data);
     if (entries.length === 0) {
-      await interaction.reply({ content: t('cmd.threads.empty'), ephemeral: true });
+      await interaction.reply({ content: t('cmd.threads.empty'), flags: MessageFlags.Ephemeral });
     } else {
       const list = entries
         .slice(0, 20)
         .map(([key, sid]) => `\u2022 \`${key}\` \u2192 \`${sid.id?.slice(0, 8) ?? sid.slice?.(0, 8)}\u2026\``)
         .join('\n');
-      await interaction.reply({
-        content: `${t('cmd.threads.title', { count: entries.length })}\n${list}`,
-        ephemeral: true,
-      });
+      const embed = new EmbedBuilder()
+        .setColor(0x5865f2)
+        .setTitle(t('cmd.threads.title', { count: entries.length }))
+        .setDescription(list)
+        .setTimestamp();
+      await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
     }
 
   } else if (commandName === 'alert') {
     const msg = interaction.options.getString('message');
     await sendNtfy(`${BOT_NAME} Alert`, msg, 'high');
-    await interaction.reply({ content: t('cmd.alert.done', { message: msg }), ephemeral: true });
+    await interaction.reply({ content: t('cmd.alert.done', { message: msg }), flags: MessageFlags.Ephemeral });
 
   } else if (commandName === 'status') {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const uptimeSec = Math.floor(process.uptime());
     const uptimeStr = `${Math.floor(uptimeSec / 3600)}h ${Math.floor((uptimeSec % 3600) / 60)}m`;
     const lastMessageAt = deps.lastMessageAt ?? Date.now();
@@ -192,7 +203,7 @@ export async function handleInteraction(interaction, deps) {
     await interaction.editReply({ embeds: [embed] });
 
   } else if (commandName === 'tasks') {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     try {
       const { execSync } = await import('node:child_process');
       const logPath = join(BOT_HOME, 'logs', 'cron.log');
@@ -214,7 +225,16 @@ export async function handleInteraction(interaction, deps) {
       const lines = Object.entries(taskStats).map(([name, s]) =>
         `${s.fail > 0 ? '\u274c' : '\u2705'} \`${name}\`: ${t('cmd.tasks.success', { count: s.ok })}${s.fail > 0 ? t('cmd.tasks.fail', { count: s.fail }) : ''}`
       );
-      await interaction.editReply(`${t('cmd.tasks.title', { date: today })}\n${lines.join('\n')}`.slice(0, 1900));
+      const totalOk = Object.values(taskStats).reduce((a, s) => a + s.ok, 0);
+      const totalFail = Object.values(taskStats).reduce((a, s) => a + s.fail, 0);
+      const color = totalFail > 0 ? 0xfee75c : 0x57f287;
+      const embed = new EmbedBuilder()
+        .setColor(color)
+        .setTitle(t('cmd.tasks.title', { date: today }))
+        .setDescription(lines.join('\n').slice(0, 4000))
+        .setFooter({ text: `\u2705 ${totalOk} \u00b7 \u274c ${totalFail}` })
+        .setTimestamp();
+      await interaction.editReply({ embeds: [embed] });
     } catch (err) {
       await interaction.editReply(t('cmd.tasks.error', { error: err.message?.slice(0, 200) }));
     }
@@ -223,7 +243,7 @@ export async function handleInteraction(interaction, deps) {
     const taskId = interaction.options.getString('id');
     const taskIds = getTaskIds(BOT_HOME).map(t => t.value);
     if (!taskIds.includes(taskId)) {
-      await interaction.reply({ content: t('cmd.run.notFound', { taskId }), ephemeral: true });
+      await interaction.reply({ content: t('cmd.run.notFound', { taskId }), flags: MessageFlags.Ephemeral });
       return;
     }
     await interaction.deferReply();
@@ -344,7 +364,7 @@ export async function handleInteraction(interaction, deps) {
   } else if (commandName === 'lounge') {
     const activities = getActivities();
     if (activities.length === 0) {
-      await interaction.reply({ content: t('cmd.lounge.empty'), ephemeral: true });
+      await interaction.reply({ content: t('cmd.lounge.empty'), flags: MessageFlags.Ephemeral });
     } else {
       const list = activities
         .map(a => {
@@ -357,7 +377,83 @@ export async function handleInteraction(interaction, deps) {
         .setColor(0x5865f2)
         .setDescription(list)
         .setTimestamp();
-      await interaction.reply({ embeds: [embed], ephemeral: true });
+      await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+    }
+
+  } else if (commandName === 'team') {
+    const teamName = interaction.options.getString('name');
+    const TEAM_LABELS = {
+      council: '\ud83d\udd0d 감사팀', infra: '\u2699\ufe0f 인프라팀', record: '\ud83d\uddc4\ufe0f 기록팀',
+      brand: '\ud83d\udce3 브랜드팀', career: '\ud83d\ude80 성장팀', academy: '\ud83d\udcda 학습팀', trend: '\ud83d\udce1 정보팀',
+    };
+    // 보고서 파일 경로 (company-agent.mjs의 TEAMS 정의와 동기화)
+    const reportsDir = join(BOT_HOME, 'rag', 'teams', 'reports');
+    const kstDate = new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10);
+    const kstWeek = (() => {
+      const d = new Date(Date.now() + 9 * 3600_000);
+      d.setUTCHours(0, 0, 0, 0);
+      d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+      const y = d.getUTCFullYear();
+      const w = Math.ceil((((d - new Date(Date.UTC(y, 0, 1))) / 86400_000) + 1) / 7);
+      return `${y}-W${String(w).padStart(2, '0')}`;
+    })();
+    const REPORT_PATHS = {
+      council: join(reportsDir, `council-${kstDate}.md`),
+      infra: join(reportsDir, `infra-${kstDate}.md`),
+      record: join(reportsDir, `record-${kstDate}.md`),
+      trend: join(reportsDir, `trend-${kstDate}.md`),
+      brand: join(reportsDir, `brand-${kstWeek}.md`),
+      career: join(reportsDir, `career-${kstWeek}.md`),
+      academy: join(reportsDir, `academy-${kstWeek}.md`),
+    };
+
+    await interaction.deferReply();
+    try {
+      const { execFile } = await import('node:child_process');
+      const { promisify } = await import('node:util');
+      const execFileAsync = promisify(execFile);
+      const agentPath = join(BOT_HOME, 'discord', 'lib', 'company-agent.mjs');
+
+      log('info', `Team summoned via /team`, { team: teamName, user: interaction.user.tag });
+
+      await execFileAsync(
+        '/opt/homebrew/bin/node', [agentPath, '--team', teamName],
+        { timeout: 300_000, env: { ...process.env, HOME }, cwd: BOT_HOME },
+      );
+
+      // 보고서 파일에서 결과 읽기 (stdout은 로그만 포함)
+      const reportPath = REPORT_PATHS[teamName];
+      let result = '';
+      if (reportPath && existsSync(reportPath)) {
+        result = readFileSync(reportPath, 'utf-8').trim();
+      }
+
+      if (result.length > 0) {
+        const headerEmbed = new EmbedBuilder()
+          .setColor(0x2ecc71)
+          .setTitle(`${TEAM_LABELS[teamName]} 보고서`)
+          .setFooter({ text: `${interaction.user.tag}` })
+          .setTimestamp();
+        const firstChunk = result.slice(0, 1900);
+        await interaction.editReply({ embeds: [headerEmbed], content: firstChunk });
+        for (let i = 1900; i < result.length; i += 1900) {
+          await interaction.followUp(result.slice(i, i + 1900));
+        }
+      } else {
+        const embed = new EmbedBuilder()
+          .setColor(0xfee75c)
+          .setDescription(`${TEAM_LABELS[teamName]} 실행 완료 (보고서 파일 없음)`);
+        await interaction.editReply({ embeds: [embed] });
+      }
+    } catch (err) {
+      const errMsg = err.stderr?.slice(0, 500) || err.message?.slice(0, 500) || 'Unknown error';
+      const embed = new EmbedBuilder()
+        .setColor(0xed4245)
+        .setTitle(`${TEAM_LABELS[teamName]} 실행 실패`)
+        .setDescription('```\n' + errMsg + '\n```')
+        .setTimestamp();
+      await interaction.editReply({ embeds: [embed] });
+      log('error', 'Team command failed', { team: teamName, error: errMsg.slice(0, 200) });
     }
   }
 }

@@ -151,6 +151,12 @@ ${VERDICT}"
 
 echo "$REPORT"
 
+# Vault에 KPI 기록
+KPI_VAULT="$HOME/Jarvis-Vault/02-daily/kpi"
+if [[ -d "$KPI_VAULT" ]]; then
+    echo "$REPORT" > "$KPI_VAULT/$(date '+%Y-%m-%d').md"
+fi
+
 # Discord 전송
 if $SEND_DISCORD; then
     WEBHOOK=$(jq -r '.webhooks["bot-ceo"]' "$MONITORING" 2>/dev/null || echo "")

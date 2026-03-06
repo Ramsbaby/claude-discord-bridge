@@ -1,6 +1,7 @@
-# Claude Discord Bridge 종합 로드맵
+# Jarvis 종합 로드맵
 
-> 작성: 2026-03-01 | 업데이트: 2026-03-02 | 현재 완성도: **82%** | 목표: **90%**
+> 작성: 2026-03-01 | 업데이트: 2026-03-04 | 현재 완성도: **~77%** | 목표: **90%**
+> 상세 업그레이드 항목: → `~/Jarvis-Vault/01-system/UPGRADE-ROADMAP.md` (24개 항목)
 > "체계적으로 계획하고, 실행하고, 검토하고, 반성한다."
 
 ---
@@ -44,7 +45,7 @@
 
 #### Task 2-1. 자비스 페르소나 시스템 프롬프트 주입
 
-**파일**: `~/claude-discord-bridge/discord/discord-bot.js` (SYSTEM_PROMPT 수정)
+**파일**: `~/.jarvis/discord/discord-bot.js` (SYSTEM_PROMPT 수정)
 
 현재 시스템 프롬프트에 persona.md 내용 통합:
 - 영국식 위트 + 드라이한 유머
@@ -57,15 +58,15 @@
 
 #### Task 2-2. RAG 인덱싱 확장 (20% → 60%+)
 
-**파일**: `~/claude-discord-bridge/bin/rag-index.mjs`
+**파일**: `~/.jarvis/bin/rag-index.mjs`
 
 추가 인덱싱 대상 (~150개 파일):
 ```
-~/claude-discord-bridge/rag/teams/reports/*.md       # 주간 보고서
-~/claude-discord-bridge/rag/teams/learnings/*.md     # 교훈 기록
-~/claude-discord-bridge/rag/teams/shared-inbox/*.md  # 팀 간 메시지
-~/claude-discord-bridge/context/*.md                 # 크론 컨텍스트 파일 전체
-~/claude-discord-bridge/results/**/*.md              # 태스크 결과 (최근 7일)
+~/.jarvis/rag/teams/reports/*.md       # 주간 보고서
+~/.jarvis/rag/teams/learnings/*.md     # 교훈 기록
+~/.jarvis/rag/teams/shared-inbox/*.md  # 팀 간 메시지
+~/.jarvis/context/*.md                 # 크론 컨텍스트 파일 전체
+~/.jarvis/results/**/*.md              # 태스크 결과 (최근 7일)
 ```
 또는 `BOT_EXTRA_MEMORY` 환경변수로 외부 메모리 디렉토리 지정 가능.
 
@@ -75,7 +76,7 @@
 
 #### Task 2-3. context 파일 생성 (크론 태스크용)
 
-**디렉토리**: `~/claude-discord-bridge/context/`
+**디렉토리**: `~/.jarvis/context/`
 
 현재 tasks.json에 contextFile이 정의되어 있지만 실제 파일 미존재.
 각 크론 태스크에 필요한 배경 지식을 컨텍스트 파일로 생성:
@@ -116,21 +117,21 @@
 
 #### Task 3-2. 주간 KPI 리포트 크론 추가
 
-**파일**: `~/claude-discord-bridge/config/tasks.json`에 `weekly-kpi` 태스크 추가
+**파일**: `~/.jarvis/config/tasks.json`에 `weekly-kpi` 태스크 추가
 
 ```json
 {
   "id": "weekly-kpi",
   "name": "주간 KPI 리포트",
   "schedule": "30 8 * * 1",
-  "prompt": "이번 주 봇 시스템 KPI 집계: 1) 크론 태스크별 성공/실패율 (~/claude-discord-bridge/logs/cron.log) 2) RAG 인덱스 통계 3) Discord 응답 건수 4) 에러/경고 빈도. 개선 제안 1~2개 포함.",
+  "prompt": "이번 주 봇 시스템 KPI 집계: 1) 크론 태스크별 성공/실패율 (~/.jarvis/logs/cron.log) 2) RAG 인덱스 통계 3) Discord 응답 건수 4) 에러/경고 빈도. 개선 제안 1~2개 포함.",
   "output": ["discord", "file"]
 }
 ```
 
 #### Task 3-3. 월간 회고 크론 추가
 
-**파일**: `~/claude-discord-bridge/config/tasks.json`에 `monthly-review` 태스크 추가
+**파일**: `~/.jarvis/config/tasks.json`에 `monthly-review` 태스크 추가
 
 ```json
 {
@@ -144,7 +145,7 @@
 
 #### Task 3-4. 자율처리 레벨 정의
 
-**파일**: `~/claude-discord-bridge/config/autonomy-levels.md` (신규)
+**파일**: `~/.jarvis/config/autonomy-levels.md` (신규)
 
 4단계 자율처리 체계:
 
@@ -157,7 +158,7 @@
 
 #### Task 3-5. Company DNA 마이그레이션
 
-**파일**: `~/claude-discord-bridge/config/company-dna.md` (신규)
+**파일**: `~/.jarvis/config/company-dna.md` (신규)
 
 Company DNA 패턴 정의:
 - DNA-C001: 시장 분석 체크 (손절선 기준, 트렌드+VIX)
@@ -198,13 +199,13 @@ Company DNA 패턴 정의:
 
 #### Task 4-3. 실시간 RAG 파일 워처 (선택)
 
-**파일**: `~/claude-discord-bridge/lib/rag-watcher.mjs` (신규)
+**파일**: `~/.jarvis/lib/rag-watcher.mjs` (신규)
 
 ```bash
-npm install chokidar  # ~/claude-discord-bridge/discord/
+npm install chokidar  # ~/.jarvis/discord/
 ```
 
-chokidar로 `~/claude-discord-bridge/context/`, `~/claude-discord-bridge/rag/`, `~/claude-discord-bridge/results/` 감시.
+chokidar로 `~/.jarvis/context/`, `~/.jarvis/rag/`, `~/.jarvis/results/` 감시.
 파일 변경 즉시 RAG 재인덱싱 (현재 1시간 크론 → 실시간).
 
 **고려사항**: LaunchAgent로 상시 구동 필요. 메모리 사용량 확인.
@@ -229,13 +230,13 @@ chokidar로 `~/claude-discord-bridge/context/`, `~/claude-discord-bridge/rag/`, 
 
 #### Task 5-3. 성과 대시보드
 
-- `~/claude-discord-bridge/results/` 데이터 기반 간단한 통계
+- `~/.jarvis/results/` 데이터 기반 간단한 통계
 - 크론 성공률, 평균 응답 시간, RAG 검색 히트율
 - 주간/월간 리포트에 자동 포함
 
 #### Task 5-4. Obsidian Vault 연동 (선택)
 
-- `~/claude-discord-bridge/rag/` 디렉토리를 Obsidian Vault로 활용
+- `~/.jarvis/rag/` 디렉토리를 Obsidian Vault로 활용
 - 그래프 뷰로 지식 연결 시각화
 - RAG와 양방향 동기화
 
@@ -295,11 +296,11 @@ chokidar로 `~/claude-discord-bridge/context/`, `~/claude-discord-bridge/rag/`, 
 ### 🟡 수동 작업 필요 (코드 외)
 
 - [ ] **Discord webhook 등록**: bot-market, bot-daily, bot-ceo 웹훅 생성 → `monitoring.json` 추가
-- [ ] **Obsidian**: obsidian-git 플러그인 설치 (가이드: `~/claude-discord-bridge/docs/obsidian-sync-guide.md`)
+- [x] **Obsidian**: Jarvis-Vault git init + .obsidian config 완료 (2026-03-05). obsidian-git 플러그인은 Obsidian 앱에서 수동 설치 필요
 
 ### 🟢 선택 개선 (P2)
 
-- [ ] **Task 4-3**: 실시간 RAG 워처 (chokidar — 현재 1시간 크론으로 충분)
+- [x] **Task 4-3**: 실시간 RAG 워처 (rag-watch.mjs, chokidar — ~/Jarvis-Vault/ 실시간 감시 중)
 
 ---
 
@@ -311,15 +312,16 @@ chokidar로 `~/claude-discord-bridge/context/`, `~/claude-discord-bridge/rag/`, 
 | Phase 2 완료 (2026-03-02) | **68%** | 페르소나, RAG 커버리지 확장, 컨텍스트 파일 |
 | Phase 3 완료 (2026-03-02) | **75%** | 거버넌스, PDCA 사이클, KPI, 자율처리 레벨 문서화 |
 | Phase 4 완료 (2026-03-02) | **80%** | 고급 크론 24개, 채널 라우팅, 팀 크론 5개 |
-| **현재** (2026-03-02) | **82%** | 크론 타임아웃 수정, Serena 메모리 갱신, SSoT 통일 ← **현재** |
-| 잔여 작업 완료 시 | **90%** | autonomy-levels 코드 적용, RAG orphan 정리, 크론 성공률 90%+ |
+| Phase 4 완료 시점 | **~77%** | 고급 크론 24개, 채널 라우팅, 팀 크론 5개 (실사 기준) |
+| **현재** (2026-03-04) | **~77%** | Vault 동기화 구축, RAG 재귀 인덱싱, 업그레이드 로드맵 24개 정립 ← **현재** |
+| 잔여 작업 완료 시 | **90%** | 피드백 루프, 세마포어 큐, Skills 마이그레이션, 이벤트 버스 |
 
 ---
 
 ## 6. 파일 구조 참조
 
 ```
-~/claude-discord-bridge/
+~/.jarvis/
 ├── bin/
 │   ├── ask-claude.sh          # Claude CLI 래퍼 (RAG 통합)
 │   ├── bot-cron.sh         # 크론 실행기
@@ -355,6 +357,7 @@ chokidar로 `~/claude-discord-bridge/context/`, `~/claude-discord-bridge/rag/`, 
 │   ├── launchd-guardian.sh    # LaunchAgent 감시자
 │   ├── log-rotate.sh          # 로그 로테이션
 │   ├── sync-discord-token.sh  # 토큰 동기화
+│   ├── vault-sync.sh          # Vault 미러링 (6시간마다)
 │   └── watchdog.sh            # 와치독
 ├── state/
 │   ├── sessions.json          # Discord 세션 상태

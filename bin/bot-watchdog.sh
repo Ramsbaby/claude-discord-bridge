@@ -112,7 +112,19 @@ log "ALERT: Bot silent for ${silence_sec}s (>${SILENCE_THRESHOLD_SEC}s). Restart
 # Check if process is actually running (confirms silent death vs real crash)
 bot_pid=$(launchctl list 2>/dev/null | grep "$DISCORD_SERVICE" | awk '{print $1}')
 if [[ "$bot_pid" == "-" || -z "$bot_pid" ]]; then
-    log "Bot process not running. Existing watchdog.sh should handle this. Skipping."
+    # 프로세스가 없는 상태 — 직접 재시작 (watchdog.sh에 위임하지 않고 bot-watchdog이 직접 처리)
+    log "Bot process not running. Attempting direct restart."
+    uid=$(id -u)
+    launchctl kickstart "gui/${uid}/${DISCORD_SERVICE}" 2>/dev/null || {
+        log "kickstart failed, trying bootstrap"
+        launchctl bootstrap "gui/${uid}" "$HOME/Library/LaunchAgents/${DISCORD_SERVICE}.plist" 2>/dev/null || true
+    }
+    log "Restart issued for stopped $DISCORD_SERVICE"
+    if ! is_in_alert_cooldown; then
+        send_discord_webhook "[Bot Watchdog] Bot was not running (silent ${silence_sec}s). Restart issued."
+        send_ntfy "Bot Down - Restarted" "Bot not running after ${silence_sec}s silence. Restart issued." "high"
+        date +%s > "$COOLDOWN_FILE"
+    fi
     exit 0
 fi
 

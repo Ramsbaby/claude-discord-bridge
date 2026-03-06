@@ -28,7 +28,7 @@ mkdir -p "$(dirname "$RETRY_LOG")"
 RESULT_TMP="/tmp/claude-retry-${TASK_ID}-$$.out"
 ACQUIRED_SLOT=""
 cleanup_slot() {
-    rm -f "$RESULT_TMP"
+    rm -f "$RESULT_TMP" "${RESULT_TMP}.stderr"
     if [[ -n "$ACQUIRED_SLOT" ]]; then
         release_slot "$ACQUIRED_SLOT"
         ACQUIRED_SLOT=""
@@ -58,13 +58,16 @@ classify_exit_code() {
     esac
 }
 
-# --- Error classification by stdout content ---
+# --- Error classification by stdout+stderr content ---
 classify_error() {
     local result_file="$1"
-    if grep -qi "rate_limit\|rate limit\|429" "$result_file" 2>/dev/null; then echo "RATE_LIMITED"
-    elif grep -qi "overloaded\|503\|capacity" "$result_file" 2>/dev/null; then echo "OVERLOADED"
-    elif grep -qi "authentication\|unauthorized\|401" "$result_file" 2>/dev/null; then echo "AUTH_ERROR"
-    elif grep -qi "context_length\|too.long\|too.large" "$result_file" 2>/dev/null; then echo "TOO_LONG"
+    local stderr_file="${result_file}.stderr"
+    local check_files=("$result_file")
+    [[ -f "$stderr_file" ]] && check_files+=("$stderr_file")
+    if grep -qi "rate_limit\|rate limit\|429\|hit your limit\|you've hit\|usage limit" "${check_files[@]}" 2>/dev/null; then echo "RATE_LIMITED"
+    elif grep -qi "overloaded\|503\|capacity" "${check_files[@]}" 2>/dev/null; then echo "OVERLOADED"
+    elif grep -qi "authentication\|unauthorized\|401" "${check_files[@]}" 2>/dev/null; then echo "AUTH_ERROR"
+    elif grep -qi "context_length\|too.long\|too.large" "${check_files[@]}" 2>/dev/null; then echo "TOO_LONG"
     else echo "UNKNOWN"; fi
 }
 
@@ -82,7 +85,7 @@ for attempt in $(seq 1 "$MAX_RETRIES"); do
 
     exit_code=0
     "$BOT_HOME/bin/ask-claude.sh" "$TASK_ID" "$PROMPT" "$ALLOWED_TOOLS" "$TIMEOUT" "$MAX_BUDGET" "$RESULT_RETENTION" "$MODEL" \
-        > "$RESULT_TMP" 2>&1 || exit_code=$?
+        > "$RESULT_TMP" 2>"${RESULT_TMP}.stderr" || exit_code=$?
 
     end_s=$(date +%s)
     duration_s=$(( end_s - start_s ))
@@ -143,7 +146,7 @@ classify_failure() {
 
     if [[ $exit_code -eq 124 ]]; then
         echo "TIMEOUT"
-    elif [[ -f "$stderr_file" ]] && grep -qiE "rate.limit|429|overloaded|too many" "$stderr_file" 2>/dev/null; then
+    elif [[ -f "$stderr_file" ]] && grep -qiE "rate.limit|429|overloaded|too many|hit your limit|you've hit|usage limit" "$stderr_file" 2>/dev/null; then
         echo "RATE_LIMIT"
     elif [[ -f "$stderr_file" ]] && grep -qiE "401|authentication|unauthorized|api.key" "$stderr_file" 2>/dev/null; then
         echo "AUTH_ERROR"
@@ -175,8 +178,9 @@ check_repeated_failures() {
 
     # 3+ failures of same type → auto-propose
     if [[ "$count" -ge 3 ]] && [[ -f "$tracker" ]]; then
-        local proposal_id="P-$(date +%m%d)-auto"
-        local entry="| ${proposal_id} | [${task_id}] ${fail_class} 반복 실패 (${count}회+) | L2 | ⏳ 대기 | $(date +%F) |"
+        local proposal_id entry
+        proposal_id="P-$(date +%m%d)-auto"
+        entry="| ${proposal_id} | [${task_id}] ${fail_class} 반복 실패 (${count}회+) | L2 | ⏳ 대기 | $(date +%F) |"
 
         # Avoid duplicate proposals for same task+class today
         if ! grep -q "\[${task_id}\] ${fail_class}" "$tracker" 2>/dev/null; then
@@ -193,7 +197,13 @@ ${entry}" "$tracker" 2>/dev/null || true
 
 # All retries exhausted - classify, log, and alert
 STDERR_FILE="${BOT_HOME}/logs/claude-stderr-${TASK_ID}.log"
+# stdout(result)과 stderr 모두 확인 (rate limit 메시지는 stdout에 오는 경우 있음)
 FAIL_CLASS=$(classify_failure "$exit_code" "$STDERR_FILE")
+if [[ "$FAIL_CLASS" == "UNKNOWN" && -f "$RESULT_TMP" ]]; then
+    if grep -qiE "rate.limit|429|hit your limit|you've hit|usage limit|too many" "$RESULT_TMP" 2>/dev/null; then
+        FAIL_CLASS="RATE_LIMIT"
+    fi
+fi
 
 # Log to cron.log with failure classification
 CRON_LOG="${BOT_HOME}/logs/cron.log"
@@ -201,11 +211,54 @@ printf '[%s] [%s] [FAILED:%s] exit=%d retries=%d\n' \
     "$(date '+%F %H:%M:%S')" "$TASK_ID" "$FAIL_CLASS" "${exit_code:-1}" "$MAX_RETRIES" \
     >> "$CRON_LOG"
 
+# RATE_LIMIT은 Claude Max 한도 소진 — 예측 가능한 상황, Discord 알림 불필요
+if [[ "$FAIL_CLASS" == "RATE_LIMIT" ]]; then
+    cat "$RESULT_TMP" >&2
+    exit "${exit_code:-1}"
+fi
+
 # Check for repeated failure pattern → auto-propose
 check_repeated_failures "$TASK_ID" "$FAIL_CLASS"
 
+# 사람이 읽을 수 있는 실패 사유 생성
+human_reason() {
+    local cls="$1" code="$2" result_file="$3" stderr_file="$4"
+    case "$cls" in
+        TIMEOUT)       echo "⏱️ 실행 시간 초과 (${TIMEOUT}s 초과)" ;;
+        AUTH_ERROR)    echo "🔑 API 인증 오류 — API 키 확인 필요" ;;
+        CONTEXT_TOO_LONG) echo "📄 프롬프트 너무 김 — 컨텍스트 축소 필요" ;;
+        RATE_LIMIT)    echo "🚦 Claude Max 한도 초과 — 자동 리셋 대기" ;;
+        *)
+            # UNKNOWN: 실제 에러 메시지 한 줄 추출
+            local snippet=""
+            for f in "$result_file" "$stderr_file"; do
+                [[ -f "$f" ]] || continue
+                snippet=$(grep -v '^$' "$f" 2>/dev/null \
+                    | grep -v '^{' \
+                    | tail -1 \
+                    | cut -c1-120)
+                [[ -n "$snippet" ]] && break
+            done
+            # result JSON에서 "result" 필드 추출 시도
+            if [[ -z "$snippet" && -f "$result_file" ]]; then
+                snippet=$(grep -o '"result":"[^"]*"' "$result_file" 2>/dev/null \
+                    | head -1 \
+                    | sed 's/"result":"//;s/"$//' \
+                    | cut -c1-120)
+            fi
+            if [[ -n "$snippet" ]]; then
+                echo "❌ 알 수 없는 오류 (exit=$code)\n사유: $snippet"
+            else
+                echo "❌ 알 수 없는 오류 (exit=$code)"
+            fi
+            ;;
+    esac
+}
+
+REASON=$(human_reason "$FAIL_CLASS" "${exit_code:-1}" "$RESULT_TMP" "$STDERR_FILE")
+
 "$BOT_HOME/bin/route-result.sh" alert "$TASK_ID" \
-    "Task $TASK_ID failed after $MAX_RETRIES retries (last exit: $exit_code, class: $FAIL_CLASS)"
+    "⚠️ $TASK_ID 실패 (재시도 ${MAX_RETRIES}회)\n$REASON"
 
 cat "$RESULT_TMP" >&2
 exit "${exit_code:-1}"

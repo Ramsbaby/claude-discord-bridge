@@ -15,7 +15,6 @@ for arg in "$@"; do
 done
 
 BOT_HOME="${BOT_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
-TASKS_JSON="${BOT_HOME}/config/tasks.json"
 MONITORING="${BOT_HOME}/config/monitoring.json"
 DECISIONS_FILE="${BOT_HOME}/state/kpi-decisions.jsonl"
 

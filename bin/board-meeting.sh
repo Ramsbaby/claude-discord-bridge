@@ -1,0 +1,324 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# board-meeting.sh — 자비스 컴퍼니 Board Meeting (단일 에이전트 + OKR/감사 연동)
+# Usage: board-meeting.sh [daily|weekly|emergency]
+# 크론: 0 8 * * * (아침) / 55 21 * * * (저녁)
+# 기존 council-insight의 상위 호환. goals.json + decisions-audit.jsonl 연동.
+
+BOT_HOME="${BOT_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+MEETING_TYPE="${1:-daily}"
+TIMESTAMP="$(date +%F_%H%M)"
+LOG_FILE="${BOT_HOME}/logs/board-meeting.log"
+MINUTES_DIR="${BOT_HOME}/state/board-minutes"
+DECISIONS_DIR="${BOT_HOME}/state/decisions"
+RESULTS_DIR="${BOT_HOME}/results/board-meeting"
+RESULT_FILE="${RESULTS_DIR}/${TIMESTAMP}.md"
+STDERR_LOG="${BOT_HOME}/logs/claude-stderr-board-meeting.log"
+
+for cmd in gtimeout claude jq; do
+    command -v "$cmd" >/dev/null 2>&1 || { echo "ERROR: $cmd not found" >&2; exit 2; }
+done
+
+mkdir -p "$MINUTES_DIR" "$DECISIONS_DIR" "$RESULTS_DIR" "$(dirname "$LOG_FILE")"
+
+log() { echo "[$(date -u +%FT%TZ)] board-meeting: $*" >> "$LOG_FILE"; }
+log "Starting ${MEETING_TYPE} board meeting"
+
+# --- Pre-collect data (bash 단계에서 수집, claude 토큰 절약) ---
+TODAY="$(date +%F)"
+CRON_TODAY=$(grep "$TODAY" "${BOT_HOME}/logs/cron.log" 2>/dev/null | tail -50 || echo "로그 없음")
+CRON_SUCCESS=$(echo "$CRON_TODAY" | grep -c 'SUCCESS' || echo "0")
+CRON_FAIL=$(echo "$CRON_TODAY" | grep -c 'FAILED' || echo "0")
+CRON_TOTAL=$(( CRON_SUCCESS + CRON_FAIL ))
+if (( CRON_TOTAL > 0 )); then
+    CRON_RATE=$(( CRON_SUCCESS * 100 / CRON_TOTAL ))
+else
+    CRON_RATE="N/A"
+fi
+
+DISK_PCT=$(df -h / 2>/dev/null | tail -1 | awk '{print $5}' || echo "?")
+LOAD=$(uptime 2>/dev/null | sed 's/.*load averages: //' || echo "?")
+LAUNCHD=$(launchctl list 2>/dev/null | grep -E 'jarvis' | awk '{printf "%s(pid:%s) ", $3, $1}' || echo "확인불가")
+
+# Latest results snippets
+read_latest() {
+    local dir="$1" max_chars="${2:-500}"
+    local f
+    f=$(ls -t "${dir}/"*.md 2>/dev/null | head -1)
+    if [[ -n "$f" ]]; then head -c "$max_chars" "$f" 2>/dev/null; else echo "데이터 없음"; fi
+}
+
+HEALTH_SNAP=$(read_latest "${BOT_HOME}/results/system-health" 300)
+TQQQ_SNAP=$(read_latest "${BOT_HOME}/results/tqqq-monitor" 500)
+INFRA_SNAP=$(read_latest "${BOT_HOME}/results/infra-daily" 500)
+NEWS_SNAP=$(read_latest "${BOT_HOME}/results/news-briefing" 300)
+
+# OKR current values
+GOALS_JSON=$(cat "${BOT_HOME}/config/goals.json" 2>/dev/null || echo '{}')
+
+# Company DNA (core only)
+DNA_CORE=$(sed -n '/^## 핵심 DNA/,/^## 일반 DNA/p' "${BOT_HOME}/config/company-dna.md" 2>/dev/null | head -30 || echo "없음")
+
+# Previous context-bus
+PREV_BUS=$(head -c 400 "${BOT_HOME}/state/context-bus.md" 2>/dev/null || echo "없음")
+
+# Shared inbox
+INBOX_FILES=$(ls "${BOT_HOME}/rag/teams/shared-inbox/"*.md 2>/dev/null | grep -v README || echo "")
+INBOX_SUMMARY=""
+if [[ -n "$INBOX_FILES" ]]; then
+    INBOX_SUMMARY="미처리 메시지 $(echo "$INBOX_FILES" | wc -l | tr -d ' ')건: $(echo "$INBOX_FILES" | xargs -I{} basename {} | tr '\n' ', ')"
+fi
+
+# Previous decisions today
+PREV_DECISIONS=""
+if [[ -f "${DECISIONS_DIR}/${TODAY}.jsonl" ]]; then
+    PREV_DECISIONS=$(cat "${DECISIONS_DIR}/${TODAY}.jsonl" 2>/dev/null)
+fi
+
+# Team scorecard (팀 성과표)
+TEAM_SCORECARD=""
+if [[ -f "${BOT_HOME}/state/team-scorecard.json" ]]; then
+    TEAM_SCORECARD=$(python3 -c "
+import json
+with open('${BOT_HOME}/state/team-scorecard.json') as f:
+    data = json.load(f)
+lines = []
+for name, t in data['teams'].items():
+    status_mark = {'NORMAL':'', 'WARNING':'[!]', 'PROBATION':'[!!]', 'DISCIPLINARY':'[!!!]'}.get(t['status'], '')
+    lines.append(f\"{name}: merit {t['merit']} / penalty {t['penalty']} {t['status']} {status_mark}\")
+print('\n'.join(lines))
+" 2>/dev/null || echo "성과표 로드 실패")
+fi
+
+# Previous dispatch results
+PREV_DISPATCH=""
+PREV_DISPATCH_FILE="${BOT_HOME}/state/dispatch-results/${TODAY}.jsonl"
+if [[ -f "$PREV_DISPATCH_FILE" ]]; then
+    PREV_DISPATCH=$(cat "$PREV_DISPATCH_FILE" 2>/dev/null)
+fi
+
+# --- Build prompt ---
+PROMPT="$(cat <<PROMPT_EOF
+자비스 컴퍼니 Board Meeting CEO(비서실장). 아래 사전 수집 데이터를 종합 분석하고 산출물 4종을 작성해.
+
+## 시간: $(date '+%Y-%m-%d %H:%M KST') / 유형: ${MEETING_TYPE}
+
+## 사전 수집 데이터
+
+### 인프라 현황
+- 크론 오늘: 성공 ${CRON_SUCCESS} / 실패 ${CRON_FAIL} (성공률 ${CRON_RATE}%)
+- 디스크: ${DISK_PCT} 사용 | 로드: ${LOAD}
+- LaunchAgent: ${LAUNCHD}
+- 시스템 헬스: ${HEALTH_SNAP}
+- 인프라 보고: ${INFRA_SNAP}
+
+### 시장/전략
+- TQQQ 현황: ${TQQQ_SNAP}
+- 뉴스: ${NEWS_SNAP}
+
+### 내부 현황
+- 공용 게시판(이전): ${PREV_BUS}
+- 팀 인박스: ${INBOX_SUMMARY:-없음}
+- 오늘 이전 결정: ${PREV_DECISIONS:-없음}
+- 이전 결정 실행 결과: ${PREV_DISPATCH:-없음}
+
+### 팀 성과표
+${TEAM_SCORECARD:-데이터 없음}
+
+### OKR
+${GOALS_JSON}
+
+### Company DNA (핵심)
+${DNA_CORE}
+
+## 판정 기준
+- 시스템: GREEN(성공률 95%+) / YELLOW(70-95%) / RED(70% 미만)
+- 시장: SAFE(TQQQ>\$50) / CAUTION(\$47-50) / CRITICAL(<\$47)
+- 2주 연속 동일 이슈 → DNA 후보 등록 검토
+
+## 팀 성과 관리 (위임-평가-징계 체계)
+너는 CEO로서 팀장을 관리한다. 결정사항은 decision-dispatcher가 자동 실행한다.
+- 각 결정의 "team" 필드에 담당팀을 반드시 지정할 것
+- 이전 결정 실행 결과를 확인하고, 실패한 건에 대해 후속 지시를 결정사항에 포함
+- 팀 성과표를 확인하고:
+  - WARNING(3벌점+) 팀: 회의록에 경고 언급, 개선 기한 제시
+  - PROBATION(5벌점+) 팀: 회의록에 수습 사유 기재, 추가 실패 시 해임 경고
+  - DISCIPLINARY(10벌점+) 팀: 징계위원회 소집. 해당 팀장 해임(프로필 재작성) 또는 업무 재편을 결정사항에 포함
+- 실행 가능한 결정은 구체적으로 (서비스명, 파일명 등), 보고용 결정은 "모니터링 강화" 등으로 작성
+
+## 산출물 (Write 도구로 반드시 작성)
+
+### 1. context-bus.md 갱신
+파일: ~/.jarvis/state/context-bus.md (덮어쓰기)
+형식:
+\`\`\`
+# 자비스 컴퍼니 Context Bus
+_업데이트: ${TODAY}T$(date +%H:%M) KST_
+
+## 시스템 상태
+크론 성공률: XX% — GREEN/YELLOW/RED
+LaunchAgent: [상태 요약]
+
+## 시장 신호
+TQQQ: \$XX.XX — SAFE/CAUTION/CRITICAL
+손절선(\$47) 대비: XX% 여유
+
+## CEO 주목사항
+[가장 중요한 발견/권고 1줄]
+\`\`\`
+500자 이내.
+
+### 2. 회의록
+파일: ~/.jarvis/state/board-minutes/${TODAY}.md
+내용: 인프라 요약, 시장 요약, CEO 판단, OKR 진척 변경, 결정사항
+
+### 3. 의사결정 감사 로그
+파일: ~/.jarvis/state/decisions/${TODAY}.jsonl (append, 기존 내용 유지)
+형식 (1줄 1결정):
+{"ts":"$(date -u +%FT%TZ)","decision":"내용","rationale":"근거","team":"담당팀","okr":"KR ID","status":"confirmed"}
+
+### 4. OKR 진척도 갱신 (측정 가능할 때만)
+파일: ~/.jarvis/config/goals.json
+keyResults의 current 값을 오늘 데이터 기반으로 업데이트. lastUpdated 갱신.
+측정 불가능한 KR은 null 유지.
+
+## 최종 출력 (stdout, Discord 전송용)
+800자 이내. 형식:
+[Board Meeting — ${TODAY} $(date +%H:%M)]
+시스템: GREEN/YELLOW/RED | 크론 XX%
+시장: SAFE/CAUTION/CRITICAL | TQQQ \$XX.XX
+주목: [1줄]
+결정: [1~2줄]
+PROMPT_EOF
+)"
+
+# --- Prevent nested claude ---
+unset CLAUDECODE CLAUDE_CODE_ENTRYPOINT CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS
+
+# --- Lock ---
+LOCK_FILE="/tmp/jarvis-board-meeting.lock"
+if [[ -f "$LOCK_FILE" ]]; then
+    LOCK_PID=$(cat "$LOCK_FILE" 2>/dev/null || echo "0")
+    if kill -0 "$LOCK_PID" 2>/dev/null; then
+        log "Another board meeting running (PID $LOCK_PID), skipping"
+        exit 0
+    fi
+    rm -f "$LOCK_FILE"
+fi
+echo $$ > "$LOCK_FILE"
+
+CAFFEINATE_PID=""
+caffeinate -i -w $$ &
+CAFFEINATE_PID=$!
+trap 'rm -f "$LOCK_FILE"; kill "$CAFFEINATE_PID" 2>/dev/null || true' EXIT
+
+# --- Rate limit guard ---
+RATE_FILE="${BOT_HOME}/state/rate-tracker.json"
+if [[ -f "$RATE_FILE" ]]; then
+    RATE_COUNT=$(python3 -c "
+import json, time
+with open('${RATE_FILE}') as f: d = json.load(f)
+cutoff = int(time.time()*1000) - 5*3600*1000
+print(len([t for t in d if t > cutoff]))
+" 2>/dev/null || echo "0")
+    if (( RATE_COUNT > 720 )); then
+        log "Rate limit high (${RATE_COUNT}/900), skipping"
+        exit 0
+    fi
+fi
+
+# --- Execute (via LLM Gateway, ADR-006) ---
+START_TIME=$(date +%s)
+
+source "${BOT_HOME}/lib/llm-gateway.sh"
+
+CLAUDE_EXIT=0
+CLAUDE_OUTPUT_TMP="/tmp/board-meeting-$$.json"
+llm_call \
+    --prompt "$PROMPT" \
+    --timeout 300 \
+    --allowed-tools "Read,Bash,Write" \
+    --max-budget "2.00" \
+    --model "claude-sonnet-4-20250514" \
+    --mcp-config "${BOT_HOME}/config/empty-mcp.json" \
+    --output "$CLAUDE_OUTPUT_TMP" \
+    2>"$STDERR_LOG" || CLAUDE_EXIT=$?
+
+END_TIME=$(date +%s)
+DURATION=$(( END_TIME - START_TIME ))
+
+if [[ $CLAUDE_EXIT -ne 0 ]]; then
+    log "FAILED (exit $CLAUDE_EXIT, ${DURATION}s)"
+    rm -f "$CLAUDE_OUTPUT_TMP"
+    exit "$CLAUDE_EXIT"
+fi
+
+# --- Extract result ---
+RESULT=""
+COST="0"
+if [[ -s "$CLAUDE_OUTPUT_TMP" ]]; then
+    RESULT=$(jq -r '.result // empty' "$CLAUDE_OUTPUT_TMP" 2>/dev/null || echo "")
+    COST=$(jq -r '.cost_usd // 0' "$CLAUDE_OUTPUT_TMP" 2>/dev/null || echo "0")
+fi
+
+if [[ -z "$RESULT" ]]; then
+    log "ERROR: empty result (${DURATION}s)"
+    rm -f "$CLAUDE_OUTPUT_TMP"
+    exit 1
+fi
+
+# Save result
+echo "$RESULT" > "$RESULT_FILE"
+log "SUCCESS (${DURATION}s, cost \$${COST})"
+
+# --- Route to Discord ---
+WEBHOOK=$(jq -r '.webhooks["jarvis-ceo"]' "${BOT_HOME}/config/monitoring.json" 2>/dev/null || echo "")
+if [[ -n "$WEBHOOK" ]] && [[ "$WEBHOOK" != "null" ]]; then
+    DISCORD_MSG=$(echo "$RESULT" | head -c 1950)
+    curl -s -X POST "$WEBHOOK" \
+        -H "Content-Type: application/json" \
+        -d "$(jq -n --arg content "$DISCORD_MSG" '{content: $content}')" \
+        >/dev/null 2>&1 || log "Discord send failed"
+fi
+
+# --- Update rate tracker ---
+python3 -c "
+import json, time, fcntl, os
+path = '${RATE_FILE}'
+cutoff = int(time.time()*1000) - 5*3600*1000
+now_ms = int(time.time()*1000)
+try:
+    with open(path, 'r+') as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        data = json.load(f)
+        data = [t for t in data if t > cutoff]
+        data.append(now_ms)
+        f.seek(0); f.truncate()
+        json.dump(data, f)
+except (FileNotFoundError, json.JSONDecodeError):
+    with open(path, 'w') as f:
+        json.dump([int(time.time()*1000)], f)
+" 2>/dev/null || true
+
+# --- Rotate old results ---
+find "$RESULTS_DIR" -name "*.md" -mtime +30 -delete 2>/dev/null || true
+find "$MINUTES_DIR" -name "*.md" -mtime +90 -delete 2>/dev/null || true
+
+# --- Cleanup ---
+rm -f "$CLAUDE_OUTPUT_TMP"
+
+echo "$RESULT"
+
+# --- Decision Dispatcher: 결정사항 자동 실행 + 팀 성과 평가 ---
+DISPATCHER="${BOT_HOME}/bin/decision-dispatcher.sh"
+if [[ -x "$DISPATCHER" ]]; then
+    log "Running decision dispatcher..."
+    DISPATCH_OUTPUT=$("$DISPATCHER" 2>>"$DISPATCH_LOG" || true)
+    DISPATCH_LOG="${BOT_HOME}/logs/decision-dispatcher.log"
+    if [[ -n "$DISPATCH_OUTPUT" ]]; then
+        log "Dispatcher result: $(echo "$DISPATCH_OUTPUT" | head -1)"
+        echo ""
+        echo "$DISPATCH_OUTPUT"
+    fi
+fi

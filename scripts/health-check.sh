@@ -13,8 +13,8 @@ check() {
         printf '{"component":"%s","status":"%s","detail":"%s"}\n' "$name" "$status" "$detail"
     else
         local icon="✅"
-        [[ "$status" == "warn" ]] && icon="⚠️"
-        [[ "$status" == "fail" ]] && icon="❌"
+        if [[ "$status" == "warn" ]]; then icon="⚠️"; fi
+        if [[ "$status" == "fail" ]]; then icon="❌"; fi
         printf "%s %-20s %s\n" "$icon" "$name" "$detail"
     fi
 }
@@ -77,7 +77,7 @@ check "cron-results" "ok" "today: ${success} success, ${failures} failures"
 
 # 7. Crash counter
 crash_count=0
-[[ -f "$BOT_HOME/watchdog/crash-count" ]] && crash_count=$(cat "$BOT_HOME/watchdog/crash-count")
+if [[ -f "$BOT_HOME/watchdog/crash-count" ]]; then crash_count=$(cat "$BOT_HOME/watchdog/crash-count"); fi
 if [[ "$crash_count" -gt 3 ]]; then
     check "crash-count" "warn" "${crash_count} crashes"
 else

@@ -8,16 +8,22 @@
 
 ### Step 1. 데이터 수집
 ```
-1. tail -200 ~/.jarvis/logs/cron.log              # 오늘 전체 크론 실행 현황
+1. grep "$(date +%F)" ~/.jarvis/logs/cron.log | tail -100   # 오늘 크론만
 2. ls -t ~/.jarvis/results/ | head -5 # 최신 크론 결과 확인
 3. ls -t ~/.jarvis/results/system-health/ | head -1
    → 파일 Read (시스템 상태 추출)
 4. ls -t ~/.jarvis/results/infra-daily/ | head -1
    → 파일 있으면 Read (인프라 이슈 추출)
 5. Read ~/.jarvis/config/company-dna.md           # DNA 기준 숙지
+6. ls ~/.jarvis/rag/teams/shared-inbox/        # 팀 간 긴급 메시지 확인
+   → 파일이 있으면 각각 Read하여 내용 파악
+   → 처리 완료된 메시지는 내용을 보고서에 반영 후 삭제 (rm)
 ```
 
 ### Step 2. CEO 종합 분석
+
+⚠️ 분석 범위: 오늘($(date +%F)) 데이터만. 어제 이전 이슈는 처리 완료로 간주.
+
 ```
 - 오늘 크론 성공률 계산: SUCCESS 수 / 전체 실행 수
 - 판정: 90%+ GREEN / 70-90% YELLOW / 70% 미만 RED
@@ -83,6 +89,8 @@
 ### Step A. 팀 보고서 수집
 ```
 ls -t ~/.jarvis/rag/teams/reports/ | head -20
+ls ~/.jarvis/rag/teams/shared-inbox/ 2>/dev/null
+→ 각 파일 Read하여 긴급 이슈 추출
 ```
 최근 7일 이내 보고서만 대상 (파일명 날짜 기준):
 - `brand-*.md` — 브랜드팀 보고서

@@ -12,3 +12,4 @@
 2. 메모리: vm_stat (free pages < 10000 경고)
 3. CPU: uptime load average (> 8.0 경고)
 4. 프로세스: pgrep -f "discord-bot\|glances" 확인
+5. Google Calendar 인증: gog calendar list --from today --to today --account $GOOGLE_ACCOUNT 2>&1 | head -3 실행. "auth" 또는 "error" 또는 "token" 포함 시 "⚠️ Google Calendar 인증 만료" 경고

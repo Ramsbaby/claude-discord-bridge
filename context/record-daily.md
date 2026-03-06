@@ -32,6 +32,10 @@
 
 3. 다른 팀에 전달할 내용 있으면 shared-inbox에 작성:
    ~/.jarvis/rag/teams/shared-inbox/$(date +%Y-%m-%d)_record_to_[팀명].md
+
+4. 2개 이상 팀에서 동일 이슈 반복 발견 시 council에 공유:
+   → 크론 로그/보고서 취합 중 복수 팀 공통 장애, 동일 에러 패턴 등
+   echo "내용" > ~/.jarvis/rag/teams/shared-inbox/$(date +%Y-%m-%d)_record_to_council.md
 ```
 
 ## Discord 전송 채널

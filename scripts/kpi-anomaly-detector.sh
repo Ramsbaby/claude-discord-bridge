@@ -6,7 +6,6 @@ set -euo pipefail
 # 측정 -> 이상 감지 -> 행동 제안 -> 재측정 루프의 핵심
 
 BOT_HOME="${BOT_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
-TASKS_JSON="${BOT_HOME}/config/tasks.json"
 MONITORING="${BOT_HOME}/config/monitoring.json"
 DECISIONS_FILE="${BOT_HOME}/state/kpi-decisions.jsonl"
 RESULTS_DIR="${BOT_HOME}/results/kpi-weekly"
@@ -183,6 +182,21 @@ PYEOF
     echo "$DISCORD_MSG"
     echo ""
     echo "Decisions written: ${DECISION_COUNT}"
+
+    # --- Step 5: L3 Approval 요청 생성 (decisions가 있을 때만) ---
+    if (( DECISION_COUNT > 0 )); then
+        L3_DIR="$BOT_HOME/state/l3-requests"
+        mkdir -p "$L3_DIR"
+        cat > "$L3_DIR/kpi-$(date +%s).json" << REQEOF
+{
+  "label": "KPI Auto-Tuning (${DECISION_COUNT} tasks)",
+  "description": "KPI anomaly detected. Apply timeout increases for underperforming tasks?\n${DISCORD_MSG}",
+  "script": "apply-kpi-decisions.sh",
+  "args": ["--apply"]
+}
+REQEOF
+        echo "L3 approval request created"
+    fi
 else
     echo "All teams OK. No anomalies detected."
     echo "Results saved: ${RESULTS_DIR}/${TODAY}.json"

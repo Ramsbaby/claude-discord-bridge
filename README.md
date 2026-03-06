@@ -37,7 +37,7 @@
 | **What** | Self-hosted Discord bot backed by `claude -p` (Claude Code's headless CLI) |
 | **Who** | Claude Max subscribers who want $0 extra AI costs |
 | **How** | Spawns `claude -p` per message, streams output to Discord in real-time |
-| **Why** | 24 scheduled cron tasks + reactive chat, in one bot, with 3+ hour sessions |
+| **Why** | 39 scheduled cron tasks + 7 AI teams + reactive chat, with 3+ hour sessions |
 
 ```
 You type in Discord  →  claude -p answers  →  streamed reply in your thread
@@ -88,18 +88,21 @@ Most bots are **reactive** — they wait for you to type. This one is **proactiv
  YOU          BOT
  ────────────────────────────────────────────────────────────
  03:00  zzz   → Server maintenance scan        #bot-system
- 08:05  zzz   → Morning standup briefing        #bot-daily
- 09:00  ☕    ← You wake up to a full briefing already posted
- 09:15        → Custom monitor (every 15 min)   #bot-market
+ 04:45  zzz   → Code Auditor scans all scripts  internal
+ 07:50  zzz   → Trend team: morning briefing    #bot-daily
+ 08:00  zzz   → Council reviews all teams       #bot-ceo
+ 08:05  zzz   → Smart Standup (waits for you)   #bot-daily
+ 09:00  ☕    ← You wake up: standup fires now
+ 09:15        → Event trigger: TQQQ alert       #bot-market + 📱
  10:00        ↔ Real-time Discord chat (you type, it answers)
  12:00  🍜    → System health check             logs
- 15:30        → Alert: threshold crossed        #bot-market + 📱
+ 15:30        → Event trigger: disk 85%         → L3 approval button
  18:00        ← You stop chatting
- 20:00  zzz   → Daily summary                   #bot-daily
+ 20:00  zzz   → Record team: daily archive      internal
  00:30  zzz   → Log rotation + backup cleanup
- 01:00  zzz   → RAG index rebuild (hourly, incremental)
+ 01:00  zzz   → RAG index + Vault sync (hourly)
  ────────────────────────────────────────────────────────────
-              24 tasks. Zero manual intervention.
+              39 cron tasks + 7 AI teams. Zero manual intervention.
 ```
 
 Every task has **exponential backoff retry** (3 attempts), **rate-limit awareness** (shared 5-hour sliding window), and **failure alerts** pushed to your phone via [ntfy](https://ntfy.sh).
@@ -120,10 +123,13 @@ Every task has **exponential backoff retry** (3 attempts), **rate-limit awarenes
 
 | | **This bot** | API-based bots | Clawdbot |
 |---|---|---|---|
-| Behavior model | **Proactive** (24 cron tasks) | Reactive only | Reactive only |
+| Behavior model | **Proactive** (39 cron + 7 teams) | Reactive only | Reactive only |
 | Context management | **Nexus CIG** (98% compression) | None / basic | Basic |
 | RAG / memory | LanceDB (vector + BM25 hybrid) | Rarely | Plugin-dependent |
 | Self-healing | 3-layer watchdog | Manual restart | Varies |
+| AI team agents | 7 specialized teams | None | None |
+| KPI + auto-tuning | Anomaly detection + L3 approval | None | None |
+| Human approval gate | Discord button workflow | None | None |
 | Session continuity | `--resume` multi-turn threads | Per-message | Varies |
 | E2E test suite | **43/44** automated checks | Rare | Partial |
 | Messenger support | Discord | Discord | 25+ platforms |
@@ -143,8 +149,8 @@ Every task has **exponential backoff retry** (3 attempts), **rate-limit awarenes
 ### Option A: Docker
 
 ```bash
-git clone https://github.com/Ramsbaby/claude-discord-bridge ~/claude-discord-bridge
-cd ~/claude-discord-bridge
+git clone https://github.com/YOUR_USERNAME/jarvis ~/.jarvis
+cd ~/.jarvis
 cp discord/.env.example discord/.env
 # → edit discord/.env with your tokens
 docker compose up -d
@@ -156,8 +162,8 @@ docker compose up -d
 
 ```bash
 # 1. Clone
-git clone https://github.com/Ramsbaby/claude-discord-bridge ~/claude-discord-bridge
-cd ~/claude-discord-bridge
+git clone https://github.com/YOUR_USERNAME/jarvis ~/.jarvis
+cd ~/.jarvis
 
 # 2. Install
 ./install.sh --local
@@ -317,10 +323,206 @@ Layer 2: cron */5 min  →  bot-watchdog.sh
 
 Layer 3: cron */3 min  →  launchd-guardian.sh
   ├─ Detects unloaded LaunchAgents
-  └─ Re-registers them automatically
+  ├─ Re-registers them automatically
+  └─ Stall detection: kickstarts services whose logs haven't updated in 3x their interval
 ```
 
 **Rate limiting:** shared `state/rate-tracker.json` — 900 requests per 5-hour window, split between bot and cron tasks.
+
+---
+
+## Company Agent Teams
+
+A virtual organization of AI teams, each with a specialized role. Every team runs as a scheduled `claude -p` session via `@anthropic-ai/claude-agent-sdk`, produces a report, and posts it to its designated Discord channel.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Council (Oversight)                       │
+│  Daily 08:00 KST · Sub-agents: kpi-analyst, log-analyst    │
+│  Reviews all team outputs, detects cross-team issues        │
+├─────────┬──────────┬──────────┬──────────┬──────────────────┤
+│  Infra  │  Trend   │  Record  │  Brand   │  Career/Academy  │
+│  Daily  │  Daily   │  Daily   │  Weekly  │  Weekly          │
+│  09:00  │  07:50   │  08:50   │  Tue     │  Fri/Sun         │
+└─────────┴──────────┴──────────┴──────────┴──────────────────┘
+```
+
+| Team | Role | Output |
+|------|------|--------|
+| **Council** | Executive oversight with sub-agents | Cross-team analysis, KPI review |
+| **Infra** | System health, service status | Infrastructure daily report |
+| **Trend** | News, tech trends, market signals | Morning briefing |
+| **Record** | Daily activity logging | Internal archive |
+| **Brand** | Content strategy, blog ideas | Weekly brand report |
+| **Career** | Learning goals, skill tracking | Weekly growth report |
+| **Academy** | Study material curation | Weekly learning digest |
+
+Reports are saved to `rag/teams/reports/` (indexed by RAG) and mirrored to an Obsidian Vault.
+
+### Board Meeting → Decision Dispatcher
+
+The CEO agent doesn't just report — it **delegates and holds teams accountable**:
+
+```
+Board Meeting (08:10, 21:55 KST)
+  │
+  ├─ CEO judgment → decisions/{date}.jsonl
+  │
+  └─ decision-dispatcher.sh (auto-runs after meeting)
+       ├─ Actionable decisions → execute immediately
+       │   (service restart, log cleanup, cron analysis)
+       ├─ Report-only decisions → flag for human review
+       │   (investment actions, architecture changes)
+       └─ Update team-scorecard.json
+            ├─ Success → +1 merit
+            ├─ Failure → +1 penalty
+            └─ Thresholds:
+                 3 penalties → WARNING
+                 5 penalties → PROBATION
+                10 penalties → DISCIPLINARY (team lead dismissed)
+```
+
+Penalty decay: 30% reduction every Monday (no permanent marks).
+
+Configuration: `agents/*.md`, `state/team-scorecard.json`
+
+---
+
+## Orchestrator — Event Bus
+
+A SQLite-backed message queue (`messages.db`) that decouples producers from consumers:
+
+```
+Cron tasks / Event triggers / Teams
+         │
+         ▼
+  ┌─────────────────────┐
+  │   Orchestrator MQ    │
+  │  SQLite + 5s poll    │
+  │  Channel routing:    │
+  │  alert│market│system │
+  │  kpi  │general       │
+  └─────────────────────┘
+         │
+         ▼
+  Discord webhooks / KPI aggregation / Alerts
+```
+
+Two-phase processing: validate message → execute delivery. KPI metrics auto-aggregated per task.
+
+Runs as a LaunchAgent (`ai.jarvis.orchestrator`), not cron.
+
+---
+
+## Operational Intelligence
+
+### KPI Measurement
+
+Weekly automated performance tracking for all cron tasks and agent teams:
+
+```
+measure-kpi.sh (Mon 08:30)
+  └─ Reads task-runner.jsonl (all cron execution logs)
+  └─ Calculates per-team success rate, duration, cost
+  └─ Outputs text + JSON report
+  └─ Posts to Discord with --discord flag
+```
+
+### Anomaly Detection + Auto-Tuning
+
+```
+kpi-anomaly-detector.sh (Mon 08:35)
+  └─ Calls measure-kpi.sh --json
+  └─ Classifies: CRITICAL (<70%) / WARNING (<85%)
+  └─ Proposes timeout increases for failing tasks
+  └─ Creates L3 approval request (see below)
+```
+
+### L3 Approval Workflow
+
+Risky autonomous actions require human approval via Discord buttons:
+
+```
+Bash script drops JSON ──► state/l3-requests/
+                                    │
+Discord bot polls (10s) ◄───────────┘
+         │
+         ▼
+  ┌─────────────────────────┐
+  │  [Approve]   [Reject]   │  ← Discord button message
+  └─────────────────────────┘
+         │
+         ▼ (on approve)
+  execFileSync(scripts/l3-actions/*)
+```
+
+Pre-configured L3 actions: `cleanup-logs`, `cleanup-results`, `kill-stale-claude`, `restart-bot`, `apply-kpi-decisions`, `auditor-fix-*`
+
+Any bash script can request approval by writing a JSON file to `state/l3-requests/`:
+
+```json
+{
+  "label": "Clean old logs",
+  "description": "Remove logs older than 30 days",
+  "script": "cleanup-logs.sh"
+}
+```
+
+---
+
+## Proactive Automation
+
+### Event Trigger System
+
+Condition-based triggers that fire independently of cron schedules (`scripts/event-trigger.sh`, every 3 min):
+
+| Trigger | Condition | Cooldown | Action |
+|---------|-----------|----------|--------|
+| TQQQ price | Market hours + threshold crossed | 4 hours | Discord alert |
+| Disk usage | > 85% | 24 hours | L3 approval → cleanup |
+| Claude load | 3+ concurrent `claude -p` | 30 min | Discord warning |
+
+Each trigger has independent cooldown tracking via `state/triggers/`.
+
+### Smart Standup
+
+Owner-aware morning briefing (`scripts/smart-standup.sh`):
+
+```
+08:05  →  Check if owner is online (Discord activity detection)
+           ├─ Online  → Run standup immediately
+           └─ Offline → Retry at 08:35, 09:05, 09:35 (max 4 attempts)
+```
+
+Prevents posting a standup briefing when nobody is awake to read it. Deduplication via daily state file.
+
+### Code Auditor
+
+Automated code quality scanner (`scripts/jarvis-auditor.sh`, daily 04:45):
+
+| Phase | What it checks |
+|-------|---------------|
+| ShellCheck | Static analysis of all `.sh` files, auto-fix for high-priority issues |
+| Node syntax | `node --check` on all `.js`/`.mjs` files |
+| Anti-patterns | Custom pattern matching via `config/anti-patterns.json` |
+| LaunchAgent | Service loaded + PID verification |
+| Health freshness | `state/health.json` staleness check |
+| E2E results | Scan latest E2E test results for failures |
+
+**Safety:** protected file list, 20-hour cooldown per file, max 5 auto-fixes per run, syntax verification after each fix with automatic rollback on failure.
+
+Tier 1 issues (e.g. deprecated API usage) are auto-fixed via `sed`. Tier 2 issues are escalated as L3 approval requests.
+
+### Vault Sync
+
+Bi-directional sync between bot data and an Obsidian Vault (`scripts/vault-sync.sh`, every 6 hours):
+
+```
+~/.jarvis/rag/teams/reports/*.md  ──►  ~/Jarvis-Vault/03-teams/{team}/
+~/.jarvis/docs/*.md               ──►  ~/Jarvis-Vault/06-knowledge/
+```
+
+Each team folder retains the 7 most recent reports. Enables browsing AI-generated reports in Obsidian with full graph and backlink support.
 
 ---
 
@@ -341,7 +543,7 @@ The RAG engine runs an incremental index hourly. When you ask a question, releva
 ```
 ~/claude-discord-bridge/
 ├── discord/
-│   ├── discord-bot.js          # Discord client, slash commands
+│   ├── discord-bot.js          # Discord client, slash commands, L3 polling
 │   ├── locales/
 │   │   ├── en.json             # English locale strings
 │   │   └── ko.json             # Korean locale strings (default)
@@ -351,24 +553,48 @@ The RAG engine runs an incremental index hourly. When you ask a question, releva
 │       ├── claude-runner.js    # createClaudeSession() via Agent SDK
 │       ├── format-pipeline.js  # formatForDiscord() — 8 output transforms
 │       ├── session.js          # SessionStore, RateTracker, Semaphore
-│       └── user-memory.js      # Per-user persistent memory (/remember)
+│       ├── user-memory.js      # Per-user persistent memory (/remember)
+│       ├── company-agent.mjs   # 7-team virtual organization engine
+│       ├── orchestrator.mjs    # SQLite message queue + channel routing
+│       └── approval.js         # L3 approval workflow (Discord buttons)
 ├── bin/
 │   ├── ask-claude.sh           # claude -p wrapper (RAG + token isolation)
 │   ├── bot-cron.sh             # Cron task runner (semaphore, retry, routing)
+│   ├── board-meeting.sh        # Board Meeting CEO agent (daily 08:10, 21:55)
+│   ├── decision-dispatcher.sh  # Auto-execute decisions + team scoring
 │   └── rag-index.mjs           # Incremental RAG indexer
 ├── lib/
 │   ├── rag-engine.mjs          # LanceDB hybrid search
 │   └── mcp-nexus.mjs           # Nexus CIG MCP server
 ├── config/
 │   ├── tasks.json.example      # 3 starter cron task definitions
-│   └── monitoring.json.example # Webhook routing config
+│   ├── monitoring.json.example # Webhook routing config
+│   └── anti-patterns.json      # Code auditor pattern rules
 ├── scripts/
-│   ├── watchdog.sh             # Bot health monitor
-│   ├── launchd-guardian.sh     # LaunchAgent auto-recovery
-│   └── e2e-test.sh             # 43-item E2E test suite
+│   ├── watchdog.sh             # Bot health monitor (Layer 2)
+│   ├── launchd-guardian.sh     # LaunchAgent auto-recovery (Layer 3)
+│   ├── event-trigger.sh        # Condition-based proactive triggers
+│   ├── smart-standup.sh        # Owner-aware morning standup
+│   ├── jarvis-auditor.sh       # Automated code quality scanner
+│   ├── measure-kpi.sh          # Weekly team KPI measurement
+│   ├── kpi-anomaly-detector.sh # KPI anomaly detection + L3 bridge
+│   ├── apply-kpi-decisions.sh  # Auto-tuning applier (dry-run default)
+│   ├── vault-sync.sh           # Obsidian Vault bi-directional sync
+│   ├── e2e-test.sh             # 43-item E2E test suite
+│   └── l3-actions/             # Pre-approved L3 action scripts
 ├── context/                    # Per-task background knowledge files
 ├── results/                    # Cron task output history
-└── state/                      # sessions.json, rate-tracker.json
+├── rag/teams/reports/          # Company agent team reports (RAG-indexed)
+├── agents/                    # Team lead agent profiles (CEO, Infra Chief, etc.)
+└── state/
+    ├── sessions.json           # Active session tracking
+    ├── rate-tracker.json       # 5-hour rate limit window
+    ├── team-scorecard.json     # Team performance tracking (merit/penalty/status)
+    ├── decisions/              # Board meeting decision audit log (JSONL)
+    ├── board-minutes/          # Board meeting minutes archive
+    ├── dispatch-results/       # Decision execution results + cron analysis
+    ├── l3-requests/            # Bash → Discord approval bridge
+    └── triggers/               # Event trigger cooldown timestamps
 ```
 
 ---

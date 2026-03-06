@@ -1,7 +1,10 @@
 # Obsidian Auto-Sync 설정 가이드
 
-> 현재 상태: 수동 sync만 가능 (자동 sync 미구현)
-> 목표: `~/claude-discord-bridge/rag/` ↔ Obsidian Vault 자동 동기화
+> **Note**: 실제 구현은 `vault-sync.sh` (6시간 크론) + `rag-index.mjs` (재귀 인덱싱) 방식으로 완료됨.
+> 아래 내용은 초기 설계 참고용.
+
+> ~~현재 상태: 수동 sync만 가능 (자동 sync 미구현)~~
+> 목표: `~/.jarvis/rag/` ↔ Obsidian Vault 자동 동기화
 
 ## 현재 Vault 구조
 

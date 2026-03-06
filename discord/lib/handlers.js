@@ -24,18 +24,77 @@ import { t } from './i18n.js';
 
 const INPUT_MAX_CHARS = 4000;
 const TYPING_INTERVAL_MS = 8000;
-const STALL_SOFT_MS = 10_000;
-const STALL_HARD_MS = 30_000;
 
 const EMOJI = {
-  THINKING: '🧠',
-  TOOL: '🛠️',
-  WEB: '🌐',
-  DONE: '✅',
-  ERROR: '❌',
-  STALL_SOFT: '⏳',
-  STALL_HARD: '⚠️',
+  DONE: '\u2705',
+  ERROR: '\u274c',
 };
+
+// ---------------------------------------------------------------------------
+// Dynamic tool display — contextual emoji + description per tool
+// ---------------------------------------------------------------------------
+
+const TOOL_DISPLAY = {
+  // File operations
+  Read:  { desc: '\ud83d\udcd6 파일을 읽고 있어요' },
+  Edit:  { desc: '\u270f\ufe0f 코드를 수정 중' },
+  Write: { desc: '\ud83d\udcdd 파일을 작성 중' },
+  // Search
+  Grep:  { desc: '\ud83d\udd0d 코드를 검색 중' },
+  Glob:  { desc: '\ud83d\udcc2 파일을 찾는 중' },
+  // Execution
+  Bash:  { desc: '\u26a1 명령어 실행 중' },
+  // Web
+  WebSearch: { desc: '\ud83c\udf10 웹 검색 중' },
+  WebFetch:  { desc: '\ud83c\udf10 웹 페이지 확인 중' },
+  // Agent
+  Agent: { desc: '\ud83e\udd16 에이전트 투입' },
+  // MCP Nexus (1st priority tools)
+  mcp__nexus__exec:       { desc: '\u26a1 시스템 명령 실행 중' },
+  mcp__nexus__scan:       { desc: '\ud83d\udce1 병렬 스캔 중' },
+  mcp__nexus__cache_exec: { desc: '\u26a1 캐시 명령 실행 중' },
+  mcp__nexus__log_tail:   { desc: '\ud83d\udccb 로그를 확인하고 있어요' },
+  mcp__nexus__health:     { desc: '\ud83c\udfe5 시스템 건강 점검 중' },
+  mcp__nexus__file_peek:  { desc: '\ud83d\udd2e 파일 내용 확인 중' },
+  mcp__nexus__rag_search: { desc: '\ud83e\udde0 기억을 검색하고 있어요' },
+  // MCP Serena (2nd priority — code symbol tools)
+  mcp__serena__find_symbol:            { desc: '\ud83e\uddec 코드 심볼 탐색 중' },
+  mcp__serena__get_symbols_overview:   { desc: '\ud83e\uddec 코드 구조 파악 중' },
+  mcp__serena__search_for_pattern:     { desc: '\ud83d\udd0d 패턴 검색 중' },
+  mcp__serena__find_referencing_symbols: { desc: '\ud83d\udd17 참조 추적 중' },
+  mcp__serena__find_file:              { desc: '\ud83d\udcc2 파일을 찾는 중' },
+  mcp__serena__read_memory:            { desc: '\ud83e\udde0 프로젝트 메모리 확인 중' },
+};
+
+/** Look up emoji + description for a tool name, with keyword fallback. */
+function getToolDisplay(toolName) {
+  if (TOOL_DISPLAY[toolName]) return TOOL_DISPLAY[toolName];
+  const lower = (toolName || '').toLowerCase();
+  if (lower.includes('rag') || lower.includes('memory')) return { desc: '\ud83e\udde0 기억을 검색 중' };
+  if (lower.includes('search') || lower.includes('find')) return { desc: '\ud83d\udd0d 검색 중' };
+  if (lower.includes('read') || lower.includes('get')) return { desc: '\ud83d\udcd6 데이터 확인 중' };
+  if (lower.includes('write') || lower.includes('create') || lower.includes('edit')) return { desc: '\u270f\ufe0f 작성 중' };
+  if (lower.includes('web') || lower.includes('fetch') || lower.includes('brave')) return { desc: '\ud83c\udf10 웹 확인 중' };
+  if (lower.includes('exec') || lower.includes('bash') || lower.includes('run')) return { desc: '\u26a1 실행 중' };
+  if (lower.includes('git') || lower.includes('github')) return { desc: '\ud83d\udce6 저장소 확인 중' };
+  if (lower.includes('symbol') || lower.includes('lsp') || lower.includes('serena')) return { desc: '\ud83e\uddec 코드 구조 분석 중' };
+  return { desc: `\ud83d\udee0\ufe0f ${toolName}` };
+}
+
+// ---------------------------------------------------------------------------
+// Context-aware initial thinking message
+// ---------------------------------------------------------------------------
+
+function getContextualThinking(prompt, hasImages) {
+  if (hasImages) return t('stream.thinking.image');
+  const lower = (prompt || '').toLowerCase();
+  if (/코드|함수|클래스|버그|디버그|리뷰|리팩터|개발|구현|에러|오류|스크립트|컴파일/.test(lower)) return t('stream.thinking.code');
+  if (/시장|주가|투자|tqqq|나스닥|soxl|nvda|환율|코인|매수|매도|차트/.test(lower)) return t('stream.thinking.market');
+  if (/시스템|서버|인프라|로그|상태|크론|디스크|메모리|cpu|프로세스|배포/.test(lower)) return t('stream.thinking.system');
+  if (/번역|영어|english|translate|영문|표현/.test(lower)) return t('stream.thinking.translate');
+  if (/수업|학생|교육|한국어|커리큘럼|topik|문법/.test(lower)) return t('stream.thinking.education');
+  return t('stream.thinking');
+}
 
 // ---------------------------------------------------------------------------
 // handleMessage
@@ -118,7 +177,6 @@ export async function handleMessage(message, { sessions, rateTracker, semaphore,
   let sessionId = null;
   let sessionKey = null;
   let typingInterval = null;
-  let stallTimer = null;
   let timeoutHandle = null;
   let imageAttachments = [];
   let userPrompt = message.content;
@@ -140,26 +198,12 @@ export async function handleMessage(message, { sessions, rateTracker, semaphore,
     } catch { /* Missing permissions or message deleted */ }
   }
 
-  async function unreact(emoji) {
-    try {
-      if (reactions.has(emoji)) {
-        await message.reactions.cache.get(emoji)?.users?.remove(client.user.id);
-        reactions.delete(emoji);
-      }
-    } catch { /* Best effort */ }
-  }
 
-  async function clearStatusReactions() {
-    const statusEmojis = [EMOJI.THINKING, EMOJI.TOOL, EMOJI.WEB, EMOJI.STALL_SOFT, EMOJI.STALL_HARD];
-    await Promise.allSettled(statusEmojis.map((e) => unreact(e)));
-  }
-
+  const startTime = Date.now();
   try {
     thread = message.channel;
     sessionKey = isThread ? thread.id : `${thread.id}-${message.author.id}`;
     sessionId = sessions.get(sessionKey);
-
-    await react(EMOJI.THINKING);
 
     await thread.sendTyping();
     typingInterval = setInterval(() => {
@@ -195,10 +239,14 @@ export async function handleMessage(message, { sessions, rateTracker, semaphore,
 
     const effectiveChannelId = isThread ? message.channel.parentId : message.channel.id;
     const streamer = new StreamingMessage(thread, message, sessionKey, effectiveChannelId);
+    streamer.setContext(getContextualThinking(userPrompt, imageAttachments.length > 0));
     await streamer.sendPlaceholder();
 
     // RAG는 mcp__nexus__rag_search 도구로 아젠틱하게 검색 (사전 주입 제거)
     // Claude가 대화 중 필요할 때 직접 rag_search를 호출한다.
+
+    const MAX_CONTINUATIONS = 2;
+    let continuationCount = 0;
 
     async function runClaude(sid, streamer) {
       log('info', 'Starting Claude session', {
@@ -223,33 +271,14 @@ export async function handleMessage(message, { sessions, rateTracker, semaphore,
       timeoutHandle = setTimeout(() => {
         log('warn', 'Claude session timed out, aborting', { threadId: thread.id });
         procShim.kill();
-      }, 300_000);
+      }, 480_000);
 
       activeProcesses.set(sessionKey, { proc: procShim, timeout: timeoutHandle, typingInterval });
 
-      let lastOutputTime = Date.now();
-      let stallSoftFired = false;
-      let stallHardFired = false;
       let lastAssistantText = '';
       let toolCount = 0;
       let retryNeeded = false;
-
-      stallTimer = setInterval(async () => {
-        const elapsed = Date.now() - lastOutputTime;
-        if (elapsed >= STALL_HARD_MS && !stallHardFired) {
-          stallHardFired = true;
-          await react(EMOJI.STALL_HARD);
-        } else if (elapsed >= STALL_SOFT_MS && !stallSoftFired) {
-          stallSoftFired = true;
-          await react(EMOJI.STALL_SOFT);
-        }
-      }, 2000);
-
-      function resetStall() {
-        lastOutputTime = Date.now();
-        if (stallSoftFired) { unreact(EMOJI.STALL_SOFT); stallSoftFired = false; }
-        if (stallHardFired) { unreact(EMOJI.STALL_HARD); stallHardFired = false; }
-      }
+      let needsContinuation = false;
 
       for await (const event of createClaudeSession(userPrompt, {
         sessionId: sid,
@@ -272,18 +301,12 @@ export async function handleMessage(message, { sessions, rateTracker, semaphore,
                 const fullText = block.text;
                 if (fullText.length > lastAssistantText.length) {
                   streamer.append(fullText.slice(lastAssistantText.length));
-                  resetStall();
                 }
                 lastAssistantText = fullText;
               } else if (block.type === 'tool_use') {
                 toolCount++;
-                const toolName = block.name?.toLowerCase() || '';
-                if (toolName.includes('web') || toolName.includes('search') || toolName.includes('fetch')) {
-                  await react(EMOJI.WEB);
-                } else {
-                  await react(EMOJI.TOOL);
-                }
-                resetStall();
+                const display = getToolDisplay(block.name || '');
+                streamer.updateStatus(display.desc);
                 log('info', `Tool: ${block.name}`, { threadId: thread.id });
               }
             }
@@ -291,17 +314,14 @@ export async function handleMessage(message, { sessions, rateTracker, semaphore,
         } else if (event.type === 'content_block_delta') {
           if (event.delta?.type === 'text_delta' && event.delta?.text) {
             streamer.append(event.delta.text);
-            resetStall();
           }
         } else if (event.type === 'result') {
-          clearInterval(stallTimer);
-          stallTimer = null;
-
           log('debug', 'Result event received', {
             isError: event.is_error ?? false,
             hasResult: !!event.result,
             resultLen: event.result?.length ?? 0,
             hasAssistantText: lastAssistantText.length > 0,
+            stopReason: event.stop_reason ?? 'unknown',
           });
 
           // Resume failure → retry fresh
@@ -318,31 +338,41 @@ export async function handleMessage(message, { sessions, rateTracker, semaphore,
             streamer.append(event.result);
           }
 
-          // Detect max-turns truncation
+          const resultSessionId = event.session_id ?? null;
+          if (resultSessionId) sessions.set(sessionKey, resultSessionId);
+
+          // Auto-continue on max_turns (up to MAX_CONTINUATIONS times)
+          if (event.stop_reason === 'max_turns' && resultSessionId && continuationCount < MAX_CONTINUATIONS) {
+            continuationCount++;
+            log('info', 'max_turns hit, auto-continuing', {
+              threadId: thread.id, continuation: continuationCount, toolCount,
+            });
+            needsContinuation = true;
+            break;
+          }
+
+          // Final max_turns (exhausted continuations) — notify user
           if (event.stop_reason === 'max_turns') {
             streamer.append('\n\n' + t('msg.truncated'));
-            log('warn', 'Response truncated by max-turns', { threadId: thread.id, toolCount });
+            log('warn', 'Response truncated by max-turns (continuations exhausted)', { threadId: thread.id, toolCount });
           }
 
           await streamer.finalize();
 
           const cost = event.cost_usd ?? null;
-          const resultSessionId = event.session_id ?? null;
-          if (resultSessionId) sessions.set(sessionKey, resultSessionId);
 
-          await clearStatusReactions();
           await react(EMOJI.DONE);
 
+          const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
           const footerParts = [];
           if (cost !== null) footerParts.push(`$${Number(cost).toFixed(4)}`);
-          if (toolCount > 0) footerParts.push(`${toolCount} tool${toolCount > 1 ? 's' : ''}`);
-          if (footerParts.length > 0) {
-            const embed = new EmbedBuilder()
-              .setColor(0x57f287)
-              .setFooter({ text: footerParts.join(' · ') })
-              .setTimestamp();
-            await thread.send({ embeds: [embed] });
-          }
+          if (toolCount > 0) footerParts.push(`\ud83d\udee0\ufe0f ${toolCount}`);
+          footerParts.push(`${elapsed}s`);
+          const embed = new EmbedBuilder()
+            .setColor(0x57f287)
+            .setFooter({ text: footerParts.join(' \u00b7 ') })
+            .setTimestamp();
+          await thread.send({ embeds: [embed] });
 
           log('info', 'Claude completed', { threadId: thread.id, cost, toolCount, sessionId: resultSessionId });
 
@@ -353,21 +383,21 @@ export async function handleMessage(message, { sessions, rateTracker, semaphore,
         }
       }
 
-      clearInterval(stallTimer);
-      stallTimer = null;
       clearTimeout(timeoutHandle);
       timeoutHandle = null;
       activeProcesses.delete(sessionKey);
 
       // Loop ended without result event — likely max-turns or abort
-      if (!streamer.finalized && !retryNeeded) {
-        if (streamer.hasRealContent && toolCount > 0) {
+      if (!streamer.finalized && !retryNeeded && !needsContinuation) {
+        if (aborted) {
+          streamer.append('\n\n' + t('msg.timeout'));
+        } else if (streamer.hasRealContent && toolCount > 0) {
           streamer.append('\n\n' + t('msg.truncated'));
         }
         await streamer.finalize();
       }
 
-      return { retryNeeded, lastAssistantText };
+      return { retryNeeded, needsContinuation, lastAssistantText };
     }
 
     // First attempt
@@ -381,18 +411,36 @@ export async function handleMessage(message, { sessions, rateTracker, semaphore,
       streamer.buffer = '';
       streamer.sentLength = 0;
       streamer.hasRealContent = false;
+      streamer._statusLines = [];
+      streamer._toolCount = 0;
+      if (streamer._progressTimer) {
+        clearInterval(streamer._progressTimer);
+        streamer._progressTimer = null;
+      }
+      if (streamer._statusTimer) {
+        clearTimeout(streamer._statusTimer);
+        streamer._statusTimer = null;
+      }
       streamer.replyTo = message;
       runResult = await runClaude(null, streamer);
     }
 
+    // Auto-continue: resume session with "계속해줘" to finish incomplete response
+    while (runResult.needsContinuation) {
+      const contSessionId = sessions.get(sessionKey);
+      log('info', 'Auto-continuing session', { threadId: thread.id, sessionId: contSessionId });
+      userPrompt = '이전 응답이 중간에 끊겼어. 끊긴 부분부터 이어서 완료해줘.';
+      runResult = await runClaude(contSessionId, streamer);
+    }
+
     // If nothing was produced (no text, no result), show generic error
     if (!streamer.hasRealContent && runResult.lastAssistantText === '') {
-      await clearStatusReactions();
       await react(EMOJI.ERROR);
       const embed = new EmbedBuilder()
         .setColor(0xed4245)
         .setTitle(t('error.title'))
         .setDescription(t('error.noResponse'))
+        .addFields({ name: t('error.helpTitle'), value: t('error.noResponse.help') })
         .setTimestamp();
       if (streamer.currentMessage) {
         await streamer.currentMessage.edit({ content: null, embeds: [embed], components: [] });
@@ -403,14 +451,29 @@ export async function handleMessage(message, { sessions, rateTracker, semaphore,
   } catch (err) {
     log('error', 'handleMessage error', { error: err.message, stack: err.stack });
 
-    await clearStatusReactions();
     await react(EMOJI.ERROR);
 
     const target = thread || message.channel;
+
+    // 일시적 에러(네트워크, SDK)일 경우 1회 자동 재시도
+    const isTransient = /ETIMEDOUT|ECONNRESET|ENOTFOUND|SDK error|process exited/i.test(err.message || '');
+    if (isTransient && !message._retried) {
+      message._retried = true;
+      log('info', 'Auto-retrying after transient error', { error: err.message });
+      try {
+        await target.send({ content: '⏳ 일시적 오류 발생. 자동으로 재시도합니다...' });
+        semaphore.release(); // 세마포어 해제 후 재진입
+        return handleMessage(message, { sessions, rateTracker, semaphore, activeProcesses, client });
+      } catch (retryErr) {
+        log('error', 'Auto-retry also failed', { error: retryErr.message });
+      }
+    }
+
     const embed = new EmbedBuilder()
       .setColor(0xed4245)
       .setTitle(t('error.generic'))
-      .setDescription(err.message?.slice(0, 500) || 'Unknown error')
+      .setDescription(err.message?.slice(0, 400) || 'Unknown error')
+      .addFields({ name: t('error.helpTitle'), value: t('error.generic.help') })
       .setTimestamp();
     try {
       await target.send({ embeds: [embed] });
@@ -418,7 +481,6 @@ export async function handleMessage(message, { sessions, rateTracker, semaphore,
     sendNtfy(`${process.env.BOT_NAME || 'Claude Bot'} Error`, err.message, 'high');
   } finally {
     if (typingInterval) clearInterval(typingInterval);
-    if (stallTimer) clearInterval(stallTimer);
     if (timeoutHandle) clearTimeout(timeoutHandle);
     semaphore.release();
     if (sessionKey) activeProcesses.delete(sessionKey);

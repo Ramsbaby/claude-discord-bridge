@@ -16,6 +16,25 @@ TASK_ID="${2:?Usage: route-result.sh MODE TASK_ID MESSAGE}"
 MESSAGE="${3:?Usage: route-result.sh MODE TASK_ID MESSAGE}"
 CHANNEL="${4:-}"  # optional: channel name from tasks.json discordChannel field
 
+# --- Message quality filter (central pre-send hook) ---
+# Strips internal debug/noise lines before sending to any external channel
+clean_message() {
+    local msg="$1"
+    # Remove noise patterns: internal paths, debug logs, SQL artifacts
+    msg=$(echo "$msg" | grep -vE \
+        '^\[insight\] Saved to |^sent id=|^SELECT .last_insert|^\[debug\]|^\[trace\]|^Fallback:|^NODE_PATH=|^cd /tmp/' \
+        || true)
+    # Trim leading/trailing blank lines
+    msg=$(echo "$msg" | sed -e '/./,$!d' -e ':a' -e '/^[[:space:]]*$/{ $d; N; ba' -e '}')
+    # Strip URLs (Discord 썸네일/임베드 방지)
+    msg=$(echo "$msg" | sed -E 's|https?://[^ )>]+||g')
+    # If everything got filtered, keep original (safety)
+    if [[ -z "$msg" ]]; then msg="$1"; fi
+    echo "$msg"
+}
+
+MESSAGE=$(clean_message "$MESSAGE")
+
 # --- Discord: 2000-char chunking ---
 send_discord() {
     local message="$1"
@@ -24,7 +43,7 @@ send_discord() {
     if [[ -n "$CHANNEL" ]]; then
         webhook_url=$(jq -r --arg ch "$CHANNEL" '.webhooks[$ch] // .webhook.url' "$CONFIG")
         # If channel webhook is empty string, fallback to default
-        [[ -z "$webhook_url" || "$webhook_url" == "null" ]] && webhook_url=$(jq -r '.webhook.url' "$CONFIG")
+        if [[ -z "$webhook_url" || "$webhook_url" == "null" ]]; then webhook_url=$(jq -r '.webhook.url' "$CONFIG"); fi
     else
         webhook_url=$(jq -r '.webhook.url' "$CONFIG")
     fi
@@ -34,7 +53,7 @@ send_discord() {
     while [[ $offset -lt $total ]]; do
         local chunk="${message:$offset:1990}"
         local payload
-        payload=$(jq -n --arg content "$chunk" '{"content": $content}')
+        payload=$(jq -n --arg content "$chunk" '{"content": $content, "flags": 4}')
         local http_code
         http_code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$webhook_url" \
             -H "Content-Type: application/json" \

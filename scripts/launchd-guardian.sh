@@ -13,12 +13,11 @@ UID_NUM=$(id -u)
 # KeepAlive services: must always have a running PID
 KEEPALIVE_SERVICES=(
     "ai.jarvis.discord-bot"
+    "ai.jarvis.watchdog"
 )
 
 # StartInterval services: run periodically, PID=- between runs is normal
-INTERVAL_SERVICES=(
-    "ai.jarvis.watchdog"
-)
+INTERVAL_SERVICES=()
 
 PLIST_DIR="$HOME/Library/LaunchAgents"
 
@@ -38,7 +37,7 @@ recovered=0
 check_loaded() {
     local service="$1"
     local plist_file="${PLIST_DIR}/${service}.plist"
-    [[ ! -f "$plist_file" ]] && return 0
+    if [[ ! -f "$plist_file" ]]; then return 0; fi
     local status_line
     status_line=$(launchctl list 2>/dev/null | grep "$service" || true)
     if [[ -z "$status_line" ]]; then
@@ -58,7 +57,7 @@ check_loaded() {
 # KeepAlive: must always have a running PID — kickstart if PID=-
 for service in "${KEEPALIVE_SERVICES[@]}"; do
     plist_file="${PLIST_DIR}/${service}.plist"
-    [[ ! -f "$plist_file" ]] && continue
+    if [[ ! -f "$plist_file" ]]; then continue; fi
     status_line=$(launchctl list 2>/dev/null | grep "$service" || true)
     if [[ -z "$status_line" ]]; then
         log "RECOVERY: $service not loaded, re-registering"
@@ -81,9 +80,27 @@ for service in "${KEEPALIVE_SERVICES[@]}"; do
     fi
 done
 
-# StartInterval: periodic services — only check if loaded, never kickstart for PID=-
+# StartInterval: check loaded + detect stalled execution
+# If the service's log hasn't been updated in 3x its interval, kickstart it.
+WATCHDOG_LOG="$BOT_HOME/logs/watchdog.log"
+WATCHDOG_INTERVAL=180  # seconds (must match plist StartInterval)
+STALL_MULTIPLIER=10   # 180*10=1800s(30분) — 실제 관측 최대 주기 ~1080s(18분) 기준 넉넉한 버퍼
+
 for service in "${INTERVAL_SERVICES[@]}"; do
     check_loaded "$service"
+
+    # Stall detection: if log file hasn't been written in INTERVAL * STALL_MULTIPLIER, kickstart
+    if [[ "$service" == "ai.jarvis.watchdog" && -f "$WATCHDOG_LOG" ]]; then
+        log_mtime=$(stat -f %m "$WATCHDOG_LOG" 2>/dev/null || echo 0)
+        now_epoch=$(date +%s)
+        log_age=$(( now_epoch - log_mtime ))
+        stall_threshold=$(( WATCHDOG_INTERVAL * STALL_MULTIPLIER ))
+        if [[ "$log_age" -gt "$stall_threshold" ]]; then
+            log "RECOVERY: $service stalled (log age=${log_age}s > ${stall_threshold}s), kickstarting"
+            launchctl kickstart -k "gui/${UID_NUM}/${service}" 2>/dev/null || true
+            recovered=$(( recovered + 1 ))
+        fi
+    fi
 done
 
 # Send alert on recovery
