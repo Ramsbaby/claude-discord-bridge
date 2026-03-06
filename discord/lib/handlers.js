@@ -287,7 +287,7 @@ export async function handleMessage(message, { sessions, rateTracker, semaphore,
         promptLen: userPrompt.length,
       });
 
-      const LARGE_KEYWORDS = /코드|분석|파일|구조|함수|클래스|디버그|확인|리뷰|왜|어떻게|동작|안됨|안되|안돼|수정|추가|만들어|고쳐|바꿔|구현|삭제|에러|오류|버그|리팩터|개발|스크립트|explain|debug|analyze|review|fix|implement|edit|refactor/i;
+      const LARGE_KEYWORDS = /코드|분석|파일|구조|함수|클래스|디버그|확인|리뷰|왜|어떻게|동작|안됨|안되|안돼|수정|추가|만들어|고쳐|바꿔|구현|삭제|에러|오류|버그|리팩터|개발|스크립트|작업|설정|상태|점검|explain|debug|analyze|review|fix|implement|edit|refactor/i;
       const contextBudget = userPrompt.length > 200 || LARGE_KEYWORDS.test(userPrompt) ? 'large' : 'medium';
 
       // AbortController replaces proc.kill() — clean async cancellation
@@ -305,7 +305,7 @@ export async function handleMessage(message, { sessions, rateTracker, semaphore,
         procShim.kill();
       }, 480_000);
 
-      activeProcesses.set(sessionKey, { proc: procShim, timeout: timeoutHandle, typingInterval });
+      activeProcesses.set(sessionKey, { proc: procShim, timeout: timeoutHandle, typingInterval, userId: message.author.id });
 
       let lastAssistantText = '';
       let toolCount = 0;

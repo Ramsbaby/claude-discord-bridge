@@ -29,7 +29,7 @@ import { handleInteraction } from './lib/commands.js';
 import { handleApprovalInteraction, pollL3Requests } from './lib/approval.js';
 import { t } from './lib/i18n.js';
 import { initAlertBatcher, botAlerts } from './lib/alert-batcher.js';
-import { sendRecoveryApologies } from './lib/error-tracker.js';
+import { recordError, sendRecoveryApologies } from './lib/error-tracker.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -277,9 +277,10 @@ client.on('shardError', (err, shardId) => {
 
 async function shutdown(signal) {
   log('info', `Received ${signal}, shutting down`);
-  // 활성 세션 사용자에게 재시작 안내 메시지 전송
+  // 활성 세션 사용자에게 재시작 안내 + 에러 기록 (재시작 후 사과 메시지 발송용)
   for (const [threadId, entry] of activeProcesses) {
     try {
+      recordError(threadId, entry.userId || 'unknown', `Bot shutdown (${signal}) during active response`);
       const channel = await client.channels.fetch(threadId).catch(() => null);
       if (channel) {
         await channel.send('⚠️ 봇이 재시작됩니다. 잠시 후 다시 시도해주세요.').catch(() => {});
