@@ -1,10 +1,10 @@
-# Claude Discord Bridge — Docker Compose
+# Jarvis — AI Company-in-a-Box Docker Compose
 # Usage: docker compose up -d
 
 services:
   bot:
     build: .
-    container_name: claude-discord-bridge
+    container_name: jarvis
     restart: unless-stopped
     env_file: discord/.env
     volumes:

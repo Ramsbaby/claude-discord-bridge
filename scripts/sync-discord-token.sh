@@ -6,8 +6,9 @@ set -euo pipefail
 
 SCRIPT_NAME="sync-discord-token"
 NEW_TOKEN="${1:?사용법: $0 <새Discord봇토큰>}"
-BOT_ENV="$HOME/claude-discord-bridge/discord/.env"
-LOG="$HOME/claude-discord-bridge/logs/sync-discord-token.log"
+BOT_HOME="${BOT_HOME:-$HOME/.jarvis}"
+BOT_ENV="$BOT_HOME/discord/.env"
+LOG="$BOT_HOME/logs/sync-discord-token.log"
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$SCRIPT_NAME] $*" | tee -a "$LOG"; }
 

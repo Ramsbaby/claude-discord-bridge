@@ -27,6 +27,14 @@ tmp/
 # 개인 운영 문서
 REPORT.md
 docs/audit-report.md
+docs/archived/
+ARCHITECTURE-GAP-ANALYSIS.md
+
+# 개인 프로필/설정 (오픈소스 공개 제외)
+context/owner/
+config/user_profiles.json
+config/goals.json
+config/effective-tasks.json
 
 # node_modules 심링크 (설치 시 자동 생성)
 bin/node_modules

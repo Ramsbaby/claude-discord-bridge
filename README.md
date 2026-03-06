@@ -541,7 +541,7 @@ The RAG engine runs an incremental index hourly. When you ask a question, releva
 ## File Structure
 
 ```
-~/claude-discord-bridge/
+~/.jarvis/
 ├── discord/
 │   ├── discord-bot.js          # Discord client, slash commands, L3 polling
 │   ├── locales/
@@ -614,7 +614,7 @@ The RAG engine runs an incremental index hourly. When you ask a question, releva
 
 ```bash
 # 1. Fork + clone
-git clone https://github.com/YOUR_USERNAME/claude-discord-bridge
+git clone https://github.com/YOUR_USERNAME/jarvis
 
 # 2. Make changes
 

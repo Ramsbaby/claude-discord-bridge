@@ -22,6 +22,7 @@ import { homedir } from 'node:os';
 delete process.env.CLAUDECODE;
 
 const BOT_HOME = process.env.BOT_HOME || join(homedir(), '.jarvis');
+const OWNER_NAME = process.env.OWNER_NAME || 'Owner';
 const LOG_DIR  = join(BOT_HOME, 'logs');
 const REPORTS  = join(BOT_HOME, 'rag', 'teams', 'reports');
 const CTX_BUS  = join(BOT_HOME, 'state', 'context-bus.md');
@@ -191,7 +192,7 @@ const TEAMS = {
       },
     },
     system: `당신은 자비스 컴퍼니의 감사팀장(Council)입니다.
-CEO 정우님을 위해 전사 현황을 파악하고 일일 경영 점검을 수행합니다.
+CEO ${OWNER_NAME}을 위해 전사 현황을 파악하고 일일 경영 점검을 수행합니다.
 임원 보고서 스타일: 수치 우선, 간결하게. 테이블 금지. 불릿 리스트 사용.`,
     prompt: `[자비스 컴퍼니 일일 경영 점검 — ${DATE}]
 
@@ -315,16 +316,16 @@ mcp__nexus__scan으로 다음을 한 번에 확인하라.
     tools: ['Read', 'Write', 'Bash', 'WebSearch', 'Glob', 'Agent'],
     agents: {
       'career-context': {
-        description: `성장팀의 최신 커리어 리포트를 읽고, 정우님이 현재 포트폴리오/블로그에서 강조해야 할 스킬과 경험을 추출한다.`,
+        description: `성장팀의 최신 커리어 리포트를 읽고, ${OWNER_NAME}이 현재 포트폴리오/블로그에서 강조해야 할 스킬과 경험을 추출한다.`,
         prompt: `${REPORTS}/ 에서 career-*.md 최신 파일을 읽어라.
-채용 시장에서 요구하는 스킬/키워드를 추출하고, 정우님의 블로그/GitHub에서 부각해야 할 포인트를 3개 이내로 정리하라.
+채용 시장에서 요구하는 스킬/키워드를 추출하고, ${OWNER_NAME}의 블로그/GitHub에서 부각해야 할 포인트를 3개 이내로 정리하라.
 출력: 키워드 | 이유 (채용 공고에서 언급 빈도/중요도)`,
         tools: ['Read', 'Glob'],
       },
     },
     system: `당신은 자비스 컴퍼니의 브랜드팀장입니다.
-정우님의 개발자 브랜딩과 기술 블로그/GitHub 전략 담당.
-정우님 강점: Java/Spring Boot, 비동기 처리, 성능 최적화, IoT, AI 자동화(Jarvis).
+${OWNER_NAME}의 개발자 브랜딩과 기술 블로그/GitHub 전략 담당.
+${OWNER_NAME} 강점: Java/Spring Boot, 비동기 처리, 성능 최적화, IoT, AI 자동화(Jarvis).
 "블로그를 쓰세요" 같은 막연한 조언 금지. 제목과 개요까지 구체적으로 제시.`,
     prompt: `[브랜드팀 주간 보고 — ${WEEK}]
 
@@ -348,7 +349,7 @@ cd ${BOT_HOME} && git log --oneline --since="7 days ago" 2>/dev/null | head -15
 
 **블로그 포스트 제안** (1개, 바로 쓸 수 있게)
 - 제목: "[구체적 제목]"
-- 왜 이 주제?: [독자 관심 + 정우님 전문성 + 성장팀 커리어 방향 교집합 1줄]
+- 왜 이 주제?: [독자 관심 + ${OWNER_NAME} 전문성 + 성장팀 커리어 방향 교집합 1줄]
 - 개요:
   1. [섹션1 — 핵심 내용 한 줄]
   2. [섹션2]
@@ -369,24 +370,24 @@ cd ${BOT_HOME} && git log --oneline --since="7 days ago" 2>/dev/null | head -15
     tools: ['Read', 'Write', 'WebSearch', 'Glob', 'Agent'],
     agents: {
       'skill-gap-analyst': {
-        description: `채용 공고의 요구 스킬과 정우님의 현재 스택(Java/Spring Boot/JPA/MySQL)을 비교하여 부족한 스킬을 분석한다. 분석 결과는 학습팀(academy)에 전달할 학습 우선순위가 된다.`,
+        description: `채용 공고의 요구 스킬과 ${OWNER_NAME}의 현재 스택(Java/Spring Boot/JPA/MySQL)을 비교하여 부족한 스킬을 분석한다. 분석 결과는 학습팀(academy)에 전달할 학습 우선순위가 된다.`,
         prompt: `${REPORTS}/ 에서 career-*.md 최신 파일을 읽어 채용 공고 요구 스킬을 추출하라.
-정우님 현재 스택: Java, Spring Boot, JPA, MySQL, Docker, 비동기 처리, 성능 최적화.
-공고에서 요구하지만 정우님이 아직 약한 분야를 3개 이내로 뽑아라.
+${OWNER_NAME} 현재 스택: Java, Spring Boot, JPA, MySQL, Docker, 비동기 처리, 성능 최적화.
+공고에서 요구하지만 ${OWNER_NAME}이 아직 약한 분야를 3개 이내로 뽑아라.
 단, Java/Spring 생태계 내의 스킬만 (Kotlin/Go 제외).
 출력 형식: 스킬명 | 요구 빈도(높음/보통) | 학습 난이도(쉬움/보통/어려움)`,
         tools: ['Read', 'Glob'],
       },
     },
     system: `당신은 자비스 컴퍼니의 성장팀장입니다.
-정우님의 커리어 성장을 담당합니다. 정우님 프로필:
+${OWNER_NAME}의 커리어 성장을 담당합니다. ${OWNER_NAME} 프로필:
 - 경력 6년차 백엔드 개발자 (Java/Spring Boot/JPA)
 - 강점: 비동기 처리, 성능 최적화, IoT 시스템
 - 현직: 중견기업 백엔드
 - 목표: 시니어 개발자 포지션, 연봉 상승
-- 기술 스택: Java, Spring Boot, JPA, MySQL — Kotlin/Go 등 정우님 스택에 없는 언어는 추천하지 마라
+- 기술 스택: Java, Spring Boot, JPA, MySQL — Kotlin/Go 등 ${OWNER_NAME} 스택에 없는 언어는 추천하지 마라
 
-채용 공고 필터링 시 정우님 스택(Java/Spring Boot)으로 지원 가능한 공고만 선별.
+채용 공고 필터링 시 ${OWNER_NAME} 스택(Java/Spring Boot)으로 지원 가능한 공고만 선별.
 현실적이고 구체적인 정보만. 공허한 격려와 막연한 조언 금지.
 "열심히 하세요" 류의 멘트는 절대 쓰지 마라.`,
     prompt: `[성장팀 주간 커리어 리포트 — ${WEEK}]
@@ -410,7 +411,7 @@ cd ${BOT_HOME} && git log --oneline --since="7 days ago" 2>/dev/null | head -15
 
 **채용 시장 핵심**
 - 이번 주 눈에 띄는 공고/트렌드 2-3건 (회사명, 포지션, 연봉대 구체적으로)
-- 정우님 프로필(Java/Spring 6년차)과 매칭되는 공고가 있으면 구체적으로 언급
+- ${OWNER_NAME} 프로필(Java/Spring 6년차)과 매칭되는 공고가 있으면 구체적으로 언급
 
 **TQQQ 이직 신호**: 🟢/🟡/🔴 $XX.XX
 - 기술주 흐름이 IT 채용에 미치는 영향 1줄 (채용 확대/축소 신호)
@@ -435,16 +436,16 @@ cd ${BOT_HOME} && git log --oneline --since="7 days ago" 2>/dev/null | head -15
       'career-priority': {
         description: `성장팀의 최신 커리어 리포트와 스킬 갭 분석을 읽고, 이번 주 학습 미션의 우선순위를 결정한다.`,
         prompt: `${REPORTS}/ 에서 career-*.md 최신 파일을 읽어라.
-채용 공고에서 요구하지만 정우님이 보강해야 할 스킬을 추출하라.
+채용 공고에서 요구하지만 ${OWNER_NAME}이 보강해야 할 스킬을 추출하라.
 Java/Spring Boot/JPA/MySQL 생태계 내 스킬만 대상.
 출력: 가장 시급한 학습 주제 1개와 그 이유 1줄`,
         tools: ['Read', 'Glob'],
       },
     },
     system: `당신은 자비스 컴퍼니의 학습팀장입니다.
-정우님의 기술 역량 강화를 담당합니다.
-정우님 스택: Java, Spring Boot, JPA, MySQL. 이 스택 내에서 심화 학습만 다룬다.
-Kotlin/Go 등 정우님 스택에 없는 언어 학습은 추천하지 마라.
+${OWNER_NAME}의 기술 역량 강화를 담당합니다.
+${OWNER_NAME} 스택: Java, Spring Boot, JPA, MySQL. 이 스택 내에서 심화 학습만 다룬다.
+Kotlin/Go 등 ${OWNER_NAME} 스택에 없는 언어 학습은 추천하지 마라.
 학습 방향: Java 심화, Spring Boot 고급, 시스템 설계 면접, 코딩 테스트, 성능 최적화.
 매주 "딱 하나"만 깊게 파는 학습 미션을 준다. 범위를 넓게 잡지 마라.
 "공부하세요" 류의 막연한 조언 금지. 뭘, 얼마나, 어떻게 할지 구체적으로.`,
@@ -507,7 +508,7 @@ AI/기술 트렌드와 시장 뉴스 담당.
 - [뉴스2 제목]: 한 줄 요약
 
 **기술 트렌드**
-- 정우님 관심사(백엔드, Java, 비동기) 연관 트렌드 1-2개
+- ${OWNER_NAME} 관심사(백엔드, Java, 비동기) 연관 트렌드 1-2개
 
 **시장 동향** (tqqq-monitor 데이터 기반)
 - TQQQ: $XX.XX (X.X%) | NVDA: $XX.XX (X.X%)`,

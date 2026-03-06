@@ -1,5 +1,5 @@
-# Claude Discord Bridge — Docker Image
-# Usage: docker build -t claude-discord-bridge . && docker compose up -d
+# Jarvis — AI Company-in-a-Box Docker Image
+# Usage: docker build -t jarvis . && docker compose up -d
 
 FROM node:20-alpine
 
