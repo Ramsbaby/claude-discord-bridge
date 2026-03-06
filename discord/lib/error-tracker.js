@@ -5,7 +5,7 @@
  * Schema: { errors: [{ channelId, userId, errorMessage, timestamp }], lastApology: { channelId: timestamp } }
  */
 
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { EmbedBuilder } from 'discord.js';
@@ -13,26 +13,36 @@ import { log } from './claude-runner.js';
 import { t } from './i18n.js';
 
 const BOT_HOME = process.env.BOT_HOME || join(homedir(), '.jarvis');
-const STATE_FILE = join(BOT_HOME, 'state', 'error-tracker.json');
+const STATE_DIR = join(BOT_HOME, 'state');
+const STATE_FILE = join(STATE_DIR, 'error-tracker.json');
 const MAX_ERRORS = 50;
 const APOLOGY_COOLDOWN_MS = 30 * 60 * 1000; // 30 minutes
 const PRUNE_AGE_MS = 24 * 60 * 60 * 1000;   // 24 hours
+const RECOVERY_TIMEOUT_MS = 8_000;            // 8s max for startup recovery
+
+// Ensure state directory exists once at module load
+try { mkdirSync(STATE_DIR, { recursive: true }); } catch { /* ignore */ }
 
 // ---------------------------------------------------------------------------
-// State persistence
+// State persistence (atomic write via tmp + rename)
 // ---------------------------------------------------------------------------
 
 function loadState() {
   try {
-    return JSON.parse(readFileSync(STATE_FILE, 'utf-8'));
+    const raw = JSON.parse(readFileSync(STATE_FILE, 'utf-8'));
+    // Defensive: ensure shape
+    if (!Array.isArray(raw.errors)) raw.errors = [];
+    if (!raw.lastApology || typeof raw.lastApology !== 'object') raw.lastApology = {};
+    return raw;
   } catch {
     return { errors: [], lastApology: {} };
   }
 }
 
 function saveState(state) {
-  mkdirSync(join(BOT_HOME, 'state'), { recursive: true });
-  writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
+  const tmp = STATE_FILE + '.tmp.' + process.pid;
+  writeFileSync(tmp, JSON.stringify(state, null, 2));
+  renameSync(tmp, STATE_FILE);
 }
 
 // ---------------------------------------------------------------------------
@@ -40,6 +50,8 @@ function saveState(state) {
 // ---------------------------------------------------------------------------
 
 export function recordError(channelId, userId, errorMessage) {
+  if (!channelId || typeof channelId !== 'string') return;
+  if (!userId || typeof userId !== 'string') return;
   try {
     const state = loadState();
     state.errors.push({
@@ -48,7 +60,6 @@ export function recordError(channelId, userId, errorMessage) {
       errorMessage: (errorMessage || 'Unknown error').slice(0, 200),
       timestamp: Date.now(),
     });
-    // Cap at MAX_ERRORS
     while (state.errors.length > MAX_ERRORS) state.errors.shift();
     saveState(state);
     log('debug', 'Error recorded for recovery', { channelId, userId });
@@ -61,7 +72,7 @@ export function recordError(channelId, userId, errorMessage) {
 // Send recovery apologies (called on bot startup / shard resume)
 // ---------------------------------------------------------------------------
 
-export async function sendRecoveryApologies(client) {
+async function _sendApologies(client) {
   const state = loadState();
   if (state.errors.length === 0) return;
 
@@ -70,6 +81,7 @@ export async function sendRecoveryApologies(client) {
   // Group errors by channelId
   const byChannel = new Map();
   for (const entry of state.errors) {
+    if (!entry.channelId) continue;
     if (!byChannel.has(entry.channelId)) {
       byChannel.set(entry.channelId, []);
     }
@@ -79,17 +91,17 @@ export async function sendRecoveryApologies(client) {
   let sentCount = 0;
 
   for (const [channelId, entries] of byChannel) {
-    // Cooldown check — skip if apology was sent recently
+    // Cooldown: skip only if ALL errors are older than last apology
     const lastSent = state.lastApology[channelId] || 0;
-    if (now - lastSent < APOLOGY_COOLDOWN_MS) {
-      log('debug', 'Skipping apology (cooldown)', { channelId });
+    const newestError = Math.max(...entries.map((e) => e.timestamp));
+    if (lastSent > 0 && newestError <= lastSent && now - lastSent < APOLOGY_COOLDOWN_MS) {
+      log('debug', 'Skipping apology (cooldown, no new errors)', { channelId });
       continue;
     }
 
-    // Collect unique user IDs
     const userIds = [...new Set(entries.map((e) => e.userId))];
 
-    // Fetch channel
+    // Fetch channel (works for both channels and threads in discord.js v14)
     const channel = client.channels.cache.get(channelId)
       || await client.channels.fetch(channelId).catch(() => null);
     if (!channel) {
@@ -97,10 +109,12 @@ export async function sendRecoveryApologies(client) {
       continue;
     }
 
-    // Build apology embed
-    const mentions = userIds.map((id) => `<@${id}>`).join(', ');
-    const description = userIds.length > 0
-      ? t('recovery.desc.single', { mentions })
+    // Build apology embed — NO @mentions to avoid pinging users at odd hours
+    const userNames = userIds.length > 0
+      ? userIds.map((id) => `<@${id}>`).join(', ')
+      : '';
+    const description = userNames
+      ? t('recovery.desc.single', { mentions: userNames })
       : t('recovery.desc.general');
 
     const embed = new EmbedBuilder()
@@ -111,7 +125,8 @@ export async function sendRecoveryApologies(client) {
       .setTimestamp();
 
     try {
-      await channel.send({ embeds: [embed] });
+      // allowedMentions: empty → suppress all pings
+      await channel.send({ embeds: [embed], allowedMentions: { parse: [] } });
       state.lastApology[channelId] = now;
       sentCount++;
       log('info', 'Recovery apology sent', { channelId, users: userIds.length });
@@ -130,4 +145,16 @@ export async function sendRecoveryApologies(client) {
   if (sentCount > 0) {
     log('info', `Recovery apologies complete: ${sentCount} channel(s)`);
   }
+}
+
+// Public: wraps _sendApologies with a timeout to never block bot startup
+export async function sendRecoveryApologies(client) {
+  await Promise.race([
+    _sendApologies(client),
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Recovery apology timed out')), RECOVERY_TIMEOUT_MS),
+    ),
+  ]).catch((err) => {
+    log('warn', 'sendRecoveryApologies aborted', { error: err.message });
+  });
 }

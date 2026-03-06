@@ -99,5 +99,10 @@
 
   "cmd.lounge.desc": "View active AI Lounge tasks",
   "cmd.lounge.empty": "No active tasks in the Lounge.",
-  "cmd.lounge.title": "AI Lounge \u2014 Active Tasks ({count})"
+  "cmd.lounge.title": "AI Lounge \u2014 Active Tasks ({count})",
+
+  "recovery.title": "Sorry for the inconvenience",
+  "recovery.desc.single": "{mentions}, sorry for the error earlier.\nEverything is back to normal — please try again!",
+  "recovery.desc.general": "We had a brief error. Everything is restored now — please try again!",
+  "recovery.footer": "Auto-recovery"
 }
