@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # update-broadcast.sh - Git 변경 감지 → jarvis-system Discord 브로드캐스트
-# 5분 간격 크론으로 실행. 새 커밋/설정 변경 감지 시 임베드 알림 발송.
+# 5분 간격 크론. 새 커밋 감지 시 "뭐가 바뀌었고, 조치가 필요한지" 한눈에 보이게 전송.
 
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:${HOME}/.local/bin:${PATH}"
 export HOME="${HOME:-/Users/$(id -un)}"
@@ -11,278 +11,133 @@ BOT_HOME="${BOT_HOME:-$HOME/.jarvis}"
 STATE_FILE="$BOT_HOME/state/triggers/update-broadcast.last-sha"
 MONITORING_CONFIG="$BOT_HOME/config/monitoring.json"
 LOG="$BOT_HOME/logs/update-broadcast.log"
-
-# 변경 감지 대상 설정 파일
-WATCHED_CONFIGS=(
-    "config/tasks.json"
-    "config/monitoring.json"
-    "config/company-dna.md"
-    "discord/personas.json"
-    "discord/locales/ko.json"
-)
-
-# 최대 표시 커밋 수
-MAX_COMMITS=8
-
-# GitHub 커밋 링크 베이스 URL
-# GitHub repo URL — set via git remote or override here
-GITHUB_REPO_URL="$(cd "$BOT_HOME" && git remote get-url origin 2>/dev/null | sed 's/\.git$//' || echo "https://github.com/YOUR_USERNAME/jarvis")"
+GITHUB_REPO_URL="$(cd "$BOT_HOME" && git remote get-url origin 2>/dev/null | sed 's/\.git$//' || echo "")"
 
 mkdir -p "$(dirname "$STATE_FILE")" "$(dirname "$LOG")"
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >> "$LOG"; }
 
-# --- Webhook URL 조회 (jarvis-system 채널) ---
+# --- Webhook URL ---
 get_webhook_url() {
-    if [[ ! -f "$MONITORING_CONFIG" ]]; then
-        log "ERROR: monitoring.json not found"
-        return 1
-    fi
+    [[ -f "$MONITORING_CONFIG" ]] || return 1
     jq -r '.webhooks["jarvis-system"] // .webhook.url // ""' "$MONITORING_CONFIG"
 }
 
 # --- Discord Embed 전송 ---
 send_embed() {
     local title="$1" description="$2" color="$3"
-    local fields="${4:-}"
     local webhook_url
-    webhook_url=$(get_webhook_url)
-    if [[ -z "$webhook_url" ]]; then
-        log "WARN: webhook URL not found"
-        return 1
-    fi
-
-    local timestamp hostname
-    timestamp=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
-    hostname=$(hostname -s)
+    webhook_url=$(get_webhook_url) || return 1
+    [[ -z "$webhook_url" ]] && return 1
 
     local embed_json
-    if [[ -n "$fields" ]] && [[ "$fields" != "[]" ]]; then
-        embed_json=$(jq -n \
-            --arg user "Jarvis" \
-            --arg title "$title" \
-            --arg desc "$description" \
-            --argjson color "$color" \
-            --arg ts "$timestamp" \
-            --argjson fields "$fields" \
-            --arg footer "Jarvis Update · $hostname" \
-            '{"username":$user,"embeds":[{"title":$title,"description":$desc,"color":$color,"timestamp":$ts,"fields":$fields,"footer":{"text":$footer}}]}')
-    else
-        embed_json=$(jq -n \
-            --arg user "Jarvis" \
-            --arg title "$title" \
-            --arg desc "$description" \
-            --argjson color "$color" \
-            --arg ts "$timestamp" \
-            --arg footer "Jarvis Update · $hostname" \
-            '{"username":$user,"embeds":[{"title":$title,"description":$desc,"color":$color,"timestamp":$ts,"footer":{"text":$footer}}]}')
-    fi
+    embed_json=$(jq -n \
+        --arg user "Jarvis" \
+        --arg title "$title" \
+        --arg desc "$description" \
+        --argjson color "$color" \
+        --arg ts "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)" \
+        --arg footer "$(hostname -s) · $(date '+%H:%M')" \
+        '{"username":$user,"embeds":[{"title":$title,"description":$desc,"color":$color,"timestamp":$ts,"footer":{"text":$footer}}]}')
 
     local http_code
     http_code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$webhook_url" \
-        -H "Content-Type: application/json" \
-        -d "$embed_json" 2>&1)
+        -H "Content-Type: application/json" -d "$embed_json" 2>&1)
 
-    if [[ "$http_code" == "204" ]] || [[ "$http_code" == "200" ]]; then
-        log "Discord 전송 성공: $title"
-        return 0
-    else
-        log "Discord 전송 실패 (HTTP $http_code): $title"
-        return 1
-    fi
+    [[ "$http_code" == "204" ]] || [[ "$http_code" == "200" ]]
 }
 
-# --- Conventional Commit prefix → 한글 카테고리 ---
-commit_category() {
-    local msg="$1"
-    case "$msg" in
-        feat:*|feat\(*) echo "✨ 신규" ;;
-        fix:*|fix\(*)   echo "🐛 수정" ;;
-        docs:*|docs\(*) echo "📝 문서" ;;
-        refactor:*|refactor\(*) echo "♻️ 리팩토링" ;;
-        style:*|style\(*) echo "🎨 스타일" ;;
-        test:*|test\(*) echo "🧪 테스트" ;;
-        perf:*|perf\(*) echo "⚡ 성능" ;;
-        ci:*|ci\(*)     echo "🔧 CI" ;;
-        chore:*|chore\(*) echo "🔩 기타" ;;
-        *)              echo "📦 변경" ;;
-    esac
-}
-
-# --- 커밋 메시지에서 prefix 제거 ---
-strip_prefix() {
-    local msg="$1"
-    # "feat(scope): msg" 또는 "feat: msg" → "msg"
-    echo "$msg" | sed -E 's/^[a-z]+(\([^)]*\))?:[[:space:]]*//'
-}
-
-# --- 변경 영향 분석 (규칙 기반) ---
-analyze_impact() {
+# --- 변경 내용을 사람이 읽을 수 있게 요약 ---
+build_summary() {
     local last_sha="$1"
-    local files
+    local files changed_dirs summary="" action=""
     files=$(git -C "$BOT_HOME" diff --name-only "$last_sha..HEAD" 2>/dev/null || echo "")
     [[ -z "$files" ]] && return
 
-    local impacts=()
+    # 변경된 디렉토리별로 무엇이 바뀌었는지 구체적으로
+    local has_bot=false has_cron=false has_config=false has_llm=false
+    local has_plugin=false has_infra=false has_rag=false has_install=false
+    local has_docs_only=true
 
-    # Discord 봇 변경
-    if echo "$files" | grep -qE '^discord/(discord-bot|lib/)'; then
-        impacts+=("💬 Discord 봇 동작이 변경됨")
+    while IFS= read -r f; do
+        case "$f" in
+            discord/discord-bot.js|discord/lib/*)
+                has_bot=true; has_docs_only=false ;;
+            bin/jarvis-cron.sh|bin/retry-wrapper.sh|bin/ask-claude.sh)
+                has_cron=true; has_docs_only=false ;;
+            config/tasks.json|config/monitoring.json|config/company-dna.md|discord/personas.json|discord/locales/*)
+                has_config=true; has_docs_only=false ;;
+            lib/llm-gateway.sh|lib/context-loader.sh|lib/insight-recorder.sh)
+                has_llm=true; has_docs_only=false ;;
+            plugins/*|bin/plugin-loader.sh)
+                has_plugin=true; has_docs_only=false ;;
+            scripts/watchdog.sh|scripts/launchd-guardian.sh|scripts/e2e-test.sh)
+                has_infra=true; has_docs_only=false ;;
+            scripts/*)
+                has_docs_only=false ;;
+            lib/rag-*|bin/rag-*)
+                has_rag=true; has_docs_only=false ;;
+            install.sh|bin/jarvis-init.sh)
+                has_install=true; has_docs_only=false ;;
+            *.md|*.txt|*.example)
+                ;; # docs/examples — don't flip has_docs_only
+            *)
+                has_docs_only=false ;;
+        esac
+    done <<< "$files"
+
+    # 요약 문장 조립
+    local parts=()
+    if $has_bot; then parts+=("봇 응답 처리"); fi
+    if $has_cron; then parts+=("크론 엔진"); fi
+    if $has_llm; then parts+=("AI 엔진"); fi
+    if $has_rag; then parts+=("RAG 검색"); fi
+    if $has_plugin; then parts+=("플러그인"); fi
+    if $has_infra; then parts+=("안정성 스크립트"); fi
+    if $has_install; then parts+=("설치 스크립트"); fi
+    if $has_config; then
+        # 어떤 설정이 바뀌었는지
+        local cfg_list=""
+        if echo "$files" | grep -q '^config/tasks\.json$'; then cfg_list+="태스크, "; fi
+        if echo "$files" | grep -q '^config/monitoring\.json$'; then cfg_list+="모니터링, "; fi
+        if echo "$files" | grep -q '^config/company-dna\.md$'; then cfg_list+="Company DNA, "; fi
+        if echo "$files" | grep -q '^discord/personas\.json$'; then cfg_list+="페르소나, "; fi
+        if echo "$files" | grep -q '^discord/locales/'; then cfg_list+="언어, "; fi
+        cfg_list="${cfg_list%, }"
+        if [[ -n "$cfg_list" ]]; then
+            parts+=("설정(${cfg_list})")
+        fi
     fi
 
-    # 크론/태스크 변경
-    if echo "$files" | grep -qE '^(bin/jarvis-cron|bin/retry-wrapper|bin/ask-claude)'; then
-        impacts+=("⏰ 크론 태스크 실행 방식이 변경됨")
-    fi
-
-    # 설정 변경
-    if echo "$files" | grep -qE '^config/'; then
-        impacts+=("⚙️ 설정이 변경됨 — 봇 재시작 필요할 수 있음")
-    fi
-
-    # LLM/AI 변경
-    if echo "$files" | grep -qE '^lib/llm-gateway'; then
-        impacts+=("🤖 AI 엔진(LLM Gateway) 변경됨")
-    fi
-
-    # 플러그인 변경
-    if echo "$files" | grep -qE '^(plugins/|bin/plugin-loader)'; then
-        impacts+=("🔌 플러그인 시스템 변경됨")
-    fi
-
-    # 인프라/스크립트 변경
-    if echo "$files" | grep -qE '^scripts/(watchdog|launchd-guardian|e2e)'; then
-        impacts+=("🛡️ 시스템 안정성 관련 변경")
-    fi
-
-    # RAG 변경
-    if echo "$files" | grep -qE '^(lib/rag-|bin/rag-)'; then
-        impacts+=("🔍 RAG 검색 엔진 변경됨")
-    fi
-
-    # 문서만 변경
-    if echo "$files" | grep -vqE '\.(md|txt)$'; then
-        : # 코드 변경도 있음
+    local summary
+    if [[ ${#parts[@]} -eq 0 ]]; then
+        if $has_docs_only; then
+            summary="문서 업데이트"
+        else
+            # fallback: 변경된 디렉토리 이름으로
+            local top_dir
+            top_dir=$(echo "$files" | awk -F/ 'NF>1{print $1}' | sort | uniq | head -1)
+            summary="${top_dir:-기타} 코드 개선"
+        fi
+    elif [[ ${#parts[@]} -le 2 ]]; then
+        summary="${parts[0]}${parts[1]:+ + ${parts[1]}} 변경"
     else
-        impacts+=("📄 문서만 변경됨 — 시스템 영향 없음")
+        summary="${parts[0]}, ${parts[1]} 외 $((${#parts[@]}-2))건 변경"
     fi
 
-    # 영향 없으면 기본 메시지
-    if [[ ${#impacts[@]} -eq 0 ]]; then
-        impacts+=("📦 코드 정리/개선")
+    # 조치 필요 여부
+    if $has_bot || $has_config; then
+        action="⚠️ 봇 재시작 권장"
+    elif $has_cron || $has_llm; then
+        action="ℹ️ 다음 크론 실행부터 자동 적용"
+    elif $has_docs_only; then
+        action="✅ 시스템 영향 없음"
+    else
+        action="✅ 자동 적용됨"
     fi
 
-    printf '%s\n' "${impacts[@]}"
-}
-
-# --- 커밋 요약 포맷 (핵심만) ---
-format_commits() {
-    local last_sha="$1"
-    local commits
-    commits=$(git -C "$BOT_HOME" log --oneline --no-decorate "$last_sha..HEAD" 2>/dev/null || echo "")
-
-    if [[ -z "$commits" ]]; then
-        echo ""
-        return
-    fi
-
-    local total
-    total=$(echo "$commits" | wc -l | tr -d ' ')
-
-    if (( total > MAX_COMMITS )); then
-        commits=$(echo "$commits" | head -n "$MAX_COMMITS")
-    fi
-
-    local formatted=""
-    while IFS= read -r line; do
-        local msg="${line#* }"
-        local category
-        category=$(commit_category "$msg")
-        local clean_msg
-        clean_msg=$(strip_prefix "$msg")
-        formatted+="${category} ${clean_msg}"$'\n'
-    done <<< "$commits"
-
-    if (( total > MAX_COMMITS )); then
-        formatted+="*… +$(( total - MAX_COMMITS ))건 더*"$'\n'
-    fi
-
-    echo "$formatted"
-}
-
-# --- diff 규모 요약 (insertions/deletions) ---
-diff_stat_summary() {
-    local last_sha="$1"
-    local stat
-    stat=$(git -C "$BOT_HOME" diff --shortstat "$last_sha..HEAD" 2>/dev/null || echo "")
-
-    if [[ -z "$stat" ]]; then
-        echo ""
-        return
-    fi
-
-    local files insertions deletions
-    files=$(echo "$stat" | grep -oE '[0-9]+ file' | grep -oE '[0-9]+' || echo "0")
-    insertions=$(echo "$stat" | grep -oE '[0-9]+ insertion' | grep -oE '[0-9]+' || echo "0")
-    deletions=$(echo "$stat" | grep -oE '[0-9]+ deletion' | grep -oE '[0-9]+' || echo "0")
-
-    echo "📊 +${insertions} −${deletions} (${files}개 파일)"
-}
-
-# --- 변경된 설정 파일 감지 ---
-detect_config_changes() {
-    local last_sha="$1"
-    local changed_configs=""
-
-    for cfg in "${WATCHED_CONFIGS[@]}"; do
-        if git -C "$BOT_HOME" diff --quiet "$last_sha..HEAD" -- "$cfg" 2>/dev/null; then
-            continue
-        fi
-        if [[ -n "$changed_configs" ]]; then
-            changed_configs+=", "
-        fi
-        changed_configs+="\`$cfg\`"
-    done
-
-    echo "$changed_configs"
-}
-
-# --- 변경된 파일 요약 ---
-summarize_changed_files() {
-    local last_sha="$1"
-    local files
-    files=$(git -C "$BOT_HOME" diff --name-only "$last_sha..HEAD" 2>/dev/null || echo "")
-
-    if [[ -z "$files" ]]; then
-        echo ""
-        return
-    fi
-
-    local summary=""
-
-    # 루트 파일은 이름을 직접 나열
-    local root_files
-    root_files=$(echo "$files" | grep -v '/' || true)
-    if [[ -n "$root_files" ]]; then
-        while IFS= read -r f; do
-            summary+="\`${f}\`"$'\n'
-        done <<< "$root_files"
-    fi
-
-    # 하위 디렉토리는 그룹핑
-    local dirs
-    dirs=$(echo "$files" | awk -F/ 'NF>1{print $1}' | sort | uniq -c | sort -rn | head -5)
-    while IFS= read -r line; do
-        [[ -z "$line" ]] && continue
-        local count dir
-        count=$(echo "$line" | awk '{print $1}')
-        dir=$(echo "$line" | awk '{print $2}')
-        summary+="\`${dir}/\` — ${count}개 파일"$'\n'
-    done <<< "$dirs"
-
-    # trailing newline 제거
-    summary="${summary%$'\n'}"
-    echo "$summary"
+    echo "${summary}"
+    echo "${action}"
 }
 
 # ============================================================================
@@ -290,95 +145,63 @@ summarize_changed_files() {
 # ============================================================================
 log "업데이트 브로드캐스트 체크 시작"
 
-# Git 저장소 확인
 if [[ ! -d "$BOT_HOME/.git" ]]; then
-    log "ERROR: $BOT_HOME 은(는) git 저장소가 아닙니다"
+    log "ERROR: git 저장소 아님"
     exit 0
 fi
 
 current_sha=$(git -C "$BOT_HOME" rev-parse HEAD 2>/dev/null || true)
-if [[ -z "$current_sha" ]]; then
-    log "ERROR: git rev-parse HEAD 실패"
-    exit 0
-fi
+[[ -z "$current_sha" ]] && exit 0
 
-# 첫 실행: 상태 파일 초기화 후 종료 (히스토리 폭탄 방지)
+# 첫 실행: 상태 저장 후 종료
 if [[ ! -f "$STATE_FILE" ]]; then
     echo "$current_sha" > "$STATE_FILE"
-    log "첫 실행 — 상태 파일 초기화: ${current_sha:0:8}"
+    log "첫 실행 — 초기화: ${current_sha:0:8}"
     exit 0
 fi
 
 last_sha=$(cat "$STATE_FILE" 2>/dev/null || echo "")
-if [[ -z "$last_sha" ]]; then
-    echo "$current_sha" > "$STATE_FILE"
-    log "상태 파일 비어있음 — 초기화: ${current_sha:0:8}"
-    exit 0
-fi
+[[ -z "$last_sha" ]] && { echo "$current_sha" > "$STATE_FILE"; exit 0; }
+[[ "$current_sha" == "$last_sha" ]] && exit 0
 
-# 변경 없음
-if [[ "$current_sha" == "$last_sha" ]]; then
-    log "변경 없음 (SHA: ${current_sha:0:8})"
-    exit 0
-fi
-
-# SHA가 히스토리에 없는 경우 (force push / rebase)
+# SHA 유효성 체크
 if ! git -C "$BOT_HOME" cat-file -t "$last_sha" &>/dev/null; then
-    log "WARN: 이전 SHA($last_sha) 히스토리에 없음 — 리셋"
-    send_embed \
-        "⚠️ Jarvis 히스토리 리셋 감지" \
-        "Git 히스토리가 변경되었습니다 (force push 또는 rebase)."$'\n'"현재 HEAD: \`${current_sha:0:8}\`" \
-        "16776960"
+    log "WARN: 이전 SHA 없음 — 리셋"
+    send_embed "⚠️ Git 히스토리 리셋 감지" "force push 또는 rebase가 실행됨" "16776960" || true
     echo "$current_sha" > "$STATE_FILE"
     exit 0
 fi
 
-# --- 변경 감지! ---
+# --- 변경 감지 ---
 log "변경 감지: ${last_sha:0:8} → ${current_sha:0:8}"
 
-commit_list=$(format_commits "$last_sha")
-config_changes=$(detect_config_changes "$last_sha")
-impact_summary=$(analyze_impact "$last_sha")
-
-# 커밋 수
 commit_count=$(git -C "$BOT_HOME" rev-list --count "$last_sha..HEAD" 2>/dev/null || echo "0")
 
-# 브랜치 이름
-branch=$(git -C "$BOT_HOME" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
+# 요약 생성
+summary_output=$(build_summary "$last_sha")
+change_summary=$(echo "$summary_output" | head -1)
+action_line=$(echo "$summary_output" | tail -1)
 
 # GitHub 비교 링크
-compare_url="${GITHUB_REPO_URL}/compare/${last_sha:0:8}...${current_sha:0:8}"
-
-# description: 영향 분석 (사용자가 알아야 할 내용) → 커밋 목록 (참고용)
-description="**무엇이 바뀌었나**"$'\n'"${impact_summary}"$'\n'
-if [[ -n "$commit_list" ]]; then
-    description+=$'\n'"**변경 내역** (${commit_count}건)"$'\n'"${commit_list}"
+compare_link=""
+if [[ -n "$GITHUB_REPO_URL" ]]; then
+    compare_link=$'\n'"[상세 보기](${GITHUB_REPO_URL}/compare/${last_sha:0:7}...${current_sha:0:7})"
 fi
-description+="[GitHub에서 보기](${compare_url})"
 
-# --- 설정 변경 여부에 따라 색상/제목 분기 ---
-if [[ -n "$config_changes" ]]; then
-    title="⚙️ Jarvis 설정 변경"
-    color=16776960  # 노랑 (주의)
+# 제목 + 본문
+title="🔄 ${change_summary}"
+description="${action_line}${compare_link}"
 
-    fields=$(jq -n \
-        --arg configs "$config_changes" \
-        '[
-            {"name":"📋 변경된 설정","value":$configs,"inline":false}
-        ]')
-else
-    title="🔄 Jarvis 업데이트"
-    color=3447003  # 파랑 (일반)
-    fields=""
+# 설정 변경 시 노랑, 아닌 경우 파랑
+color=3447003
+if echo "$action_line" | grep -q "재시작"; then
+    color=16776960
 fi
 
 # --- 전송 ---
-if send_embed "$title" "$description" "$color" "$fields"; then
-    # 성공 시에만 상태 갱신 (실패 시 다음 실행에서 재시도)
+if send_embed "$title" "$description" "$color"; then
     echo "$current_sha" > "$STATE_FILE"
-    log "브로드캐스트 완료 (${commit_count}개 커밋)"
+    log "브로드캐스트 완료: ${change_summary} (${commit_count}건)"
 else
-    log "브로드캐스트 실패 — 다음 실행에서 재시도"
+    log "브로드캐스트 실패 — 재시도 예정"
 fi
-
-log "업데이트 브로드캐스트 체크 완료"
