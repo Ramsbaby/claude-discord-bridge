@@ -12,10 +12,11 @@
 
 import { join } from 'node:path';
 import { homedir } from 'node:os';
-import { readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, rmSync, renameSync } from 'node:fs';
 import {
   Client,
   GatewayIntentBits,
+  Options,
   SlashCommandBuilder,
   REST,
   Routes,
@@ -30,6 +31,7 @@ import { handleApprovalInteraction, pollL3Requests } from './lib/approval.js';
 import { t } from './lib/i18n.js';
 import { initAlertBatcher, botAlerts } from './lib/alert-batcher.js';
 import { recordError, sendRecoveryApologies } from './lib/error-tracker.js';
+import { _loadPlaceholders, _savePlaceholders, cleanupOrphanPlaceholders } from './lib/streaming.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -127,6 +129,7 @@ async function registerSlashCommands(clientId, guildId) {
             { name: '성장팀 (Career)', value: 'career' },
             { name: '학습팀 (Academy)', value: 'academy' },
             { name: '정보팀 (Trend)', value: 'trend' },
+            { name: '🔭 정보탐험대 (Recon)', value: 'recon' },
           )
       ),
   ];
@@ -153,9 +156,19 @@ const client = new Client({
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildMessageReactions,
   ],
+  makeCache: Options.cacheWithLimits({
+    MessageManager: 50,
+    GuildMemberManager: 50,
+    PresenceManager: 0,
+    ReactionManager: 0,
+    GuildEmojiManager: 0,
+    ThreadManager: { maxSize: 50 },
+  }),
 });
 
 let lastMessageAt = Date.now();
+let healthMonitorInterval = null;
+let l3PollInterval = null;
 
 client.once('clientReady', async () => {
   log('info', `Logged in as ${client.user.tag}`, { id: client.user.id });
@@ -166,6 +179,9 @@ client.once('clientReady', async () => {
     await registerSlashCommands(client.user.id, guildId);
   }
 
+  // Cleanup orphan placeholders from previous crash
+  cleanupOrphanPlaceholders(client).catch((e) => log('warn', 'Orphan placeholder cleanup failed', { error: e.message }));
+
   // Init alert batcher — send batched alerts to first allowed channel
   const firstChannelId = (process.env.CHANNEL_IDS || '').split(',')[0]?.trim();
   if (firstChannelId) {
@@ -173,46 +189,210 @@ client.once('clientReady', async () => {
     if (alertCh) initAlertBatcher(alertCh);
   }
 
-  // Send recovery apologies for errors from the previous run
+  // Orphaned placeholder cleanup: 이전 세션에서 남은 Stop 버튼 embed 삭제
   try {
-    await sendRecoveryApologies(client);
-  } catch (err) {
-    log('error', 'Failed to send recovery apologies', { error: err.message });
-  }
-
-  // 10-minute heartbeat (shorter than bot-watchdog.sh 15-min threshold)
-  setInterval(() => {
-    const wsStatus = client.ws?.status ?? -1;
-    const uptimeSec = Math.floor(process.uptime());
-    const silenceSec = Math.floor((Date.now() - lastMessageAt) / 1000);
-    const memMB = Math.round(process.memoryUsage().rss / 1024 / 1024);
-    log('info', 'Heartbeat: alive', {
-      wsStatus, uptimeSec, silenceSec,
-      guilds: client.guilds?.cache?.size ?? 0, memMB,
-    });
-    if (wsStatus !== 0) {
-      log('warn', `WebSocket not READY (status=${wsStatus}). discord.js should auto-reconnect.`);
+    const orphans = _loadPlaceholders();
+    if (orphans.length > 0) {
+      let cleaned = 0;
+      for (const { channelId, messageId } of orphans) {
+        try {
+          const ch = client.channels.cache.get(channelId) || await client.channels.fetch(channelId).catch(() => null);
+          if (ch) {
+            const msg = await ch.messages.fetch(messageId).catch(() => null);
+            if (msg) {
+              await msg.delete().catch(() => {});
+              cleaned++;
+            }
+          }
+        } catch { /* best effort per message */ }
+      }
+      _savePlaceholders([]);
+      if (cleaned > 0) log('info', 'Cleaned orphaned placeholders', { cleaned, total: orphans.length });
     }
-  }, 600_000);
+  } catch { /* ignore */ }
+
+  // 재시작 알림: 종료 사유 포함
+  try {
+    const notifyPath = join(BOT_HOME, 'state', 'restart-notify.json');
+    const heartbeatFile = join(BOT_HOME, 'state', 'bot-heartbeat');
+    let reason = null;
+    let notifyChannels = [];
+
+    try {
+      const notifyRaw = readFileSync(notifyPath, 'utf-8');
+      rmSync(notifyPath, { force: true });
+      const data = JSON.parse(notifyRaw);
+      // 5분 이내만 유효
+      if (Date.now() - data.ts < 300_000) {
+        reason = data.reason || 'unknown';
+        notifyChannels = data.channels || [];
+      }
+    } catch {
+      // restart-notify.json 없음 → heartbeat로 비정상 종료 추정
+      try {
+        const hbRaw = readFileSync(heartbeatFile, 'utf-8').trim();
+        const lastHb = parseInt(hbRaw, 10);
+        // heartbeat가 15분 이내면 → 갑자기 죽은 것 (watchdog kill 또는 OOM 등)
+        if (Number.isFinite(lastHb) && Date.now() - lastHb < 900_000) {
+          reason = 'unexpected shutdown (no graceful exit)';
+        }
+      } catch { /* no heartbeat = first boot */ }
+    }
+
+    // 재시작 알림 쿨다운: 60초 이내 연속 재시작(개발자 배포 루프)은 알림 억제
+    const APOLOGY_COOLDOWN_MS = 60_000;
+    const apologyCooldownFile = join(BOT_HOME, 'state', 'restart-apology-ts');
+    let suppressApology = false;
+    try {
+      const lastTs = parseInt(readFileSync(apologyCooldownFile, 'utf-8').trim(), 10);
+      if (Number.isFinite(lastTs) && Date.now() - lastTs < APOLOGY_COOLDOWN_MS) {
+        suppressApology = true;
+      }
+    } catch { /* 파일 없으면 첫 재시작 */ }
+
+    if (reason) {
+      const reasonLabel = reason.startsWith('crash:') ? `⚠️ 크래시: ${reason.slice(7)}`
+        : reason.startsWith('graceful') ? `정상 종료 (${reason})`
+        : `⚠️ ${reason}`;
+
+      const isGraceful = reason.startsWith('graceful');
+
+      // 활성 세션 채널에 알림 (graceful shutdown: 진행 중이던 채널만)
+      if (notifyChannels.length > 0 && !suppressApology) {
+        for (const chId of notifyChannels) {
+          const ch = client.channels.cache.get(chId) || await client.channels.fetch(chId).catch(() => null);
+          if (ch) {
+            await ch.send(`🔄 재시작됐습니다. 이전 응답이 중단되었으니 다시 말씀해 주세요.\n> 사유: ${reasonLabel}`).catch(() => {});
+          }
+        }
+        try { writeFileSync(apologyCooldownFile, String(Date.now())); } catch { /* best effort */ }
+      }
+
+      // 비정상 종료(크래시/watchdog kill)이고 활성 채널이 없을 때 → 메인채널에 조용히 알림
+      if (!isGraceful && notifyChannels.length === 0 && !suppressApology) {
+        try {
+          const allChannelIds = (process.env.CHANNEL_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
+          const quietIds = (process.env.QUIET_CHANNEL_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
+          const fallbackChannels = allChannelIds.filter(id => !quietIds.includes(id)).slice(0, 2);
+          for (const chId of fallbackChannels) {
+            try {
+              const ch = client.channels.cache.get(chId) || await client.channels.fetch(chId).catch(() => null);
+              if (ch?.isTextBased()) {
+                await ch.send(`-# 🔄 재시작됨 — 이전 대화 맥락은 세션 요약으로 복구됩니다. (${reasonLabel})`).catch(() => {});
+              }
+            } catch { /* 채널 없으면 skip */ }
+          }
+          try { writeFileSync(apologyCooldownFile, String(Date.now())); } catch { /* best effort */ }
+        } catch { /* best effort */ }
+      }
+
+      if (suppressApology) {
+        log('info', 'Bot restarted (apology suppressed — cooldown active)', { reason });
+      } else {
+        log('info', 'Bot restarted', { reason, notifiedChannels: notifyChannels.length });
+      }
+    }
+  } catch { /* clean start, skip */ }
+
+  // ---------------------------------------------------------------------------
+  // Unified Health Monitor (replaces heartbeat + WS self-ping)
+  // - 5분마다 실행
+  // - heartbeat 파일 기록 (외부 watchdog용)
+  // - WS 상태 + 이벤트 흐름 + API 생존 확인
+  // - 좀비 세션 감지 시 자동 재연결
+  // ---------------------------------------------------------------------------
+  const HEALTH_INTERVAL = 300_000;      // 5분
+  const SILENCE_THRESHOLD = 600_000;    // 10분 무메시지 → 의심
+  const FORCE_RECONNECT_CHECKS = 6;     // API OK 상태로 6회(30분) 이상 침묵 → 강제 재연결
+  const heartbeatFile = join(BOT_HOME, 'state', 'bot-heartbeat');
+  const writeHeartbeat = () => {
+    try { writeFileSync(heartbeatFile, String(Date.now())); } catch { /* best effort */ }
+  };
+  writeHeartbeat();
+
+  let _healthRunning = false;
+  let _silentApiOkCount = 0; // API OK인데 이벤트 없는 연속 횟수
+  healthMonitorInterval = setInterval(async () => {
+    if (_healthRunning) return; // 이전 체크가 아직 실행 중이면 스킵
+    _healthRunning = true;
+    try {
+    const wsStatus = client.ws?.status ?? -1;
+    const wsPing = client.ws?.ping ?? -1;
+    const silenceMs = Date.now() - lastMessageAt;
+    const uptimeSec = Math.floor(process.uptime());
+    const memMB = Math.round(process.memoryUsage().rss / 1024 / 1024);
+
+    log('info', 'Health check', {
+      wsStatus, wsPing,
+      silenceSec: Math.floor(silenceMs / 1000),
+      uptimeSec, memMB,
+      guilds: client.guilds?.cache?.size ?? 0,
+    });
+
+    // Case 1: WS explicitly not ready → discord.js auto-reconnect에 맡기되 경고
+    // heartbeat 안 씀 → watchdog이 15분 후 외부에서 강제 재시작
+    if (wsStatus !== 0) {
+      log('warn', `WS not READY (status=${wsStatus}). Skipping heartbeat.`);
+      return;
+    }
+
+    // Case 2: WS "정상"인데 10분 이상 이벤트 없음 → 좀비 의심, API로 확인
+    if (silenceMs > SILENCE_THRESHOLD) {
+      log('warn', `No events for ${Math.floor(silenceMs / 1000)}s — verifying session via API`);
+      try {
+        await client.user.fetch(true);
+        _silentApiOkCount++;
+        log('info', `API liveness OK — session alive, just quiet (silent_ok_count=${_silentApiOkCount})`);
+
+        // HTTP는 OK지만 Gateway가 이벤트를 안 보내는 상태 감지:
+        // 30분(6회) 이상 API-OK + 침묵 → Gateway 좀비 → 강제 재연결
+        if (_silentApiOkCount >= FORCE_RECONNECT_CHECKS) {
+          log('warn', `Gateway silent for ${_silentApiOkCount} checks — forcing reconnect`);
+          botAlerts.push({
+            title: `${BOT_NAME} Gateway 침묵 감지`,
+            message: `API OK지만 ${_silentApiOkCount * 5}분 이상 이벤트 없음. Gateway 강제 재연결.`,
+            level: 'high',
+          });
+          _silentApiOkCount = 0;
+          log('warn', 'Gateway forced reconnect: exiting for launchd clean restart');
+          process.exit(1);
+        }
+
+        writeHeartbeat(); // API 성공 → 진짜 살아있음 → heartbeat 갱신
+      } catch (err) {
+        // API 실패 → 좀비 확정. heartbeat 안 씀 → watchdog이 백업으로 감지
+        _silentApiOkCount = 0;
+        log('error', 'API liveness FAILED — zombie session detected', { error: err.message });
+        botAlerts.push({
+          title: `${BOT_NAME} 좀비 세션 감지`,
+          message: `WS status=0이지만 API 실패: ${err.message}. 재연결 시도.`,
+          level: 'high',
+        });
+        log('error', 'Zombie recovery: exiting for launchd clean restart');
+        process.exit(1);
+      }
+      return;
+    }
+
+    // Case 3: 정상 — 이벤트 흐름 있고 WS 연결 정상
+    _silentApiOkCount = 0; // 이벤트 왔으면 카운터 리셋
+    writeHeartbeat();
+
+    // Write active-session indicator for watchdog
+    const activeSessionFile = join(BOT_HOME, 'state', 'active-session');
+    try {
+      const activeCount = activeProcesses?.size ?? 0;
+      if (activeCount > 0) {
+        writeFileSync(activeSessionFile, String(Date.now()));
+      } else {
+        try { rmSync(activeSessionFile, { force: true }); } catch { /* ok */ }
+      }
+    } catch { /* best effort */ }
+    } finally { _healthRunning = false; }
+  }, HEALTH_INTERVAL);
 
   // L3 request polling (pick up bash-originated approval requests every 10s)
-  setInterval(() => pollL3Requests(client), 10_000);
-
-  // QW2: WebSocket self-ping every 2 hours — detect zombie connections
-  setInterval(() => {
-    const wsStatus = client.ws?.status ?? -1;
-    if (wsStatus !== 0) {
-      log('warn', `WS self-ping: status=${wsStatus}, not READY. Attempting destroy+login cycle.`);
-      sendNtfy(`${BOT_NAME} WS Unhealthy`, `WebSocket status=${wsStatus}. Restarting connection.`, 'high').catch(() => {});
-      client.destroy();
-      client.login(process.env.DISCORD_TOKEN).catch((err) => {
-        log('error', 'WS self-ping: re-login failed', { error: err.message });
-        process.exit(1);
-      });
-    } else {
-      log('info', 'WS self-ping: healthy', { ping: client.ws.ping });
-    }
-  }, 2 * 60 * 60 * 1000);
+  l3PollInterval = setInterval(() => pollL3Requests(client), 10_000);
 });
 
 const handlerState = { sessions, rateTracker, semaphore, activeProcesses, client };
@@ -261,9 +441,7 @@ client.on('shardReconnecting', (shardId) => {
 
 client.on('shardResume', (shardId, replayedEvents) => {
   log('info', 'Discord resumed', { shardId, replayedEvents });
-  sendRecoveryApologies(client).catch((err) => {
-    log('error', 'Recovery apology after resume failed', { error: err.message });
-  });
+  // Recovery apologies disabled
 });
 
 client.on('shardError', (err, shardId) => {
@@ -277,21 +455,65 @@ client.on('shardError', (err, shardId) => {
 
 async function shutdown(signal) {
   log('info', `Received ${signal}, shutting down`);
-  // 활성 세션 사용자에게 재시작 안내 + 에러 기록 (재시작 후 사과 메시지 발송용)
+
+  // Hard exit timeout — prevent hanging shutdown
+  setTimeout(() => process.exit(1), 10000);
+
+  // Clear all intervals
+  if (healthMonitorInterval) clearInterval(healthMonitorInterval);
+  if (l3PollInterval) clearInterval(l3PollInterval);
+
+  // 활성 세션 채널 기록 → 재시작 후 알림용
+  const activeChannels = [];
+  const streamerFinalizations = [];
   for (const [threadId, entry] of activeProcesses) {
-    try {
-      recordError(threadId, entry.userId || 'unknown', `Bot shutdown (${signal}) during active response`);
-      const channel = await client.channels.fetch(threadId).catch(() => null);
-      if (channel) {
-        await channel.send('⚠️ 봇이 재시작됩니다. 잠시 후 다시 시도해주세요.').catch(() => {});
-      }
-    } catch { /* best effort */ }
+    activeChannels.push(threadId);
     log('info', 'Killing active process', { threadId });
     clearTimeout(entry.timeout);
     if (entry.typingInterval) clearInterval(entry.typingInterval);
+    // Save pending task so user can resume with "계속"
+    if (entry.originalPrompt && entry.sessionKey) {
+      try {
+        const pendingPath = join(BOT_HOME, 'state', 'pending-tasks.json');
+        let tasks = {};
+        if (existsSync(pendingPath)) {
+          try { tasks = JSON.parse(readFileSync(pendingPath, 'utf-8')); } catch { tasks = {}; }
+        }
+        tasks[entry.sessionKey] = { prompt: entry.originalPrompt, savedAt: Date.now() };
+        const pendingTmp = `${pendingPath}.tmp`;
+        writeFileSync(pendingTmp, JSON.stringify(tasks));
+        renameSync(pendingTmp, pendingPath);
+        log('info', 'Pending task saved on SIGTERM', { sessionKey: entry.sessionKey });
+      } catch (e) {
+        log('warn', 'Failed to save pending task on SIGTERM', { error: e.message });
+      }
+    }
     entry.proc.kill('SIGTERM');
+    // 진행 중인 스트리머 finalize — client.destroy() 전에 Discord에 마지막 청크 전송
+    if (entry.streamer && !entry.streamer.finalized) {
+      streamerFinalizations.push(
+        entry.streamer.finalize().catch(err => log('warn', 'Streamer finalize on shutdown failed', { error: err.message }))
+      );
+    }
   }
+  // 종료 사유 + 활성 채널 기록 → 재시작 후 알림용
+  try {
+    writeFileSync(join(BOT_HOME, 'state', 'restart-notify.json'),
+      JSON.stringify({ channels: activeChannels, ts: Date.now(), reason: `graceful (${signal})` }));
+  } catch { /* best effort */ }
   activeProcesses.clear();
+  // 스트리머 finalize 완료 대기 (최대 8초 — hard exit timeout 10초보다 짧게)
+  if (streamerFinalizations.length > 0) {
+    log('info', `Waiting for ${streamerFinalizations.length} streamer(s) to finalize`);
+    await Promise.race([
+      Promise.allSettled(streamerFinalizations),
+      new Promise(resolve => setTimeout(resolve, 8000)),
+    ]);
+  }
+  // Release all semaphore slots before exit
+  while (semaphore.current > 0) {
+    await semaphore.release();
+  }
   await botAlerts.shutdown();
   sessions.save();
   client.destroy();
@@ -299,8 +521,8 @@ async function shutdown(signal) {
   process.exit(0);
 }
 
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => { shutdown('SIGTERM').catch(err => { log('error', 'Shutdown error', { error: err.message }); process.exit(1); }); });
+process.on('SIGINT', () => { shutdown('SIGINT').catch(err => { log('error', 'Shutdown error', { error: err.message }); process.exit(1); }); });
 
 // QW5: Catch uncaught exceptions — log, notify, then exit for launchd restart
 process.on('uncaughtException', (err) => {
@@ -308,6 +530,28 @@ process.on('uncaughtException', (err) => {
     error: err.message,
     stack: err.stack,
   });
+  // 크래시 시 진행 중인 작업 pending-tasks.json에 동기 저장 (사용자가 "계속"으로 복구 가능)
+  try {
+    const pendingPath = join(BOT_HOME, 'state', 'pending-tasks.json');
+    let tasks = {};
+    if (existsSync(pendingPath)) {
+      try { tasks = JSON.parse(readFileSync(pendingPath, 'utf-8')); } catch { tasks = {}; }
+    }
+    for (const [, entry] of activeProcesses) {
+      if (entry.originalPrompt && entry.sessionKey) {
+        tasks[entry.sessionKey] = { prompt: entry.originalPrompt, savedAt: Date.now() };
+      }
+    }
+    if (Object.keys(tasks).length > 0) {
+      const pendingTmp = `${pendingPath}.tmp`;
+      writeFileSync(pendingTmp, JSON.stringify(tasks));
+      renameSync(pendingTmp, pendingPath);
+    }
+  } catch { /* best effort — 크래시 핸들러에서 추가 실패 무시 */ }
+  try {
+    writeFileSync(join(BOT_HOME, 'state', 'restart-notify.json'),
+      JSON.stringify({ channels: [], ts: Date.now(), reason: `crash: ${err.message.slice(0, 100)}` }));
+  } catch { /* best effort */ }
   try {
     sendNtfy(`${BOT_NAME} uncaughtException`, err.message, 'urgent');
   } catch { /* best effort */ }
@@ -333,6 +577,39 @@ process.on('unhandledRejection', (reason) => {
   }
   sendNtfy(`${BOT_NAME} Crash`, msg, 'urgent');
 });
+
+// ---------------------------------------------------------------------------
+// Singleton guard — 중복 프로세스 방지
+// ---------------------------------------------------------------------------
+
+const PID_FILE = join(BOT_HOME, 'state', 'bot.pid');
+
+(function enforceSingleton() {
+  if (existsSync(PID_FILE)) {
+    const oldPid = parseInt(readFileSync(PID_FILE, 'utf8').trim(), 10);
+    if (oldPid && oldPid !== process.pid) {
+      try {
+        process.kill(oldPid, 0); // 생존 확인
+        log('warn', `[Singleton] 기존 프로세스 감지 (PID ${oldPid}) → 종료합니다`);
+        process.kill(oldPid, 'SIGTERM');
+        // SIGTERM 후 300ms 대기 후 SIGKILL fallback
+        const killDeadline = Date.now() + 300;
+        while (Date.now() < killDeadline) {
+          try { process.kill(oldPid, 0); } catch { break; }
+        }
+        try { process.kill(oldPid, 'SIGKILL'); } catch { /* 이미 종료됨 */ }
+      } catch {
+        // oldPid 프로세스 없음 — stale PID 파일
+      }
+    }
+  }
+  writeFileSync(PID_FILE, String(process.pid), 'utf8');
+  log('info', `[Singleton] PID ${process.pid} 등록 완료`);
+})();
+
+// 종료 시 PID 파일 정리
+const _cleanupPid = () => { try { rmSync(PID_FILE); } catch { /* ignore */ } };
+process.on('exit', _cleanupPid);
 
 // ---------------------------------------------------------------------------
 // Start
