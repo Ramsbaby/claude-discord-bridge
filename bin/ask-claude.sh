@@ -28,6 +28,8 @@ CONTEXT_FILE="${BOT_HOME}/context/${TASK_ID}.md"
 RESULTS_DIR="${BOT_HOME}/results/${TASK_ID}"
 RESULT_FILE="${RESULTS_DIR}/$(date +%F_%H%M%S).md"
 STDERR_LOG="${BOT_HOME}/logs/claude-stderr-${TASK_ID}.log"
+# 실패 원인 추적을 위해 stderr를 날짜 포함 파일에도 누적 보존 (최근 7일)
+STDERR_HIST="${BOT_HOME}/logs/claude-stderr-${TASK_ID}-$(date +%F).log"
 CAFFEINATE_PID=""
 
 # --- Logging helper ---
@@ -117,6 +119,8 @@ source "${BOT_HOME}/lib/llm-gateway.sh"
 CLAUDE_OUTPUT_TMP="${WORK_DIR}/claude-output.json"
 
 CLAUDE_EXIT=0
+# fd 9를 tee 프로세스에 연결 — 명시적 close/wait으로 race condition 방지
+exec 9> >(tee -a "$STDERR_HIST" > "$STDERR_LOG")
 run_with_retry llm_call \
     --prompt "$PROMPT" \
     --system "$SYSTEM_PROMPT" \
@@ -127,7 +131,15 @@ run_with_retry llm_call \
     --mcp-config "${BOT_HOME}/config/empty-mcp.json" \
     ${MAX_BUDGET:+--max-budget "$MAX_BUDGET"} \
     ${MODEL:+--model "$MODEL"} \
-    2>"$STDERR_LOG" || CLAUDE_EXIT=$?
+    2>&9 || CLAUDE_EXIT=$?
+exec 9>&-  # tee에 EOF 전송
+# caffeinate 먼저 종료 (교착 방지: caffeinate -w $$ 는 스크립트 종료까지 대기하므로
+# wait 호출 시 caffeinate ↔ wait 무한 교착 발생)
+if [[ -n "$CAFFEINATE_PID" ]] && kill -0 "$CAFFEINATE_PID" 2>/dev/null; then
+    kill "$CAFFEINATE_PID" 2>/dev/null || true
+    CAFFEINATE_PID=""
+fi
+wait       # tee 완전 종료 대기 → stderr 유실 없음
 
 RAW_OUTPUT=""
 if [[ -s "$CLAUDE_OUTPUT_TMP" ]]; then RAW_OUTPUT=$(cat "$CLAUDE_OUTPUT_TMP"); fi
@@ -195,6 +207,9 @@ record_insight "$TASK_ID" "$RESULT" || true
 
 # --- Rotate old results (keep 7 days) ---
 find "$RESULTS_DIR" -name "*.md" -mtime +"$RESULT_RETENTION" -delete 2>/dev/null || true
+
+# --- Rotate old stderr history logs (keep 7 days) ---
+find "${BOT_HOME}/logs" -name "claude-stderr-${TASK_ID}-*.log" -mtime +7 -delete 2>/dev/null || true
 
 # --- Update rate-tracker (shared with Discord bot, 5-hour sliding window) ---
 RATE_TRACKER="${BOT_HOME}/state/rate-tracker.json"
