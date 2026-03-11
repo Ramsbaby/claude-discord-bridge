@@ -74,9 +74,8 @@ fail_and_heal() {
         log "복구 세션(jarvis-heal) 이미 실행 중 — 완료 대기"
     else
         log "복구 세션 시작: tmux jarvis-heal"
-        # -e 플래그로 API 키 명시적 전달 (tmux는 launchd 환경변수를 상속하지 않을 수 있음)
+        # HOME/PATH 명시 전달 (tmux는 launchd 환경 미상속, OAuth 인증은 ~/.claude/ 자동 탐색)
         tmux new-session -d -s jarvis-heal \
-            -e "ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}" \
             -e "BOT_HOME=$BOT_HOME" \
             -e "HOME=$HOME" \
             -e "PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin" \
