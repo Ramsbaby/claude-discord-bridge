@@ -117,6 +117,9 @@ async function registerSlashCommands(clientId, guildId) {
       .setName('lounge')
       .setDescription(t('cmd.lounge.desc')),
     new SlashCommandBuilder()
+      .setName('doctor')
+      .setDescription('Jarvis 시스템 점검 + 자동 수정 (오너 전용)'),
+    new SlashCommandBuilder()
       .setName('team')
       .setDescription('자비스 컴퍼니 팀장을 소환합니다')
       .addStringOption(opt =>

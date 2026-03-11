@@ -75,7 +75,7 @@ export async function handleInteraction(interaction, deps) {
 
   // Owner-only guard for sensitive commands
   const OWNER_ID = process.env.OWNER_DISCORD_ID;
-  const SENSITIVE = ['run', 'schedule', 'remember', 'alert', 'stop', 'clear'];
+  const SENSITIVE = ['run', 'schedule', 'remember', 'alert', 'stop', 'clear', 'doctor'];
   if (OWNER_ID && SENSITIVE.includes(interaction.commandName) && interaction.user.id !== OWNER_ID) {
     await interaction.reply({ content: t('error.ownerOnly'), flags: MessageFlags.Ephemeral });
     return;
@@ -378,6 +378,131 @@ export async function handleInteraction(interaction, deps) {
         .setDescription(list)
         .setTimestamp();
       await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+    }
+
+  } else if (commandName === 'doctor') {
+    await interaction.deferReply();
+    try {
+      const { spawnSync, spawn } = await import('node:child_process');
+      const fixes = [];
+      const rows = [];
+
+      const kstNow = new Date(Date.now() + 9 * 3600_000);
+      const timestamp = kstNow.toISOString().slice(0, 16).replace('T', ' ');
+
+      // 1. LaunchAgents
+      const launchOut = spawnSync('launchctl', ['list'], { encoding: 'utf-8' });
+      const launchLines = (launchOut.stdout || '').split('\n').filter(l => /jarvis|openclaw/.test(l));
+      const requiredAgents = ['ai.jarvis.discord-bot', 'ai.jarvis.watchdog', 'ai.jarvis.rag-watcher'];
+      const runningAgents = launchLines.map(l => (l.split('\t')[2] || '').trim());
+      const missingAgents = requiredAgents.filter(a => !runningAgents.some(r => r === a));
+      for (const agent of missingAgents) {
+        const plistPath = `${HOME}/Library/LaunchAgents/${agent}.plist`;
+        spawnSync('launchctl', ['load', plistPath], { encoding: 'utf-8' });
+        fixes.push(`${agent} 재등록`);
+      }
+      const agentStatus = missingAgents.length === 0
+        ? `✅ ${launchLines.length}개 실행 중`
+        : `⚠️ ${missingAgents.length}개 재등록됨`;
+      rows.push(['LaunchAgents', agentStatus]);
+
+      // 2. Discord bot process
+      const botProc = spawnSync('pgrep', ['-fl', 'discord-bot.js'], { encoding: 'utf-8' });
+      const botPid = (botProc.stdout || '').trim().split('\n')[0]?.split(' ')[0];
+      rows.push(['Discord 봇', botPid ? `✅ PID ${botPid}` : '❌ 프로세스 없음']);
+
+      // 3. RAG / LanceDB
+      let ragStatus = '';
+      const ldbNodeModules = join(BOT_HOME, 'discord', 'node_modules');
+      const ldbImport = `${ldbNodeModules}/@lancedb/lancedb/dist/index.js`;
+      const checkScript = [
+        `import ldb from '${ldbImport}';`,
+        `const db = await ldb.connect(process.env.HOME+'/.jarvis/rag/lancedb');`,
+        `try {`,
+        `  const t = await db.openTable('documents');`,
+        `  const n = await t.countRows();`,
+        `  const test = await t.search([0.1]).limit(1).toArray().catch(()=>null);`,
+        `  console.log(JSON.stringify({chunks:n,queryOk:test!==null}));`,
+        `} catch(e) { console.log(JSON.stringify({error:e.message.slice(0,80)})); }`,
+      ].join('\n');
+      const ragOut = spawnSync('node', ['--input-type=module'], {
+        input: checkScript,
+        encoding: 'utf-8',
+        timeout: 15000,
+        env: { ...process.env, NODE_PATH: ldbNodeModules, HOME },
+      });
+      let ragResult = {};
+      try { ragResult = JSON.parse((ragOut.stdout || '').trim()); } catch { ragResult = { error: 'parse fail' }; }
+      if (ragResult.error || ragResult.chunks === 0) {
+        const dropScript = [
+          `import ldb from '${ldbImport}';`,
+          `const db = await ldb.connect(process.env.HOME+'/.jarvis/rag/lancedb');`,
+          `try { await db.dropTable('documents'); } catch(e) {}`,
+          `console.log('dropped');`,
+        ].join('\n');
+        spawnSync('node', ['--input-type=module'], {
+          input: dropScript, encoding: 'utf-8', timeout: 10000,
+          env: { ...process.env, NODE_PATH: ldbNodeModules, HOME },
+        });
+        writeFileSync(join(BOT_HOME, 'rag', 'index-state.json'), '{}');
+        spawn('node', [join(BOT_HOME, 'bin', 'rag-index.mjs')], {
+          detached: true, stdio: 'ignore',
+          env: { ...process.env, HOME }, cwd: BOT_HOME,
+        }).unref();
+        fixes.push('LanceDB 재인덱싱 시작');
+        ragStatus = `⚠️ 오류 감지 → 재인덱싱 중`;
+      } else if (!ragResult.queryOk) {
+        ragStatus = `❌ ${ragResult.chunks}청크, 쿼리 실패`;
+      } else {
+        const n = ragResult.chunks;
+        ragStatus = n >= 1000 ? `✅ ${n}청크, 쿼리 OK` : `⚠️ ${n}청크 (인덱싱 부족)`;
+      }
+      rows.push(['RAG / LanceDB', ragStatus]);
+
+      // 4. Cron errors (last 100 lines)
+      let cronStatus = '✅ 에러 없음';
+      const cronOut = spawnSync('bash', ['-c',
+        `tail -100 "${BOT_HOME}/logs/cron.log" 2>/dev/null | grep -iE "error|fail|timeout|CRITICAL" | tail -5`],
+        { encoding: 'utf-8' });
+      const cronErrors = (cronOut.stdout || '').trim();
+      if (/CRITICAL/i.test(cronErrors)) cronStatus = '❌ CRITICAL 발견';
+      else if (cronErrors) cronStatus = '⚠️ 최근 에러 있음';
+      rows.push(['크론', cronStatus]);
+
+      // 5. Glances
+      let glancesStatus = '';
+      const gOut = spawnSync('curl', ['-sf', '--max-time', '3', 'http://localhost:61208/api/4/cpu'],
+        { encoding: 'utf-8' });
+      if (gOut.status !== 0) {
+        spawnSync('launchctl', ['load', `${HOME}/Library/LaunchAgents/ai.openclaw.glances.plist`], { encoding: 'utf-8' });
+        fixes.push('Glances 재시작');
+        glancesStatus = '⚠️ 재시작됨';
+      } else {
+        try {
+          const cpu = JSON.parse(gOut.stdout || '{}');
+          glancesStatus = `✅ CPU ${cpu.total ?? '?'}%`;
+        } catch {
+          glancesStatus = '✅ 응답 OK';
+        }
+      }
+      rows.push(['Glances', glancesStatus]);
+
+      // Build embed
+      const hasErrors = rows.some(([, s]) => s.startsWith('❌'));
+      const hasWarns = rows.some(([, s]) => s.startsWith('⚠️'));
+      const color = hasErrors ? 0xed4245 : hasWarns ? 0xfee75c : 0x57f287;
+      const tableLines = rows.map(([name, status]) => `\`${name.padEnd(12)}\` ${status}`);
+      const fixSection = fixes.length > 0 ? `\n\n**자동 수정**: ${fixes.join(', ')}` : '';
+      const embed = new EmbedBuilder()
+        .setColor(color)
+        .setTitle(`🏥 Jarvis 점검 — ${timestamp} KST`)
+        .setDescription(tableLines.join('\n') + fixSection)
+        .setTimestamp();
+      await interaction.editReply({ embeds: [embed] });
+      log('info', '/doctor completed', { fixes: fixes.length, user: interaction.user.tag });
+    } catch (err) {
+      await interaction.editReply(`❌ 점검 실패: ${err.message?.slice(0, 200)}`);
+      log('error', '/doctor failed', { error: err.message?.slice(0, 200) });
     }
 
   } else if (commandName === 'team') {
