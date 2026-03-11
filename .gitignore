@@ -14,13 +14,7 @@ scripts/tqqq-alert.sh
 # 런타임
 state/
 logs/
-rag/lancedb/
-rag/index-state.json
-rag/index-state.json.bak
-rag/memory.md
-rag/handoff.md
-rag/decisions.md
-rag/index.json
+rag/
 discord/node_modules/
 results/
 watchdog/
@@ -63,4 +57,3 @@ heartbeats/
 .DS_Store
 *.pid
 context/discord-history/
-rag/teams/
