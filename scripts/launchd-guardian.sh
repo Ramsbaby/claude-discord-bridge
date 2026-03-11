@@ -86,7 +86,7 @@ WATCHDOG_LOG="$BOT_HOME/logs/watchdog.log"
 WATCHDOG_INTERVAL=180  # seconds (must match plist StartInterval)
 STALL_MULTIPLIER=10   # 180*10=1800s(30분) — 실제 관측 최대 주기 ~1080s(18분) 기준 넉넉한 버퍼
 
-for service in "${INTERVAL_SERVICES[@]}"; do
+for service in "${INTERVAL_SERVICES[@]+"${INTERVAL_SERVICES[@]}"}"; do
     check_loaded "$service"
 
     # Stall detection: if log file hasn't been written in INTERVAL * STALL_MULTIPLIER, kickstart

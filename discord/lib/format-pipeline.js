@@ -41,10 +41,10 @@ const CHANNEL_OVERRIDES = {
  */
 const tableToList = withCodeFenceGuard((text) =>
   text.replace(
-    /(?:^|\n)((?:\|.+\|[ \t]*\n){2,})/g,
+    /(?:^|\n)((?:\|.+\|[ \t]*\n)+\|.+\|[ \t]*(?:\n|$))/g,
     (match) => {
       const lines = match.trim().split('\n').filter((l) => l.trim());
-      const sepIdx = lines.findIndex((l) => /^\|[\s:|-]+\|$/.test(l.trim()));
+      const sepIdx = lines.findIndex((l) => /^\|[\s:|-]*-+[\s:|-]*\|$/.test(l.trim()));
       if (sepIdx < 0) return match; // not a real table
       const headers = lines[0].split('|').map((c) => c.trim()).filter(Boolean);
       const dataLines = lines.slice(sepIdx + 1);

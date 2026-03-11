@@ -6,9 +6,9 @@ set -euo pipefail
 
 BOT_HOME="${BOT_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 LOCK_DIR="/tmp/claude-discord-locks"
-MAX_SLOTS=2
-MAX_GLOBAL=4
-STALE_TIMEOUT=600  # 10 minutes
+MAX_SLOTS=4
+MAX_GLOBAL=6
+STALE_TIMEOUT=180  # 3 minutes (단축: stale lock 빠른 정리)
 GLOBAL_COUNT_FILE="${BOT_HOME}/state/claude-global.count"
 GLOBAL_LOCK_FILE="${BOT_HOME}/state/claude-global.lock"
 
@@ -104,7 +104,8 @@ check_stale_locks() {
             continue
         fi
         # Check if lock is older than STALE_TIMEOUT
-        mtime=$(stat -f %m "$slot_dir")
+        mtime=$(stat -f %m "$slot_dir" 2>/dev/null || echo "0")
+        if [[ "$mtime" == "0" ]]; then continue; fi  # slot disappeared (TOCTOU)
         if (( now - mtime > STALE_TIMEOUT )); then
             if rm -rf "$slot_dir" 2>/dev/null; then
                 _decrement_global_count
@@ -126,6 +127,9 @@ check_stale_locks() {
 acquire_slot() {
     local i slot_dir wait_elapsed=0
     mkdir -p "$LOCK_DIR"
+
+    # 진입 시 stale count 먼저 reconcile — /tmp 초기화 등으로 counter가 부풀어도 즉시 수정됨
+    check_stale_locks
 
     # Acquire slot atomically: hold global lock across check + mkdir + increment
     # to prevent TOCTOU race between _check_global_available and _increment_global_count

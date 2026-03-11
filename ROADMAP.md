@@ -4,7 +4,7 @@
 
 ## Vision
 
-**AI Company-in-a-Box**: A self-hosted AI operations system that turns a Claude Max subscription into a 24/7 personal company with 7 AI teams, cron orchestration, and knowledge management — at $0 extra cost.
+**AI Company-in-a-Box**: A self-hosted AI operations system that turns a Claude Max subscription into a 24/7 personal company with 8 AI teams, cron orchestration, and knowledge management — at $0 extra cost.
 
 ---
 
@@ -15,10 +15,10 @@
 - [x] `claude -p` headless CLI wrapper (`ask-claude.sh`)
 - [x] LanceDB hybrid RAG (vector + BM25, ~2000 chunks)
 - [x] 29 cron tasks with retry, timeout, rate limiting
-- [x] 7 AI teams (Council, Career, Record, Brand, Academy, Infra, Trend)
+- [x] 8 AI teams (Council, Career, Record, Brand, Academy, Infra, Trend)
 - [x] Company DNA, context-bus, shared-inbox inter-team communication
 - [x] ntfy push notifications, Discord webhook routing (5 channels)
-- [x] E2E test suite (43+ checks)
+- [x] E2E test suite (50 checks)
 - [x] Obsidian Vault integration with auto-sync, auto-linking, MOC generation
 
 ### Phase 1: LLM Gateway & Modularization (2026-03-06)

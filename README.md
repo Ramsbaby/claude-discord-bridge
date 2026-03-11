@@ -1,6 +1,6 @@
 <p align="center">
   <img src="https://img.shields.io/badge/cost-$0%2Fmonth-brightgreen?style=flat-square" alt="$0/month">
-  <img src="https://img.shields.io/badge/E2E_tests-43%2F44-brightgreen?style=flat-square" alt="Tests">
+  <img src="https://img.shields.io/badge/E2E_tests-50%2F50-brightgreen?style=flat-square" alt="Tests">
   <img src="https://img.shields.io/badge/context_compression-98%25-blueviolet?style=flat-square" alt="98% compression">
   <img src="https://img.shields.io/badge/session_length-3%2B_hours-blue?style=flat-square" alt="3+ hours">
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey?style=flat-square" alt="Platform">
@@ -10,7 +10,7 @@
 <h1 align="center">Jarvis — AI Company-in-a-Box</h1>
 
 <p align="center">
-  <strong>Your Claude Max subscription is idle 23 hours a day.<br>This turns it into a 24/7 AI operations system — 7 AI teams, cron orchestration, knowledge management — at $0 extra cost.</strong>
+  <strong>Your Claude Max subscription is idle 23 hours a day.<br>This turns it into a 24/7 AI operations system — 8 AI teams, cron orchestration, knowledge management — at $0 extra cost.</strong>
 </p>
 
 <p align="center">
@@ -37,7 +37,7 @@
 | **What** | Self-hosted Discord bot backed by `claude -p` (Claude Code's headless CLI) |
 | **Who** | Claude Max subscribers who want $0 extra AI costs |
 | **How** | Spawns `claude -p` per message, streams output to Discord in real-time |
-| **Why** | 39 scheduled cron tasks + 7 AI teams + reactive chat, with 3+ hour sessions |
+| **Why** | 30 scheduled cron tasks + 8 AI teams + reactive chat, with 3+ hour sessions |
 
 ```
 You type in Discord  →  claude -p answers  →  streamed reply in your thread
@@ -102,7 +102,7 @@ Most bots are **reactive** — they wait for you to type. This one is **proactiv
  00:30  zzz   → Log rotation + backup cleanup
  01:00  zzz   → RAG index + Vault sync (hourly)
  ────────────────────────────────────────────────────────────
-              39 cron tasks + 7 AI teams. Zero manual intervention.
+              30 cron tasks + 8 AI teams. Zero manual intervention.
 ```
 
 Every task has **exponential backoff retry** (3 attempts), **rate-limit awareness** (shared 5-hour sliding window), and **failure alerts** pushed to your phone via [ntfy](https://ntfy.sh).
@@ -123,7 +123,7 @@ Every task has **exponential backoff retry** (3 attempts), **rate-limit awarenes
 
 | | **This bot** | API-based bots | Clawdbot |
 |---|---|---|---|
-| Behavior model | **Proactive** (39 cron + 7 teams) | Reactive only | Reactive only |
+| Behavior model | **Proactive** (30 cron + 8 teams) | Reactive only | Reactive only |
 | Context management | **Nexus CIG** (98% compression) | None / basic | Basic |
 | RAG / memory | LanceDB (vector + BM25 hybrid) | Rarely | Plugin-dependent |
 | Self-healing | 3-layer watchdog | Manual restart | Varies |
@@ -131,7 +131,7 @@ Every task has **exponential backoff retry** (3 attempts), **rate-limit awarenes
 | KPI + auto-tuning | Anomaly detection + L3 approval | None | None |
 | Human approval gate | Discord button workflow | None | None |
 | Session continuity | `--resume` multi-turn threads | Per-message | Varies |
-| E2E test suite | **43/44** automated checks | Rare | Partial |
+| E2E test suite | **50/50** automated checks | Rare | Partial |
 | Messenger support | Discord | Discord | 25+ platforms |
 
 ---
@@ -556,16 +556,36 @@ The RAG engine runs an incremental index hourly. When you ask a question, releva
 │       ├── user-memory.js      # Per-user persistent memory (/remember)
 │       ├── company-agent.mjs   # 7-team virtual organization engine
 │       ├── orchestrator.mjs    # SQLite message queue + channel routing
+│       ├── lounge.js           # Lounge channel logic
+│       ├── error-tracker.js    # Error tracker
+│       ├── alert-batcher.js    # Alert batch processor
+│       ├── commands.js         # Slash command registration
 │       └── approval.js         # L3 approval workflow (Discord buttons)
 ├── bin/
 │   ├── ask-claude.sh           # claude -p wrapper (RAG + token isolation)
 │   ├── bot-cron.sh             # Cron task runner (semaphore, retry, routing)
+│   ├── jarvis-cron.sh          # → bot-cron.sh symlink (backward compat)
 │   ├── board-meeting.sh        # Board Meeting CEO agent (daily 08:10, 21:55)
 │   ├── decision-dispatcher.sh  # Auto-execute decisions + team scoring
-│   └── rag-index.mjs           # Incremental RAG indexer
+│   ├── bot-watchdog.sh         # Discord bot process monitor
+│   ├── jarvis-init.sh          # Fresh install initializer
+│   ├── kill-team.sh            # Batch terminate team agents
+│   ├── lounge-announce.sh      # Lounge channel announcements
+│   ├── plugin-loader.sh        # Plugin loader (file-convention)
+│   ├── rag-index.mjs           # Incremental RAG indexer
+│   ├── retry-wrapper.sh        # Cron retry wrapper
+│   ├── route-result.sh         # Result routing (Discord channel dispatch)
+│   └── semaphore.sh            # Concurrency control semaphore
 ├── lib/
 │   ├── rag-engine.mjs          # LanceDB hybrid search
-│   └── mcp-nexus.mjs           # Nexus CIG MCP server
+│   ├── mcp-nexus.mjs           # Nexus CIG MCP server
+│   ├── llm-gateway.sh          # LLM multi-provider gateway (ADR-006)
+│   ├── log-utils.sh            # Structured logging library
+│   ├── context-loader.sh       # Cron task context loader
+│   ├── insight-recorder.sh     # Insight recorder
+│   ├── message-queue.mjs       # SQLite message queue library
+│   ├── rag-query.mjs           # RAG query CLI
+│   └── rag-watch.mjs           # chokidar real-time RAG watcher
 ├── config/
 │   ├── tasks.json.example      # 3 starter cron task definitions
 │   ├── monitoring.json.example # Webhook routing config
@@ -580,12 +600,23 @@ The RAG engine runs an incremental index hourly. When you ask a question, releva
 │   ├── kpi-anomaly-detector.sh # KPI anomaly detection + L3 bridge
 │   ├── apply-kpi-decisions.sh  # Auto-tuning applier (dry-run default)
 │   ├── vault-sync.sh           # Obsidian Vault bi-directional sync
-│   ├── e2e-test.sh             # 43-item E2E test suite
+│   ├── e2e-test.sh             # 50-item E2E test suite
 │   └── l3-actions/             # Pre-approved L3 action scripts
+├── teams/                      # Declarative team definitions (YAML + templates)
+│   ├── council/                # Strategy team (council-insight)
+│   ├── infra/                  # Infrastructure team (infra-daily)
+│   ├── career/                 # Growth team (career-weekly)
+│   ├── record/                 # Record team (record-daily)
+│   ├── brand/                  # Brand team (brand-weekly)
+│   ├── academy/                # Academy team (academy-support)
+│   ├── trend/                  # Trend team (news-briefing)
+│   └── standup/                # Standup team (morning-standup)
+├── plugins/                    # File-convention plugin system (ADR-007)
+│   └── system-health/          # Example plugin (manifest.json + context.md + test.sh)
 ├── context/                    # Per-task background knowledge files
 ├── results/                    # Cron task output history
 ├── rag/teams/reports/          # Company agent team reports (RAG-indexed)
-├── agents/                    # Team lead agent profiles (CEO, Infra Chief, etc.)
+├── agents/                     # Team lead agent profiles (CEO, Infra Chief, etc.)
 └── state/
     ├── sessions.json           # Active session tracking
     ├── rate-tracker.json       # 5-hour rate limit window
@@ -620,7 +651,7 @@ git clone https://github.com/YOUR_USERNAME/jarvis
 
 # 3. Run the test suite
 bash scripts/e2e-test.sh
-# → 43 passed, 0 failed
+# → 50 passed, 0 failed
 
 # 4. Submit a pull request
 ```

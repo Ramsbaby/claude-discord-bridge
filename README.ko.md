@@ -1,6 +1,6 @@
 <p align="center">
   <img src="https://img.shields.io/badge/추가비용-월_$0-brightgreen?style=flat-square" alt="$0/month">
-  <img src="https://img.shields.io/badge/E2E_테스트-43%2F44-brightgreen?style=flat-square" alt="Tests">
+  <img src="https://img.shields.io/badge/E2E_테스트-50%2F50-brightgreen?style=flat-square" alt="Tests">
   <img src="https://img.shields.io/badge/컨텍스트_압축-98%25-blueviolet?style=flat-square" alt="98% 압축">
   <img src="https://img.shields.io/badge/세션_지속-3시간+-blue?style=flat-square" alt="3+ hours">
   <img src="https://img.shields.io/badge/플랫폼-macOS%20%7C%20Linux-lightgrey?style=flat-square" alt="Platform">
@@ -96,7 +96,7 @@ Nexus CIG가 모든 툴 호출 결과를 Claude 컨텍스트에 들어가기 전
  00:30  zzz   → 로그 로테이션 + 백업 정리
  01:00  zzz   → RAG 인덱스 재빌드 (매시간, 증분)
  ───────────────────────────────────────────────────────────
-              24개 태스크. 수동 개입 없음.
+              30개 태스크. 수동 개입 없음.
 ```
 
 모든 태스크에 **지수 백오프 재시도** (3회), **레이트 리밋 인식** (5시간 슬라이딩 윈도우), **실패 알림** ([ntfy](https://ntfy.sh) 푸시)이 내장되어 있습니다.
@@ -122,7 +122,7 @@ Nexus CIG가 모든 툴 호출 결과를 Claude 컨텍스트에 들어가기 전
 | RAG / 메모리 | LanceDB (벡터 + BM25 하이브리드) | 드물게 | 플러그인 의존 |
 | 자가복구 | 3계층 워치독 | 수동 재시작 | 다양 |
 | 세션 연속성 | `--resume` 멀티턴 스레드 | 메시지별 | 다양 |
-| E2E 테스트 | **43/44** 자동화 | 드물게 | 일부 |
+| E2E 테스트 | **50/50** 자동화 | 드물게 | 일부 |
 | 지원 메신저 | Discord | Discord | 25+ 플랫폼 |
 
 ---
@@ -347,27 +347,66 @@ RAG 엔진은 매시간 증분 인덱싱. 질문 시 관련 컨텍스트를 `cla
 │       ├── handlers.js         # handleMessage — 핵심 메시지 로직
 │       ├── claude-runner.js    # createClaudeSession() Agent SDK 기반
 │       ├── format-pipeline.js  # formatForDiscord() — 8개 출력 변환
-│       ├── session.js          # SessionStore, RateTracker, Semaphore
-│       └── user-memory.js      # 유저별 영구 메모리 (/remember)
+│       ├── session.js          # Barrel re-export (store, rate-tracker, semaphore, streaming)
+│       ├── store.js            # SessionStore (debounced JSON persist)
+│       ├── rate-tracker.js     # RateTracker (5h sliding window)
+│       ├── semaphore.js        # Semaphore (file-lock concurrency)
+│       ├── streaming.js        # StreamingMessage (chunked Discord output)
+│       ├── team-loader.mjs     # YAML team definition loader
+│       ├── user-memory.js      # 유저별 영구 메모리 (/remember)
+│       ├── company-agent.mjs   # 8팀 가상 조직 엔진
+│       ├── orchestrator.mjs    # SQLite 메시지 큐 + 채널 라우팅
+│       ├── lounge.js           # 라운지 채널 로직
+│       ├── error-tracker.js    # 에러 추적기
+│       ├── alert-batcher.js    # 알림 배치 처리
+│       ├── commands.js         # 슬래시 커맨드 등록
+│       └── approval.js         # L3 승인 워크플로우 (Discord 버튼)
 ├── bin/
 │   ├── ask-claude.sh           # claude -p 래퍼 (RAG + 토큰 격리)
 │   ├── bot-cron.sh             # 크론 태스크 러너 (세마포어, 재시도, 라우팅)
+│   ├── jarvis-cron.sh          # → bot-cron.sh 심링크 (하위 호환)
 │   ├── board-meeting.sh        # Board Meeting CEO 에이전트 (08:10, 21:55)
 │   ├── decision-dispatcher.sh  # 결정사항 자동 실행 + 팀 성과 평가
-│   └── rag-index.mjs           # 증분 RAG 인덱서
+│   ├── bot-watchdog.sh         # Discord 봇 프로세스 감시
+│   ├── jarvis-init.sh          # 신규 설치 초기화 스크립트
+│   ├── kill-team.sh            # 팀 에이전트 일괄 종료
+│   ├── lounge-announce.sh      # 라운지 채널 공지 발송
+│   ├── plugin-loader.sh        # 플러그인 로더 (file-convention)
+│   ├── rag-index.mjs           # 증분 RAG 인덱서
+│   ├── retry-wrapper.sh        # 크론 재시도 래퍼
+│   ├── route-result.sh         # 결과 라우팅 (Discord 채널 분배)
+│   └── semaphore.sh            # 동시 실행 제어 세마포어
 ├── lib/
 │   ├── rag-engine.mjs          # LanceDB 하이브리드 검색 엔진
-│   └── mcp-nexus.mjs           # Nexus CIG MCP 서버
+│   ├── mcp-nexus.mjs           # Nexus CIG MCP 서버
+│   ├── llm-gateway.sh          # LLM 멀티프로바이더 게이트웨이 (ADR-006)
+│   ├── log-utils.sh            # 구조화 로깅 라이브러리
+│   ├── context-loader.sh       # 크론 태스크 컨텍스트 로더
+│   ├── insight-recorder.sh     # 인사이트 기록기
+│   ├── message-queue.mjs       # SQLite 메시지 큐 라이브러리
+│   ├── rag-query.mjs           # RAG 쿼리 CLI
+│   └── rag-watch.mjs           # chokidar 실시간 RAG 감시
 ├── config/
 │   ├── tasks.json.example      # 3개 시작용 크론 태스크 예시
 │   └── monitoring.json.example # 웹훅 라우팅 설정
 ├── scripts/
 │   ├── watchdog.sh             # 봇 헬스 모니터
 │   ├── launchd-guardian.sh     # LaunchAgent 자동 복구
-│   └── e2e-test.sh             # 43개 E2E 테스트
+│   └── e2e-test.sh             # 50개 E2E 테스트
+├── teams/                      # 선언적 팀 정의 (YAML + 템플릿)
+│   ├── council/                # 전략팀 (council-insight)
+│   ├── infra/                  # 인프라팀 (infra-daily)
+│   ├── career/                 # 성장팀 (career-weekly)
+│   ├── record/                 # 기록팀 (record-daily)
+│   ├── brand/                  # 브랜드팀 (brand-weekly)
+│   ├── academy/                # 학술팀 (academy-support)
+│   ├── trend/                  # 정보팀 (news-briefing)
+│   └── standup/                # 스탠드업팀 (morning-standup)
+├── plugins/                    # 파일 컨벤션 플러그인 시스템 (ADR-007)
+│   └── system-health/          # 예시 플러그인 (manifest.json + context.md + test.sh)
 ├── context/                    # 태스크별 배경 지식 파일
 ├── results/                    # 크론 태스크 결과 이력
-├── agents/                    # 팀장 에이전트 프로필 (CEO, Infra Chief 등)
+├── agents/                     # 팀장 에이전트 프로필 (CEO, Infra Chief 등)
 └── state/                      # sessions.json, rate-tracker.json
     ├── team-scorecard.json     # 팀 성과표 (공적/벌점/상태)
     ├── decisions/              # Board Meeting 의사결정 감사 로그
@@ -398,7 +437,7 @@ git clone https://github.com/YOUR_USERNAME/jarvis
 
 # 3. 테스트 실행
 bash scripts/e2e-test.sh
-# → 43 passed, 0 failed
+# → 50 passed, 0 failed
 
 # 4. Pull Request 제출
 ```

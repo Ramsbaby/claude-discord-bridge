@@ -19,8 +19,19 @@
 #
 # ADR-006: LLM Gateway Multi-Provider
 
-LLM_GATEWAY_VERSION="1.0.0"
+LLM_GATEWAY_VERSION="1.1.0"
 LLM_GATEWAY_BOT_HOME="${BOT_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+
+# Source structured logging
+if [[ -f "${LLM_GATEWAY_BOT_HOME}/lib/log-utils.sh" ]]; then
+    source "${LLM_GATEWAY_BOT_HOME}/lib/log-utils.sh"
+else
+    # Fallback: minimal logging if log-utils.sh not found
+    log_info()  { echo "[llm-gateway] $*" >&2; }
+    log_warn()  { echo "[llm-gateway] WARN: $*" >&2; }
+    log_error() { echo "[llm-gateway] ERROR: $*" >&2; }
+    log_debug() { :; }
+fi
 
 # Load API keys from .env if available
 if [[ -f "${LLM_GATEWAY_BOT_HOME}/discord/.env" ]]; then
@@ -34,6 +45,24 @@ if [[ -f "${LLM_GATEWAY_BOT_HOME}/discord/.env" ]]; then
         esac
     done < "${LLM_GATEWAY_BOT_HOME}/discord/.env"
 fi
+
+# Helper: run python3 JSON builder, capture stderr on failure
+_llm_py() {
+    local label="$1"; shift
+    local _stderr
+    _stderr=$(mktemp)
+    local result
+    result=$(python3 "$@" 2>"$_stderr")
+    local rc=$?
+    if [[ $rc -ne 0 ]]; then
+        local err_msg
+        err_msg=$(tail -1 "$_stderr" 2>/dev/null)
+        log_warn "python3 ${label}: ${err_msg:-exit $rc}"
+    fi
+    rm -f "$_stderr"
+    [[ $rc -eq 0 ]] && echo "$result"
+    return $rc
+}
 
 # --- Provider: claude -p ---
 _llm_claude_cli() {
@@ -60,6 +89,9 @@ _llm_claude_cli() {
     stderr_tmp=$(mktemp)
     "${cmd[@]}" > "$output" 2>"$stderr_tmp"
     local exit_code=$?
+    if [[ $exit_code -ne 0 && -s "$stderr_tmp" ]]; then
+        log_warn "claude-cli stderr: $(tail -3 "$stderr_tmp" | tr '\n' ' ')"
+    fi
     rm -f "$stderr_tmp"
     return $exit_code
 }
@@ -79,15 +111,15 @@ _llm_anthropic_api() {
     esac
 
     local messages
-    messages=$(python3 -c "
+    messages=$(_llm_py "anthropic-msgs" -c "
 import json, sys
 msgs = [{'role': 'user', 'content': sys.argv[1]}]
 print(json.dumps(msgs))
-" "$prompt" 2>/dev/null) || return 1
+" "$prompt") || return 1
 
     local body
     if [[ -n "$system" ]]; then
-        body=$(python3 -c "
+        body=$(_llm_py "anthropic-body" -c "
 import json, sys
 body = {
     'model': sys.argv[1],
@@ -96,9 +128,9 @@ body = {
     'messages': json.loads(sys.argv[3])
 }
 print(json.dumps(body))
-" "$api_model" "$system" "$messages" 2>/dev/null) || return 1
+" "$api_model" "$system" "$messages") || return 1
     else
-        body=$(python3 -c "
+        body=$(_llm_py "anthropic-body" -c "
 import json, sys
 body = {
     'model': sys.argv[1],
@@ -106,29 +138,32 @@ body = {
     'messages': json.loads(sys.argv[2])
 }
 print(json.dumps(body))
-" "$api_model" "$messages" 2>/dev/null) || return 1
+" "$api_model" "$messages") || return 1
     fi
 
-    local response
+    local response _curl_err
+    _curl_err=$(mktemp)
     response=$(curl -s --max-time "$timeout" \
         -H "x-api-key: ${ANTHROPIC_API_KEY}" \
         -H "anthropic-version: 2023-06-01" \
         -H "content-type: application/json" \
         -d "$body" \
-        "https://api.anthropic.com/v1/messages" 2>/dev/null) || return 1
+        "https://api.anthropic.com/v1/messages" 2>"$_curl_err") || { log_warn "anthropic curl: $(cat "$_curl_err")"; rm -f "$_curl_err"; return 1; }
+    rm -f "$_curl_err"
 
     # Validate response
     local content_type
-    content_type=$(echo "$response" | python3 -c "
+    content_type=$(echo "$response" | _llm_py "anthropic-validate" -c "
 import json, sys
 r = json.load(sys.stdin)
 if r.get('type') == 'error':
+    print(r.get('error', {}).get('message', 'unknown error'), file=sys.stderr)
     sys.exit(1)
 print(r.get('type', ''))
-" 2>/dev/null) || return 1
+") || return 1
 
     # Convert to claude -p compatible JSON format
-    python3 -c "
+    _llm_py "anthropic-convert" -c "
 import json, sys
 r = json.loads(sys.argv[1])
 text_parts = [b['text'] for b in r.get('content', []) if b.get('type') == 'text']
@@ -145,7 +180,7 @@ out = {
     'is_error': False
 }
 print(json.dumps(out))
-" "$response" > "$output" 2>/dev/null || return 1
+" "$response" > "$output" || return 1
 
     # Verify non-empty result
     local result_text
@@ -166,7 +201,7 @@ _llm_openai_api() {
     esac
 
     local body
-    body=$(python3 -c "
+    body=$(_llm_py "openai-body" -c "
 import json, sys
 messages = []
 if sys.argv[2]:
@@ -178,20 +213,23 @@ body = {
     'messages': messages
 }
 print(json.dumps(body))
-" "$prompt" "${system:-}" "$api_model" 2>/dev/null) || return 1
+" "$prompt" "${system:-}" "$api_model") || return 1
 
-    local response
+    local response _curl_err
+    _curl_err=$(mktemp)
     response=$(curl -s --max-time "$timeout" \
         -H "Authorization: Bearer ${OPENAI_API_KEY}" \
         -H "Content-Type: application/json" \
         -d "$body" \
-        "https://api.openai.com/v1/chat/completions" 2>/dev/null) || return 1
+        "https://api.openai.com/v1/chat/completions" 2>"$_curl_err") || { log_warn "openai curl: $(cat "$_curl_err")"; rm -f "$_curl_err"; return 1; }
+    rm -f "$_curl_err"
 
     # Convert to claude -p compatible JSON format
-    python3 -c "
+    _llm_py "openai-convert" -c "
 import json, sys
 r = json.loads(sys.argv[1])
 if 'error' in r:
+    print(r['error'].get('message', 'unknown'), file=sys.stderr)
     sys.exit(1)
 choices = r.get('choices', [])
 if not choices:
@@ -209,7 +247,7 @@ out = {
     'is_error': False
 }
 print(json.dumps(out))
-" "$response" > "$output" 2>/dev/null || return 1
+" "$response" > "$output" || return 1
 
     local result_text
     result_text=$(jq -r '.result // ""' "$output" 2>/dev/null)
@@ -221,13 +259,13 @@ print(json.dumps(out))
 _llm_ollama() {
     local prompt="$1" system="$2" timeout="$3" model="$4" output="$5"
 
-    # Check if ollama is running
+    # Check if ollama is running (legitimate probe — keep silent)
     curl -s --max-time 2 "http://localhost:11434/api/tags" >/dev/null 2>&1 || return 1
 
     local ollama_model="llama3.2:latest"
 
     local body
-    body=$(python3 -c "
+    body=$(_llm_py "ollama-body" -c "
 import json, sys
 body = {
     'model': sys.argv[1],
@@ -237,16 +275,18 @@ body = {
 if sys.argv[3]:
     body['system'] = sys.argv[3]
 print(json.dumps(body))
-" "$ollama_model" "$prompt" "${system:-}" 2>/dev/null) || return 1
+" "$ollama_model" "$prompt" "${system:-}") || return 1
 
-    local response
+    local response _curl_err
+    _curl_err=$(mktemp)
     response=$(curl -s --max-time "$timeout" \
         -H "Content-Type: application/json" \
         -d "$body" \
-        "http://localhost:11434/api/generate" 2>/dev/null) || return 1
+        "http://localhost:11434/api/generate" 2>"$_curl_err") || { log_warn "ollama curl: $(cat "$_curl_err")"; rm -f "$_curl_err"; return 1; }
+    rm -f "$_curl_err"
 
     # Convert to claude -p compatible JSON format
-    python3 -c "
+    _llm_py "ollama-convert" -c "
 import json, sys
 r = json.loads(sys.argv[1])
 result = r.get('response', '')
@@ -263,7 +303,7 @@ out = {
     'is_error': False
 }
 print(json.dumps(out))
-" "$response" > "$output" 2>/dev/null || return 1
+" "$response" > "$output" || return 1
 
     local result_text
     result_text=$(jq -r '.result // ""' "$output" 2>/dev/null)
@@ -277,6 +317,7 @@ print(json.dumps(out))
 llm_call() {
     local prompt="" system="" timeout="180" model="" output=""
     local allowed_tools="" max_budget="" work_dir="" mcp_config=""
+    # 임시파일은 각 sub-function(_llm_anthropic_api 등)에서 인라인 정리
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -294,7 +335,7 @@ llm_call() {
     done
 
     if [[ -z "$prompt" || -z "$output" ]]; then
-        echo "ERROR: llm_call requires --prompt and --output" >&2
+        log_error "llm_call requires --prompt and --output"
         return 2
     fi
 
@@ -304,55 +345,56 @@ llm_call() {
         needs_tools=true
     fi
 
-    local log_prefix="[llm-gateway]"
-
     # --- Provider chain ---
 
     # 1. claude -p (primary — supports tools, $0 cost)
-    if _llm_claude_cli "$prompt" "$system" "$timeout" "$model" "$output" \
-                       "$allowed_tools" "$max_budget" "$work_dir" "$mcp_config"; then
+    local claude_exit=0
+    _llm_claude_cli "$prompt" "$system" "$timeout" "$model" "$output" \
+                    "$allowed_tools" "$max_budget" "$work_dir" "$mcp_config" \
+        || claude_exit=$?
+
+    if [[ $claude_exit -eq 0 ]]; then
         return 0
     fi
-    local claude_exit=$?
-    echo "${log_prefix} claude -p failed (exit $claude_exit)" >&2
+    log_warn "claude -p failed (exit $claude_exit)"
 
     # If task needs tools, no fallback is possible
     if [[ "$needs_tools" == "true" ]]; then
-        echo "${log_prefix} Task requires tools ($allowed_tools) — no fallback available" >&2
+        log_error "Task requires tools ($allowed_tools) — no fallback available"
         return $claude_exit
     fi
 
-    echo "${log_prefix} Trying fallback providers (text-only mode)..." >&2
+    log_info "Trying fallback providers (text-only mode)..."
 
     # 2. Anthropic API
     if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
-        echo "${log_prefix} Trying Anthropic API..." >&2
+        log_info "Trying Anthropic API..."
         if _llm_anthropic_api "$prompt" "$system" "$timeout" "$model" "$output"; then
-            echo "${log_prefix} Anthropic API succeeded (fallback)" >&2
+            log_info "Anthropic API succeeded (fallback)"
             return 0
         fi
-        echo "${log_prefix} Anthropic API failed" >&2
+        log_warn "Anthropic API failed"
     fi
 
     # 3. OpenAI API
     if [[ -n "${OPENAI_API_KEY:-}" ]]; then
-        echo "${log_prefix} Trying OpenAI API..." >&2
+        log_info "Trying OpenAI API..."
         if _llm_openai_api "$prompt" "$system" "$timeout" "$model" "$output"; then
-            echo "${log_prefix} OpenAI API succeeded (fallback)" >&2
+            log_info "OpenAI API succeeded (fallback)"
             return 0
         fi
-        echo "${log_prefix} OpenAI API failed" >&2
+        log_warn "OpenAI API failed"
     fi
 
     # 4. Ollama (local)
-    echo "${log_prefix} Trying Ollama (local)..." >&2
+    log_info "Trying Ollama (local)..."
     if _llm_ollama "$prompt" "$system" "$timeout" "$model" "$output"; then
-        echo "${log_prefix} Ollama succeeded (fallback)" >&2
+        log_info "Ollama succeeded (fallback)"
         return 0
     fi
-    echo "${log_prefix} Ollama failed" >&2
+    log_warn "Ollama failed"
 
     # All providers exhausted
-    echo "${log_prefix} All providers failed" >&2
+    log_error "All providers failed"
     return 1
 }

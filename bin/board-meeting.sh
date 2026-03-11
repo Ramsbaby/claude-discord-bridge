@@ -7,6 +7,7 @@ set -euo pipefail
 # 기존 council-insight의 상위 호환. goals.json + decisions-audit.jsonl 연동.
 
 BOT_HOME="${BOT_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "${BOT_HOME}/lib/log-utils.sh" 2>/dev/null || true
 MEETING_TYPE="${1:-daily}"
 TIMESTAMP="$(date +%F_%H%M)"
 LOG_FILE="${BOT_HOME}/logs/board-meeting.log"
@@ -27,11 +28,22 @@ log "Starting ${MEETING_TYPE} board meeting"
 
 # --- Pre-collect data (bash 단계에서 수집, claude 토큰 절약) ---
 TODAY="$(date +%F)"
-CRON_TODAY=$(grep "$TODAY" "${BOT_HOME}/logs/cron.log" 2>/dev/null | tail -50 || echo "로그 없음")
-CRON_SUCCESS=$(echo "$CRON_TODAY" | grep -c 'SUCCESS' || echo "0")
-CRON_FAIL=$(echo "$CRON_TODAY" | grep -c 'FAILED' || echo "0")
+# 최근 24시간 task-runner.jsonl 기반 성공률 계산 (stale cron.log 대신)
+# cron.log 기반 성공률 계산 (최근 24시간, YYYY-MM-DD HH 형식 비교)
+CRON_LOG="${BOT_HOME}/logs/cron.log"
+CUTOFF_DATE=$(date -v-24H '+%Y-%m-%d %H' 2>/dev/null || date -d '24 hours ago' '+%Y-%m-%d %H')
+CRON_SUCCESS=0
+CRON_FAIL=0
+if [[ -f "$CRON_LOG" ]]; then
+    CRON_SUCCESS=$(awk -v cutoff="$CUTOFF_DATE" \
+        'substr($0,2,13) >= cutoff && / SUCCESS/' "$CRON_LOG" | wc -l | tr -d ' ') || CRON_SUCCESS=0
+    CRON_FAIL=$(awk -v cutoff="$CUTOFF_DATE" \
+        'substr($0,2,13) >= cutoff && / (FAILED|ABORTED)/' "$CRON_LOG" | wc -l | tr -d ' ') || CRON_FAIL=0
+fi
+CRON_SUCCESS="${CRON_SUCCESS:-0}"
+CRON_FAIL="${CRON_FAIL:-0}"
 CRON_TOTAL=$(( CRON_SUCCESS + CRON_FAIL ))
-if (( CRON_TOTAL > 0 )); then
+if [[ "$CRON_TOTAL" -gt 0 ]]; then
     CRON_RATE=$(( CRON_SUCCESS * 100 / CRON_TOTAL ))
 else
     CRON_RATE="N/A"
@@ -88,7 +100,7 @@ for name, t in data['teams'].items():
     status_mark = {'NORMAL':'', 'WARNING':'[!]', 'PROBATION':'[!!]', 'DISCIPLINARY':'[!!!]'}.get(t['status'], '')
     lines.append(f\"{name}: merit {t['merit']} / penalty {t['penalty']} {t['status']} {status_mark}\")
 print('\n'.join(lines))
-" 2>/dev/null || echo "성과표 로드 실패")
+" 2>"${BOT_HOME}/logs/board-py.err" || echo "성과표 로드 실패 — $(tail -1 "${BOT_HOME}/logs/board-py.err" 2>/dev/null)")
 fi
 
 # Previous dispatch results
@@ -115,7 +127,7 @@ ${CEO_PROFILE}
 ## 사전 수집 데이터
 
 ### 인프라 현황
-- 크론 오늘: 성공 ${CRON_SUCCESS} / 실패 ${CRON_FAIL} (성공률 ${CRON_RATE}%)
+- 크론 성공률 (최근 24h): ${CRON_RATE}% (${CRON_SUCCESS}/${CRON_TOTAL}성공)
 - 디스크: ${DISK_PCT} 사용 | 로드: ${LOAD}
 - LaunchAgent: ${LAUNCHD}
 - 시스템 헬스: ${HEALTH_SNAP}
@@ -219,7 +231,7 @@ import json, time, os
 with open(os.environ['RATE_PATH']) as f: d = json.load(f)
 cutoff = int(time.time()*1000) - 5*3600*1000
 print(len([t for t in d if t > cutoff]))
-" 2>/dev/null || echo "0")
+" 2>"${BOT_HOME}/logs/board-py.err" || echo "0")
     if (( RATE_COUNT > 720 )); then
         log "Rate limit high (${RATE_COUNT}/900), skipping"
         exit 0
@@ -270,14 +282,16 @@ fi
 echo "$RESULT" > "$RESULT_FILE"
 log "SUCCESS (${DURATION}s, cost \$${COST})"
 
-# --- Route to Discord ---
-WEBHOOK=$(jq -r '.webhooks["jarvis-ceo"]' "${BOT_HOME}/config/monitoring.json" 2>/dev/null || echo "")
-if [[ -n "$WEBHOOK" ]] && [[ "$WEBHOOK" != "null" ]]; then
-    DISCORD_MSG=$(echo "$RESULT" | head -c 1950)
-    curl -s -X POST "$WEBHOOK" \
-        -H "Content-Type: application/json" \
-        -d "$(jq -n --arg content "$DISCORD_MSG" '{content: $content}')" \
-        >/dev/null 2>&1 || log "Discord send failed"
+# --- Route to Discord (pm은 council-insight(23:00)가 담당하므로 스킵) ---
+if [[ "$MEETING_TYPE" != "pm" ]]; then
+    WEBHOOK=$(jq -r '.webhooks["jarvis-ceo"]' "${BOT_HOME}/config/monitoring.json" 2>/dev/null || echo "")
+    if [[ -n "$WEBHOOK" ]] && [[ "$WEBHOOK" != "null" ]]; then
+        DISCORD_MSG=$(echo "$RESULT" | head -c 1950)
+        curl -s -X POST "$WEBHOOK" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg content "$DISCORD_MSG" '{content: $content}')" \
+            >/dev/null 2>&1 || log "Discord send failed"
+    fi
 fi
 
 # --- Update rate tracker ---
@@ -297,7 +311,7 @@ try:
 except (FileNotFoundError, json.JSONDecodeError):
     with open(path, 'w') as f:
         json.dump([int(time.time()*1000)], f)
-" 2>/dev/null || true
+" 2>"${BOT_HOME}/logs/board-py.err" || log "WARN: rate tracker update failed"
 
 # --- Rotate old results ---
 find "$RESULTS_DIR" -name "*.md" -mtime +30 -delete 2>/dev/null || true

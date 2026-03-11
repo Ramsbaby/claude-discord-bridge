@@ -2,7 +2,8 @@
  * SessionStore — thread-to-session mapping with TTL expiry and debounced persist.
  */
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, renameSync, existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { log } from './claude-runner.js';
 
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7일
@@ -20,19 +21,35 @@ export class SessionStore {
   }
 
   load() {
+    if (!existsSync(this.filePath)) { this.data = {}; return; }
+    let raw;
     try {
-      const raw = readFileSync(this.filePath, 'utf-8');
-      const parsed = JSON.parse(raw);
-      // Migrate old format (string) → new format ({ id, updatedAt })
-      for (const [k, v] of Object.entries(parsed)) {
-        if (typeof v === 'string') {
-          this.data[k] = { id: v, updatedAt: Date.now() };
-        } else if (v && typeof v === 'object') {
-          this.data[k] = v;
-        }
-      }
-    } catch {
+      raw = readFileSync(this.filePath, 'utf-8');
+    } catch (readErr) {
+      log('warn', 'SessionStore: could not read sessions file', { error: readErr.message });
       this.data = {};
+      return;
+    }
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (parseErr) {
+      const corruptPath = `${this.filePath}.corrupt.${Date.now()}`;
+      log('warn', 'SessionStore: corrupt JSON — renaming and starting fresh', {
+        corrupt: corruptPath,
+        error: parseErr.message,
+      });
+      try { renameSync(this.filePath, corruptPath); } catch { /* best effort */ }
+      this.data = {};
+      return;
+    }
+    // Migrate old format (string) → new format ({ id, updatedAt })
+    for (const [k, v] of Object.entries(parsed)) {
+      if (typeof v === 'string') {
+        this.data[k] = { id: v, updatedAt: Date.now() };
+      } else if (v && typeof v === 'object') {
+        this.data[k] = v;
+      }
     }
   }
 
@@ -45,16 +62,19 @@ export class SessionStore {
     }, PERSIST_DEBOUNCE_MS);
   }
 
-  /** Immediate synchronous write to disk. */
+  /** Immediate synchronous write to disk (atomic: tmp + rename). */
   _flushSync() {
     if (this._flushTimer) {
       clearTimeout(this._flushTimer);
       this._flushTimer = null;
     }
+    const tmp = join(dirname(this.filePath), `.sessions-${process.pid}.tmp`);
     try {
-      writeFileSync(this.filePath, JSON.stringify(this.data, null, 2));
+      writeFileSync(tmp, JSON.stringify(this.data, null, 2));
+      renameSync(tmp, this.filePath);
     } catch (err) {
       log('error', 'SessionStore flush failed', { error: err.message });
+      try { writeFileSync(this.filePath, JSON.stringify(this.data, null, 2)); } catch { /* last resort */ }
     }
   }
 

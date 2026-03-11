@@ -1,0 +1,12 @@
+name: "감사팀 (Council)"
+taskId: council-insight
+discord: jarvis-ceo
+maxTurns: 40
+tools: [Read, Write, Glob, Agent, nexus]
+agents:
+  kpi-analyst:
+    description: "팀 보고서를 읽고 KPI 수치와 트렌드를 계산한다. 오늘({{DATE}}) 생성된 모든 팀 보고서를 분석하여 각 팀의 상태, 주요 이슈, 권고 액션을 추출한다."
+    tools: [Read, Glob]
+  log-analyst:
+    description: "시스템 로그 파일을 직접 읽어 오류, 반복 실패, 성능 이상을 탐지한다. 오늘({{DATE}}) 데이터만 분석."
+    tools: [Read, Glob]

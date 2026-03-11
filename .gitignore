@@ -16,10 +16,18 @@ state/
 logs/
 rag/lancedb/
 rag/index-state.json
+rag/index-state.json.bak
+rag/memory.md
+rag/handoff.md
+rag/decisions.md
+rag/index.json
 discord/node_modules/
 results/
 watchdog/
 tmp/
+
+# 개인 설정 (env 파일)
+config/preply.env
 
 # Serena LSP
 .serena/

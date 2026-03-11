@@ -14,7 +14,7 @@ import {
   appendFileSync,
   copyFileSync,
 } from 'node:fs';
-import { appendFile } from 'node:fs/promises';
+import { appendFile, writeFile as writeFileAsync, rename as renameAsync } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { homedir } from 'node:os';
@@ -31,20 +31,27 @@ import { userMemory } from './user-memory.js';
 export function detectFeedback(text) {
   const t = text.trim().toLowerCase();
 
-  if (t.startsWith('기억해:') || t.startsWith('/remember ')) {
-    const fact = text.replace(/^(기억해:|\/remember\s+)/i, '').trim();
+  // 명시적 기억 명령: "기억해:", "/remember", "기억해줘", "메모해줘", "저장해줘", "알아둬"
+  const rememberPrefixMatch = text.match(/^(기억해:|\/remember\s+|기억해줘[,:]?\s*|메모해줘[,:]?\s*|저장해줘[,:]?\s*|알아둬[,:]?\s*)/i);
+  if (rememberPrefixMatch) {
+    const fact = text.slice(rememberPrefixMatch[0].length).trim();
     return fact ? { type: 'remember', fact } : null;
   }
 
-  if (/^(좋아|잘했어|이게 맞아|완벽|ㄱㅌ|굿|맞아|정확해|완벽해)/.test(t)) {
+  // 긍정 피드백: 15자 이하 짧은 메시지에서만 (긴 대화 오인 방지)
+  // "맞아", "아니" 같은 모호한 단어 제외 — "이게 맞아", "아니야"처럼 명확한 패턴만
+  if (t.length <= 15 && /좋아|잘했어|이게 맞아|완벽|ㄱㅌ|굿|정확해|완벽해|고마워|감사해|도움됐어|덕분에|최고|ㄳ|땡큐/.test(t)) {
     return { type: 'positive' };
   }
 
-  if (/^(별로야|틀렸어|다시 해|아니야|이건 아닌|잘못됐어|틀려)/.test(t)) {
+  // 부정 피드백: 15자 이하 짧은 메시지에서만
+  // "아니", "틀려" 단독 제외 — "아니야", "틀렸어" 등 명확한 패턴만
+  if (t.length <= 15 && /별로야|틀렸어|다시 해|아니야|이건 아닌|잘못됐어|별로|틀림/.test(t)) {
     return { type: 'negative' };
   }
 
-  const corrMatch = text.match(/^(앞으로는|다음부터는)\s+(.+)/);
+  // 교정 패턴: "앞으로는", "다음부터는", "이제부터는", "다음엔", "이다음엔", "그냥 ~해줘"
+  const corrMatch = text.match(/^(앞으로는|다음부터는|이제부터는|다음엔|이다음엔)\s+(.+)/);
   if (corrMatch) {
     return { type: 'correction', fact: corrMatch[2] };
   }
@@ -62,6 +69,8 @@ export function processFeedback(userId, text) {
   if (fb.type === 'remember' && fb.fact) {
     userMemory.addFact(userId, fb.fact);
     log('info', 'Feedback: remember', { userId, fact: fb.fact.slice(0, 100) });
+    // RAG 즉시 반영 (fire-and-forget)
+    _syncUserMemoryMarkdown(userId).catch((e) => log('warn', 'processFeedback: RAG sync failed', { userId, error: e.message }));
   } else if (fb.type === 'correction' && fb.fact) {
     const data = userMemory.get(userId);
     if (!data.corrections.includes(fb.fact)) {
@@ -87,6 +96,7 @@ export function processFeedback(userId, text) {
 
 const HOME = homedir();
 const BOT_HOME = join(process.env.BOT_HOME || join(HOME, '.jarvis'));
+const MODELS = JSON.parse(readFileSync(join(BOT_HOME, 'config', 'models.json'), 'utf-8'));
 const DISCORD_MCP_PATH = join(BOT_HOME, 'config', 'discord-mcp.json');
 const USER_PROFILE_PATH = join(BOT_HOME, 'context', 'user-profile.md');
 const CONV_HISTORY_DIR = join(BOT_HOME, 'context', 'discord-history');
@@ -133,8 +143,12 @@ let CHANNEL_PERSONAS = {};
 try {
   const personasPath = join(import.meta.dirname, '..', 'personas.json');
   CHANNEL_PERSONAS = JSON.parse(readFileSync(personasPath, 'utf-8'));
-} catch {
-  log('warn', 'personas.json not found — channel personas disabled');
+  log('info', 'Channel personas loaded', {
+    count: Object.keys(CHANNEL_PERSONAS).length,
+    channels: Object.keys(CHANNEL_PERSONAS).join(', '),
+  });
+} catch (personasErr) {
+  log('error', 'personas.json load failed — channel personas disabled', { error: personasErr.message });
 }
 
 // ---------------------------------------------------------------------------
@@ -199,7 +213,7 @@ export async function execRagAsync(query) {
 
 export function saveConversationTurn(userMsg, botMsg, channelName, userId = null) {
   const profile = userId ? getUserProfile(userId) : null;
-  const senderName = profile?.name || process.env.OWNER_NAME || 'Owner';
+  const senderName = profile?.name || 'Unknown';
   try {
     mkdirSync(CONV_HISTORY_DIR, { recursive: true });
     const now = new Date();
@@ -208,10 +222,177 @@ export function saveConversationTurn(userMsg, botMsg, channelName, userId = null
     const timeStr = kst.toISOString().slice(11, 16);
     const filePath = join(CONV_HISTORY_DIR, `${dateStr}.md`);
     const botName = process.env.BOT_NAME || 'Jarvis';
-    const entry = `\n## [${dateStr} ${timeStr} KST] #${channelName}\n\n**${senderName}**: ${userMsg.slice(0, 600)}\n\n**${botName}**: ${botMsg.slice(0, 1800)}\n\n---\n`;
+    const entry = `\n## [${dateStr} ${timeStr} KST] #${channelName}\n\n**${senderName}**: ${userMsg.slice(0, 1200)}\n\n**${botName}**: ${botMsg.slice(0, 3000)}\n\n---\n`;
     appendFileSync(filePath, entry, 'utf-8');
   } catch (err) {
     log('warn', 'Failed to save conversation turn', { error: err.message });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// _syncUserMemoryMarkdown — user-memory를 discord-history/*.md로 기록
+// rag-watch.mjs가 감지 → LanceDB 즉시 인덱싱 (RAG 피드백 루프 완성)
+// ---------------------------------------------------------------------------
+
+/**
+ * RAG 마크다운용 민감정보 마스킹.
+ * JSON(시스템 프롬프트 주입)은 원본 유지 — 봇이 예약번호 직접 질문에 여전히 답할 수 있음.
+ * RAG는 키워드 연상 검색용이므로 마스킹해도 "삿포로 여행" 검색에는 지장 없음.
+ */
+function _redactForRag(text) {
+  return text
+    .replace(/예약번호\s+\d{6,}/g, '예약번호 [보안처리됨]')
+    .replace(/PIN\s*:\s*\d+/gi, 'PIN:[****]')
+    .replace(/비밀번호\s+\S+/g, '비밀번호 [****]');
+}
+
+async function _syncUserMemoryMarkdown(userId) {
+  const wf = writeFileAsync;
+  const rename = renameAsync;
+  const memData = userMemory.get(userId);
+  mkdirSync(CONV_HISTORY_DIR, { recursive: true });
+  const mdPath = join(CONV_HISTORY_DIR, `user-memory-${userId}.md`);
+  const tmpPath = `${mdPath}.tmp.${process.pid}`;
+  const name = memData.name || userId;
+  const lines = [
+    `# ${name} 장기 기억 (자동 축적)`,
+    `_마지막 업데이트: ${new Date().toISOString()}_`,
+    '',
+    '## 사실 (Facts)',
+    ...memData.facts.slice(-30).map(f => `- ${_redactForRag(f)}`),
+  ];
+  if (memData.preferences?.length) {
+    lines.push('', '## 선호 패턴 (Preferences)');
+    lines.push(...memData.preferences.map(p => `- ${p}`));
+  }
+  if (memData.plans?.length) {
+    const active = memData.plans.filter(p => !p.done);
+    if (active.length) {
+      lines.push('', '## 진행 중인 계획 (Plans)');
+      lines.push(...active.map(p => `- [${p.key}] ${p.summary}`));
+    }
+  }
+  // atomic write: tmp → rename (race condition + partial write 방지)
+  await wf(tmpPath, lines.join('\n'), 'utf-8');
+  await rename(tmpPath, mdPath);
+  log('debug', 'User memory synced to RAG markdown', { userId, facts: memData.facts.length });
+}
+
+// ---------------------------------------------------------------------------
+// autoExtractMemory — 대화 종료 후 기억할 사실 자동 추출 (비동기 fire-and-forget)
+// ---------------------------------------------------------------------------
+
+// 쿨다운: 유저별 마지막 추출 시각 (메모리 내, 재시작 시 초기화)
+const _extractCooldown = new Map();
+const EXTRACT_COOLDOWN_MS = 10 * 60 * 1000; // 10분
+const EXTRACT_MIN_LEN = 150; // 봇 응답이 이 길이 이상일 때만 추출
+const EXTRACT_COOLDOWN_MAX_ENTRIES = 500; // 메모리 누수 방지 상한
+
+/**
+ * 대화 내용에서 미래에 유용할 사실을 추출해 userMemory에 저장.
+ * 메인 응답에 영향 없도록 비동기 fire-and-forget으로 호출.
+ */
+export async function autoExtractMemory(userId, userMsg, botMsg) {
+  if (!userId || botMsg.length < EXTRACT_MIN_LEN) return;
+
+  const now = Date.now();
+  const lastRun = _extractCooldown.get(userId) ?? 0;
+  if (now - lastRun < EXTRACT_COOLDOWN_MS) return;
+
+  // 메모리 누수 방지: 상한 초과 시 오래된 항목부터 절반 제거
+  if (_extractCooldown.size >= EXTRACT_COOLDOWN_MAX_ENTRIES) {
+    const sorted = [..._extractCooldown.entries()].sort((a, b) => a[1] - b[1]);
+    for (const [k] of sorted.slice(0, sorted.length / 2)) _extractCooldown.delete(k);
+  }
+  _extractCooldown.set(userId, now);
+
+  // 대괄호 없는 구분자 사용 — 정규식 greedy trap 방지 (A-3 버그 수정)
+  const prompt = [
+    '다음 대화에서 미래 대화에 도움될 구체적 사실을 추출해줘.',
+    '기준: 사람 이름/일정/장소/선호/계획/결정 같은 구체적 정보. 일반 상식이나 자명한 사실 제외.',
+    '없으면 빈 배열.',
+    '',
+    `<<사용자>>\n${userMsg.slice(0, 500)}`,
+    `<<봇>>\n${botMsg.slice(0, 800)}`,
+    '',
+    '출력 형식 (JSON 배열만, 다른 텍스트 없이 마지막 줄에):',
+    '["사실1", "사실2"]',
+  ].join('\n');
+
+  try {
+    // subprocess(claude -p)는 non-TTY 환경에서 무한 대기(exit 143)하므로 Anthropic API 직접 호출
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    // 구독제 환경에서는 API 키가 없음 — 기능 비활성화 (로그 없이 조용히 반환)
+    if (!apiKey) return;
+
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: MODELS.small,
+        max_tokens: 512,
+        messages: [{ role: 'user', content: prompt }],
+      }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!response.ok) throw new Error(`API ${response.status}`);
+    const data = await response.json();
+    const result = data?.content?.[0]?.text ?? '';
+
+    const raw = result.trim();
+    // 후행 텍스트에 [] 포함 시 lastIndexOf 오탐 방지:
+    // 끝에서부터 ]를 찾고, 그에 대응하는 [ 까지 역탐색 (bracket matching)
+    // → 여러 후보 중 마지막에 위치한 유효한 JSON string 배열만 사용
+    let facts = null;
+    let searchEnd = raw.length - 1;
+    while (searchEnd >= 0 && !facts) {
+      const closeBracket = raw.lastIndexOf(']', searchEnd);
+      if (closeBracket === -1) break;
+      let depth = 0;
+      let openBracket = -1;
+      for (let j = closeBracket; j >= 0; j--) {
+        if (raw[j] === ']') depth++;
+        else if (raw[j] === '[') {
+          depth--;
+          if (depth === 0) { openBracket = j; break; }
+        }
+      }
+      if (openBracket === -1) { searchEnd = closeBracket - 1; continue; }
+      const candidate = raw.slice(openBracket, closeBracket + 1);
+      try {
+        const parsed = JSON.parse(candidate);
+        if (Array.isArray(parsed) && parsed.every(x => typeof x === 'string')) {
+          facts = parsed;
+        }
+      } catch { /* not valid JSON array, try next */ }
+      searchEnd = openBracket - 1;
+    }
+    if (!facts) {
+      log('debug', 'autoExtractMemory: no valid JSON array found', { userId, raw: raw.slice(-150) });
+      return;
+    }
+
+    let saved = 0;
+    for (const fact of facts) {
+      if (typeof fact === 'string' && fact.length > 5 && fact.length < 200) {
+        userMemory.addFact(userId, fact);
+        saved++;
+        log('info', 'Auto memory extracted', { userId, fact: fact.slice(0, 80) });
+      }
+    }
+
+    // RAG 즉시 반영: user-memory 마크다운을 discord-history에 기록 → rag-watch 자동 감지
+    if (saved > 0) {
+      await _syncUserMemoryMarkdown(userId).catch((syncErr) =>
+        log('debug', 'User memory RAG sync failed (non-critical)', { userId, error: syncErr.message })
+      );
+    }
+  } catch (err) {
+    log('debug', 'autoExtractMemory failed (non-critical)', { userId, error: err.message });
   }
 }
 
@@ -257,9 +438,10 @@ export async function* createClaudeSession(prompt, {
   const ownerTitle = process.env.OWNER_TITLE || 'Owner';
   const githubUsername = process.env.GITHUB_USERNAME || 'user';
 
-  // 4. Detect active user — owner fallback if not registered
+  // 4. Detect active user — null → guest (NOT owner fallback)
   const activeUserProfile = getUserProfile(userId);
-  const isOwner = !activeUserProfile || activeUserProfile.type === 'owner';
+  const isOwner = activeUserProfile?.type === 'owner';
+  const isGuest = !activeUserProfile;
 
   // 4a. Build user context section
   const userContextParts = isOwner
@@ -268,46 +450,49 @@ export async function* createClaudeSession(prompt, {
         `지금 대화 중인 사람은 ${ownerName}(${ownerTitle}님, GitHub: ${githubUsername})이다. 오너가 "나 누구야?" 등으로 물으면 프로필 기반으로 답한다.`,
         createClaudeSession._profileCache,
       ]
+    : isGuest
+    ? [
+        '--- 게스트 접근 ---',
+        '미등록 사용자입니다. 일반 대화만 가능하며 개인 정보, 메모리, 도구 실행 등의 기능은 제공하지 않습니다.',
+      ]
     : [
         '--- 사용자 컨텍스트 ---',
         `지금 대화 중인 사람은 ${activeUserProfile.name}(${activeUserProfile.title})이다. ${activeUserProfile.bio || ''}`.trim(),
         activeUserProfile.persona ? `응답 가이드: ${activeUserProfile.persona}` : '',
       ].filter(Boolean);
 
+  const BOT_HOME = process.env.BOT_HOME || `${homedir()}/.jarvis`;
+
   // 5. Build system prompt
   const systemParts = [
-    `당신의 이름은 ${process.env.BOT_NAME || 'Jarvis'}입니다. ${ownerName}님의 개인 AI 어시스턴트입니다.`,
-    '중요: 절대 스스로를 "Claude"라고 소개하거나 지칭하지 마세요. Claude는 내부 엔진일 뿐, 당신의 이름이 아닙니다. "저는 Jarvis입니다"라고만 하세요.',
-    '존댓말(공손체) 기본. 간결하고 실용적으로 답한다. 한국어로 응답.',
-    '',
-    '## 페르소나',
-    '토니 스타크의 자비스처럼 — 유능하고 따뜻하되, 아첨하지 않는 집사.',
-    `- ${ownerName}님을 진심으로 아끼는 조력자. 틀린 건 부드럽지만 분명하게 짚는다.`,
-    '- 추측은 "추측입니다" 명시. 모르면 솔직히 인정.',
-    '',
-    '## 응답 스타일',
-    '- 챗봇 말투 금지 ("알겠습니다!", "완료!", "제가 도와드리겠습니다" 등). 대신: "~했습니다(결과)", "원인: ... / 조치: ..." 형식.',
-    `- 독백·혼잣말 금지. 모든 응답은 ${ownerName}님에게 직접 보고하는 형식. 도구 사용 중 생각 스트리밍 금지, 결론만 보고.`,
-    '- 간단한 질문은 간결하게(5줄 이하). 분석·코딩은 필요한 만큼.',
-    '- 톤: 쉬운 작업 → "식은 죽 먹기였죠." / 에러 → "흥미로운 상황이 발생했습니다."',
-    '',
-    '## Discord 포매팅',
-    '리스트(`- 항목`) 사용, 테이블 금지(모바일 미지원). 코드는 ```블록. 헤더는 섹션 3개 이상일 때만. 이모지 적절히, 남발 금지.',
-    '',
-    '--- 도구 선택 (작업 성격에 따라 최적 도구 선택, 출력량 최소화) ---',
-    '',
-    '[코드] Serena 우선 → cat/grep 대신 심볼 단위 탐색으로 정확도+턴 절약',
-    '- get_symbols_overview(파일 구조) → find_symbol(정의, include_body=true) → search_for_pattern(regex) → find_referencing_symbols(역참조)',
-    '- 수정: replace_symbol_body(전체 교체), insert_after/before_symbol(추가), Edit(줄 단위), Write(새 파일)',
-    '',
-    '[시스템] Nexus 우선 → Bash 대신 사용 시 컨텍스트 98% 절약',
-    '- exec(cmd), scan(다중 병렬), cache_exec(TTL), log_tail(로그), health(상태 요약), file_peek(패턴 추출)',
-    '',
-    '[기억] rag_search(query) — "저번에", "기억해?" 등 과거 참조 시 먼저 호출',
-    '[기타] Bash(인터랙티브만, 출력 제한 필수), Read(offset/limit), WebSearch(외부 정보), Agent(병렬 위임)',
-    '',
-    '안전: rm -rf/shutdown/reboot/kill -9/DROP TABLE 금지. API 키·토큰 노출 금지.',
-    '',
+    // ── 정체성 ──────────────────────────────────────────────────────────────
+    `당신은 ${process.env.BOT_NAME || 'Jarvis'} — ${ownerName}님의 개인 AI 집사입니다. 이름은 항상 Jarvis. "Claude"라고 절대 자칭하지 마세요.`,
+    '한국어 존댓말 기본. 단순 질문은 짧게, 분석·코딩은 CLI와 동일한 깊이로.',
+
+    // ── 페르소나 ─────────────────────────────────────────────────────────────
+    `토니 스타크의 자비스: 유능하고 직설적인 집사. 아첨 없음. ${ownerName}님이 틀리면 바로 짚는다. 추측은 "추측입니다" 명시. 모르면 모른다고 인정.`,
+
+    // ── 실행 원칙 ────────────────────────────────────────────────────────────
+    '지시(해줘/고쳐/처리해/진행해/만들어)는 직전 대화 흐름에서 대상을 파악 후 승인 없이 즉시 실행. 결과만 보고. 삭제·배포·서버 재시작만 사전 확인.',
+    '도구 실행 후 실제 출력이 있을 때만 "완료". 출력 없거나 오류면 "실패: [이유]" 보고. 추측 포장 금지.',
+    '이미 pre-inject된 데이터([…— 이미 로드됨] 태그)가 있으면 같은 도구 재호출 금지.',
+
+    // ── 포맷 금지 ────────────────────────────────────────────────────────────
+    'Discord 모바일: 테이블(`| |`) 기본 금지 → `- **항목** · 값` 리스트 사용. 채널 페르소나가 허용한 경우만 예외.',
+    '"진행할까요?", "알겠습니다!", "제가 도와드리겠습니다" 금지. 결과·원인·조치만 보고.',
+
+    // ── Preply 수업 ──────────────────────────────────────────────────────────
+    `Preply 수업 일정("오늘 수업", "내일 수업", "이번 주 수업") → bash ${BOT_HOME}/scripts/cal-preply.sh [YYYY-MM-DD] 실행 후 결과 포맷. 수입/금액("수입", "얼마") → bash ${BOT_HOME}/scripts/preply-today.sh [YYYY-MM-DD]. MCP 설정·Claude Code 재시작 언급 절대 금지.`,
+
+    // ── 도구 선택 ────────────────────────────────────────────────────────────
+    '[코드] Serena: get_symbols_overview → find_symbol(include_body=true) → search_for_pattern → find_referencing_symbols. 수정: replace_symbol_body / insert_after/before_symbol / Edit. 파일 전체 Read는 최후 수단.',
+    '[시스템] Nexus: exec(cmd) / scan(병렬) / cache_exec(TTL) / log_tail / health / file_peek. [기억] rag_search — "저번에 말한", "기억해?", "아까 얘기한" 처럼 명시적으로 이전 대화를 참조할 때만. "과거", "이전", "파라미터" 단어 단독으로는 rag_search 호출 금지 — 대화 흐름에서 의미 파악 우선.',
+    `[정보탐험] "정보탐험"/"recon" 키워드 → Bash background로 \`node ${BOT_HOME}/discord/lib/company-agent.mjs --team recon\` 실행 후 즉시 "🔭 정보탐험 시작했습니다. 7~11분 소요, 결과는 #jarvis-ceo 채널로 전송됩니다." 응답. await 금지(90초 타임아웃).`,
+
+    // ── 안전 ─────────────────────────────────────────────────────────────────
+    'rm -rf/shutdown/kill -9/DROP TABLE/API 키 노출 금지. launchctl 일절 사용 불가(봇 자신이 실행하면 대화 강제 중단). 인프라 확인은 mcp__nexus__health만.',
+    'Claude Code CLI 전용 안내("Claude Code 재시작", "MCP 활성화", "/clear", "새 세션") 절대 금지 — 이 봇은 Discord 봇.',
+
     ...userContextParts,
   ];
 
@@ -315,7 +500,14 @@ export async function* createClaudeSession(prompt, {
   const channelPersona = channelId ? CHANNEL_PERSONAS[channelId] : null;
   if (channelPersona) systemParts.push('', channelPersona);
 
-  // Per-user long-term memory
+  // Session version check: compute hash from STABLE systemParts (persona + user context only).
+  // memSnippet and usageSummary are intentionally excluded:
+  //   - memSnippet changes on every memory addition → would force new session every turn
+  //   - usageSummary contains time-varying data ("리셋 Xm 후") → same issue
+  const stableSystemPrompt = systemParts.join('\n');
+  const promptVersion = createHash('md5').update(stableSystemPrompt).digest('hex').slice(0, 8);
+
+  // Per-user long-term memory (added AFTER hash — memory updates don't force session reset)
   if (userId) {
     const memSnippet = userMemory.getPromptSnippet(userId);
     if (memSnippet) systemParts.push('', '--- 사용자 기억 (User Memory) ---', memSnippet);
@@ -328,6 +520,7 @@ export async function* createClaudeSession(prompt, {
     const usageCfgPath   = join(HOME, '.claude', 'usage-config.json');
     if (existsSync(usageCachePath)) {
       const uc = JSON.parse(readFileSync(usageCachePath, 'utf-8'));
+      if (!uc.ok) throw new Error('cache not ready');
       const ul = existsSync(usageCfgPath) ? JSON.parse(readFileSync(usageCfgPath, 'utf-8')).limits ?? {} : {};
       const fH = uc.fiveH ?? {}, sD = uc.sevenD ?? {}, sn = uc.sonnet ?? {};
       usageSummary = [
@@ -345,15 +538,28 @@ export async function* createClaudeSession(prompt, {
   let effectivePrompt = prompt;
 
   if (isResuming) {
-    // When resuming: add context to the prompt (system prompt is already in session)
+    // When resuming: system prompt (profile + channelPersona) is already stored in session.
+    // Only inject dynamic per-turn data: sender identity, usage, and new attachments.
     const ctxParts = [];
-    if (isOwner) {
-      ctxParts.push(`[대화 상대] ${ownerName}(${ownerTitle}님, ${githubUsername}). ${createClaudeSession._profileCache?.slice(0, 400) || ''}`);
-    } else {
-      ctxParts.push(`[대화 상대] ${activeUserProfile.name}(${activeUserProfile.title}). ${activeUserProfile.bio?.slice(0, 200) || ''}`);
+    const senderLabel = isOwner
+      ? `${ownerName}(${ownerTitle}님, user)`
+      : isGuest
+      ? '게스트(미등록 사용자)'
+      : `${activeUserProfile.name}(${activeUserProfile.title})`;
+    ctxParts.push(`[대화 상대] ${senderLabel}`);
+    // 사용량 현황은 80% 이상일 때만 주입 — 낮을 때 주입하면 Claude self-throttling 유발
+    if (usageSummary) {
+      let highUsage = false;
+      try {
+        const usageCachePath = join(HOME, '.claude', 'usage-cache.json');
+        const { existsSync, readFileSync } = await import('node:fs');
+        if (existsSync(usageCachePath)) {
+          const uc = JSON.parse(readFileSync(usageCachePath, 'utf-8'));
+          highUsage = (uc.fiveH?.pct ?? 0) > 80 || (uc.sevenD?.pct ?? 0) > 80;
+        }
+      } catch { /* ignore */ }
+      if (highUsage) ctxParts.push(usageSummary);
     }
-    if (channelPersona) ctxParts.push(`[채널 역할]\n${channelPersona.slice(0, 800)}`);
-    if (usageSummary) ctxParts.push(usageSummary);
     // RAG는 mcp__nexus__rag_search 도구로 아젠틱하게 검색 (사전 주입 제거)
     if (attachments.length > 0) {
       const names = attachments.map((a) => `./${a.safeName}`).join(', ');
@@ -373,9 +579,10 @@ export async function* createClaudeSession(prompt, {
   }
 
   // 6. Adaptive max-turns + model selection
-  const BUDGET_TURNS = { small: 5, medium: 30, large: 60 };
+  // 개인 비서 용도 — CLI와 동일한 품질 보장. 무한루프 방지용 상한만 유지.
+  const BUDGET_TURNS = { small: 50, medium: 200, large: 200 };
   const maxTurns = BUDGET_TURNS[contextBudget] ?? BUDGET_TURNS.medium;
-  const BUDGET_MODEL = { small: 'claude-sonnet-4-6', medium: 'claude-sonnet-4-6', large: 'claude-opus-4-6' };
+  const BUDGET_MODEL = { small: MODELS.small, medium: MODELS.medium, large: MODELS.large };
   const model = BUDGET_MODEL[contextBudget] ?? BUDGET_MODEL.medium;
 
   // 7. Load MCP server config (same servers, now as SDK mcpServers object)
@@ -409,26 +616,35 @@ export async function* createClaudeSession(prompt, {
     mcpServers,
     maxTurns,
     model,
+    includePartialMessages: true,
   };
 
-  // Session version check: force new session if system prompt changed since last session
-  const fullSystemPrompt = systemParts.join('\n');
-  const promptVersion = createHash('md5').update(fullSystemPrompt).digest('hex').slice(0, 8);
-
+  // _promptVersionMap: per-threadId 버전 캐시 (글로벌 싱글턴은 다채널 동시실행 시 오염됨)
+  if (!createClaudeSession._promptVersionMap) createClaudeSession._promptVersionMap = new Map();
+  // Prevent unbounded growth: prune oldest half when exceeding 100 entries
+  if (createClaudeSession._promptVersionMap.size > 100) {
+    const entries = [...createClaudeSession._promptVersionMap.entries()];
+    createClaudeSession._promptVersionMap = new Map(entries.slice(entries.length / 2));
+  }
   if (isResuming) {
-    const savedVersion = createClaudeSession._promptVersion;
+    // Always re-inject systemPrompt on resume — context compaction can lose persona/tone rules
+    // CRITICAL: use systemParts.join (includes memSnippet added after hash) not stableSystemPrompt
+    queryOptions.systemPrompt = systemParts.join('\n');
+    const savedVersion = createClaudeSession._promptVersionMap.get(threadId);
     if (savedVersion && savedVersion !== promptVersion) {
       log('info', 'System prompt changed, forcing new session', {
         threadId, oldVersion: savedVersion, newVersion: promptVersion,
       });
-      // Force new session — don't resume stale system prompt
+      // Force new session — don't resume stale system prompt.
       sessionId = null;
-      queryOptions.systemPrompt = fullSystemPrompt;
+      // Notify handler that session was silently reset (맥락 단절 방지)
+      yield { type: 'system', session_reset: true, reason: 'prompt_version_changed' };
     }
   } else {
-    queryOptions.systemPrompt = fullSystemPrompt;
+    // New session: systemParts already includes usageSummary (added in else block above)
+    queryOptions.systemPrompt = systemParts.join('\n');
   }
-  createClaudeSession._promptVersion = promptVersion;
+  createClaudeSession._promptVersionMap.set(threadId, promptVersion);
 
   if (sessionId) {
     queryOptions.resume = sessionId;
@@ -438,14 +654,71 @@ export async function* createClaudeSession(prompt, {
     threadId, resume: !!sessionId, maxTurns, model, mcpCount: Object.keys(mcpServers).length,
   });
 
-  // 9. Yield normalized events
+  // 9. Yield normalized events (with 90-second per-message timeout guard)
+  const SESSION_TIMEOUT_MS = 90_000;
+
+  /**
+   * Race a single iterator.next() call against a timeout.
+   * Returns { timedOut: true } if the timeout fires first.
+   */
+  function _nextWithTimeout(iter, ms) {
+    // iter.next()를 먼저 시작하고 promise를 보존 — 타임아웃이 race를 이겨도
+    // 이미 in-flight인 promise를 버리지 않음 (응답 손실 방지)
+    const nextPromise = iter.next();
+    return new Promise((resolve, reject) => {
+      const handle = setTimeout(() => resolve({ timedOut: true, pendingNext: nextPromise }), ms);
+      nextPromise.then(
+        (result) => { clearTimeout(handle); resolve(result); },
+        (err)    => { clearTimeout(handle); reject(err); },
+      );
+    });
+  }
+
   try {
-    for await (const msg of query({ prompt: effectivePrompt, options: queryOptions })) {
+    const iter = query({ prompt: effectivePrompt, options: queryOptions })[Symbol.asyncIterator]();
+    while (true) {
       if (signal?.aborted) {
         log('debug', 'createClaudeSession: aborted by signal');
         break;
       }
 
+      let iterResult;
+      try {
+        iterResult = await _nextWithTimeout(iter, SESSION_TIMEOUT_MS);
+      } catch (sdkErr) {
+        if (!signal?.aborted) {
+          log('error', 'createClaudeSession: SDK error', { error: sdkErr.message });
+          yield { type: 'result', result: '', is_error: true, error: sdkErr.message };
+        }
+        break;
+      }
+
+      if (iterResult.timedOut) {
+        // Grace window: 타임아웃이 iter.next()와 race를 이겼을 수 있음.
+        // in-flight promise를 500ms 더 기다려서 응답 손실 방지.
+        log('warn', 'createClaudeSession: 90s inactivity — grace check', { threadId });
+        const graceResult = await Promise.race([
+          iterResult.pendingNext,
+          new Promise((r) => setTimeout(() => r({ timedOut: true }), 500)),
+        ]);
+        if (!graceResult.timedOut) {
+          // Grace 기간 내 응답 도착 — 정상 처리
+          iterResult = graceResult;
+        } else {
+          log('error', 'createClaudeSession: confirmed inactivity timeout (90s)', { threadId });
+          yield {
+            type: 'result',
+            result: '요청 처리 시간이 초과되었습니다 (90초). 잠시 후 다시 시도해주세요.',
+            is_error: true,
+            error: 'Session inactivity timeout (90s)',
+          };
+          break;
+        }
+      }
+
+      if (iterResult.done) break;
+
+      const msg = iterResult.value;
       if (msg.type === 'system' && msg.subtype === 'init') {
         yield { type: 'system', session_id: msg.session_id };
       } else if ('result' in msg) {
@@ -457,15 +730,15 @@ export async function* createClaudeSession(prompt, {
           cost_usd: msg.cost_usd ?? null,
           stop_reason: msg.stop_reason ?? null,
         };
-      } else if (msg.type === 'assistant' || msg.type === 'content_block_delta') {
-        // Pass through unchanged — handlers.js already handles both types
+      } else if (msg.type === 'assistant' || msg.type === 'stream_event') {
+        // Pass through: assistant (complete turn), stream_event (real-time streaming)
         yield msg;
       }
       // Unknown message types are silently ignored
     }
   } catch (err) {
     if (!signal?.aborted) {
-      log('error', 'createClaudeSession: SDK error', { error: err.message });
+      log('error', 'createClaudeSession: unexpected error', { error: err.message });
       yield { type: 'result', result: '', is_error: true, error: err.message };
     }
   }

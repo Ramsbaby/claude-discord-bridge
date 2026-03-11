@@ -34,4 +34,4 @@
 ```
 
 ## Discord 전송 채널
-#bot-ceo
+#jarvis-system

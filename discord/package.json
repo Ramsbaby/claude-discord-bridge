@@ -6,20 +6,26 @@
   "type": "module",
   "scripts": {
     "start": "node discord-bot.js",
-    "check": "node --check discord-bot.js"
+    "check": "node --check discord-bot.js",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.2.63",
-    "@lancedb/lancedb": "^0.26.2",
-    "@modelcontextprotocol/sdk": "^1.27.1",
-    "apache-arrow": "^18.1.0",
-    "better-sqlite3": "^12.6.2",
-    "chokidar": "^5.0.0",
-    "discord.js": "^14.16.0",
-    "dotenv": "^16.4.0",
-    "openai": "^6.25.0"
+    "@anthropic-ai/claude-agent-sdk": "0.2.71",
+    "@lancedb/lancedb": "~0.26.2",
+    "@modelcontextprotocol/sdk": "~1.27.1",
+    "apache-arrow": "~18.1.0",
+    "better-sqlite3": "~12.6.2",
+    "chokidar": "~5.0.0",
+    "discord.js": "~14.25.1",
+    "dotenv": "~16.6.1",
+    "openai": "~6.25.0",
+    "yaml": "~2.8.2"
   },
   "engines": {
     "node": ">=20.0.0"
+  },
+  "devDependencies": {
+    "vitest": "^4.0.18"
   }
 }

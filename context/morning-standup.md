@@ -27,6 +27,12 @@
 어젯밤 council-insight가 남긴 인계사항이 공용 게시판에 있으면 **항상 첫 번째로** 표시.
 시장 신호가 CRITICAL이면 "⚠️ 오늘 포트폴리오 먼저 확인 필요" 강조.
 
+> **[2026-03-10 야간 인계]**
+> - ⚠️ **TQQQ $47.70 — CRITICAL. 손절선($47) 대비 +$0.70 극근접 (+1.5%).** 3/11 장전 즉시 포지션 점검 필수!
+> - 🔴 **LanceDB 1.8G P0** — 8일 연속 비대화, RAG 장애 5일째, rag-watch 중단. compact+cleanup 최우선 실행 필수
+> - ⚠️ 크론 성공률 88.0% YELLOW (404/459) — brand-weekly 연속 ABORTED, rate-limit/record-daily FAILED
+> - 🔧 메모리 부족 지속 (0.12GB→2.5GB 개선) — Chrome/Obsidian 정리 필요
+
 ### 📅 오늘의 일정
 (Google Calendar 기반)
 

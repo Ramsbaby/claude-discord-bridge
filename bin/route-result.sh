@@ -27,13 +27,21 @@ clean_message() {
     # Trim leading/trailing blank lines
     msg=$(echo "$msg" | sed -e '/./,$!d' -e ':a' -e '/^[[:space:]]*$/{ $d; N; ba' -e '}')
     # Strip URLs (Discord 썸네일/임베드 방지)
-    msg=$(echo "$msg" | sed -E 's|https?://[^ )>]+||g')
+    # 마크다운 링크 [text](url) → text만 보존, 나머지 URL은 제거
+    msg=$(echo "$msg" | sed -E 's|\[([^]]*)\]\(https?://[^ )>]*\)|\1|g; s|https?://[^ )>]+||g')
     # If everything got filtered, keep original (safety)
     if [[ -z "$msg" ]]; then msg="$1"; fi
     echo "$msg"
 }
 
 MESSAGE=$(clean_message "$MESSAGE")
+
+# --- Format for Discord (table→list, heading normalization, etc.) ---
+FORMAT_SCRIPT="${BOT_HOME}/bin/format-discord.mjs"
+if [[ -f "$FORMAT_SCRIPT" ]]; then
+    FORMATTED=$(printf '%s' "$MESSAGE" | node "$FORMAT_SCRIPT" 2>/dev/null) || true
+    if [[ -n "$FORMATTED" ]]; then MESSAGE="$FORMATTED"; fi
+fi
 
 # --- Discord: 2000-char chunking ---
 send_discord() {

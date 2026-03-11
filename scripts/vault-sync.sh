@@ -85,10 +85,11 @@ if [[ -d "$REPORTS_DIR" ]]; then
         if [[ "$file_count" -gt "$MAX_REPORTS" ]]; then
             excess=$((file_count - MAX_REPORTS))
             # 이름순 정렬 (날짜 기반 파일명이므로 오래된 것이 먼저)
-            find "$team_dir" -maxdepth 1 -name "*.md" -type f -print0 2>/dev/null \
-                | sort -z \
-                | head -z -n "$excess" \
-                | xargs -0 rm -f
+            # head -z 는 macOS BSD head 미지원 → POSIX 호환 방식
+            find "$team_dir" -maxdepth 1 -name "*.md" -type f 2>/dev/null \
+                | sort \
+                | head -n "$excess" \
+                | while IFS= read -r _old; do rm -f "$_old"; done
             pruned=$((pruned + excess))
         fi
     done
@@ -185,6 +186,78 @@ if [[ -d "$DISCORD_HISTORY" ]]; then
         synced=$((synced + 1))
     done
 fi
+
+# --- 6. ADR → Vault/06-knowledge/adr/ ---
+ADR_DIR="$BOT_HOME/adr"
+ADR_VAULT="$VAULT_BASE/06-knowledge/adr"
+if [[ -d "$ADR_DIR" ]]; then
+    mkdir -p "$ADR_VAULT"
+    for adr_file in "$ADR_DIR"/*.md; do
+        if [[ ! -f "$adr_file" ]]; then continue; fi
+        filename="$(basename "$adr_file")"
+        if cp "$adr_file" "$ADR_VAULT/$filename" 2>/dev/null; then
+            synced=$((synced + 1))
+        fi
+    done
+fi
+
+# --- 7. board-minutes → Vault/03-teams/board-minutes/ (최근 30일) ---
+BOARD_DIR="$BOT_HOME/state/board-minutes"
+BOARD_VAULT="$VAULT_BASE/03-teams/board-minutes"
+if [[ -d "$BOARD_DIR" ]]; then
+    mkdir -p "$BOARD_VAULT"
+    find "$BOARD_DIR" -name "*.md" -type f -mtime -30 2>/dev/null | while IFS= read -r src; do
+        src_name="$(basename "$src")"
+        dest="$BOARD_VAULT/$src_name"
+        if [[ -f "$dest" ]] && [[ "$dest" -nt "$src" ]]; then continue; fi
+        today="$(date '+%Y-%m-%d')"
+        date_part="${src_name%.md}"
+        {
+            echo "---"
+            echo "title: \"이사회 회의록 — ${date_part}\""
+            echo "tags: [area/teams, type/board-meeting]"
+            echo "created: ${date_part}"
+            echo "updated: ${today}"
+            echo "---"
+            echo ""
+            if head -1 "$src" | grep -q '^---$'; then
+                sed '1,/^---$/d' "$src" | sed '1{/^$/d;}'
+            else
+                cat "$src"
+            fi
+        } > "$dest"
+        synced=$((synced + 1))
+    done
+fi
+
+# --- 8. decisions (JSONL) → Vault/03-teams/decisions/ (최근 30일) ---
+DECISIONS_DIR="$BOT_HOME/state/decisions"
+DECISIONS_VAULT="$VAULT_BASE/03-teams/decisions"
+if [[ -d "$DECISIONS_DIR" ]]; then
+    mkdir -p "$DECISIONS_VAULT"
+    find "$DECISIONS_DIR" -name "*.jsonl" -type f -mtime -30 2>/dev/null | while IFS= read -r src; do
+        src_name="$(basename "$src")"
+        dest_name="${src_name%.jsonl}.md"
+        dest="$DECISIONS_VAULT/$dest_name"
+        if [[ -f "$dest" ]] && [[ "$dest" -nt "$src" ]]; then continue; fi
+        today="$(date '+%Y-%m-%d')"
+        date_part="${src_name%.jsonl}"
+        {
+            echo "---"
+            echo "title: \"의사결정 감사 로그 — ${date_part}\""
+            echo "tags: [area/teams, type/decisions]"
+            echo "created: ${date_part}"
+            echo "updated: ${today}"
+            echo "---"
+            echo ""
+            echo '```json'
+            cat "$src"
+            echo '```'
+        } > "$dest"
+        synced=$((synced + 1))
+    done
+fi
+
 
 log "Sync complete: ${synced} files synced, ${pruned} old reports pruned"
 

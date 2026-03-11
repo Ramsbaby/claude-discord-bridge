@@ -40,7 +40,19 @@ NYSE_HOLIDAYS_2027=(
     "2027-12-24"  # Christmas (observed, Fri before Sat 25th)
 )
 
-# --- Resolve target date ---
+# --- NYSE 거래 시간 체크 (시간 인수 없을 때만) ---
+# NYSE: 9:30-16:00 EST(UTC-5) / EDT(UTC-4). UTC 기준 13:00-21:30 윈도우로 DST 양쪽 커버.
+if [[ $# -eq 0 ]]; then
+    UTC_H=$(date -u +%H); UTC_M=$(date -u +%M)
+    UTC_MINS=$(( UTC_H * 60 + UTC_M ))
+    # 13:00 UTC = 780분 (EDT 9:00am), 21:30 UTC = 1290분 (EST 4:30pm)
+    if (( UTC_MINS < 780 || UTC_MINS >= 1290 )); then
+        echo "[market-holiday-guard] CLOSED — outside NYSE hours (UTC ${UTC_H}:${UTC_M})"
+        exit 1
+    fi
+fi
+
+# --- Resolve target date (NY 로컬 날짜 — EST=UTC-5 기준) ---
 if [[ $# -ge 1 ]]; then
     TARGET_DATE="$1"
     # Validate format
@@ -49,7 +61,8 @@ if [[ $# -ge 1 ]]; then
         exit 2
     fi
 else
-    TARGET_DATE=$(date +%Y-%m-%d)
+    # KST 시스템에서도 NYSE 날짜(EST)로 체크 — UTC-5h로 NY 날짜 계산
+    TARGET_DATE=$(date -u -v-5H +%Y-%m-%d 2>/dev/null || date -u --date='-5 hours' +%Y-%m-%d)
 fi
 
 # --- Weekend check (macOS: date -j to parse, %u = 1=Mon … 7=Sun) ---

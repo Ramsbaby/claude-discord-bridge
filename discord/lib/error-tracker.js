@@ -16,7 +16,7 @@ const BOT_HOME = process.env.BOT_HOME || join(homedir(), '.jarvis');
 const STATE_DIR = join(BOT_HOME, 'state');
 const STATE_FILE = join(STATE_DIR, 'error-tracker.json');
 const MAX_ERRORS = 50;
-const APOLOGY_COOLDOWN_MS = 30 * 60 * 1000; // 30 minutes
+const APOLOGY_COOLDOWN_MS = 2 * 60 * 60 * 1000; // 2 hours — 재시작 반복 시 스팸 방지
 const PRUNE_AGE_MS = 24 * 60 * 60 * 1000;   // 24 hours
 const RECOVERY_TIMEOUT_MS = 8_000;            // 8s max for startup recovery
 
@@ -52,6 +52,16 @@ function saveState(state) {
 export function recordError(channelId, userId, errorMessage) {
   if (!channelId || typeof channelId !== 'string') return;
   if (!userId || typeof userId !== 'string') return;
+
+  // Parse sessionKey format "channelId-userId": if channelId contains '-'
+  // and both sides are numeric (Discord snowflakes), extract the channelId part.
+  if (channelId.includes('-')) {
+    const parts = channelId.split('-');
+    if (parts.length === 2 && /^\d+$/.test(parts[0]) && /^\d+$/.test(parts[1])) {
+      channelId = parts[0];
+    }
+  }
+
   try {
     const state = loadState();
     state.errors.push({
@@ -148,13 +158,7 @@ async function _sendApologies(client) {
 }
 
 // Public: wraps _sendApologies with a timeout to never block bot startup
-export async function sendRecoveryApologies(client) {
-  await Promise.race([
-    _sendApologies(client),
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Recovery apology timed out')), RECOVERY_TIMEOUT_MS),
-    ),
-  ]).catch((err) => {
-    log('warn', 'sendRecoveryApologies aborted', { error: err.message });
-  });
+// DISABLED: recovery apology messages are not useful and annoying on restart
+export async function sendRecoveryApologies(_client) {
+  return; // disabled
 }

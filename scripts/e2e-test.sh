@@ -85,8 +85,8 @@ check "decisions.md exists" test -f "$BOT_HOME/rag/decisions.md"
 # --- ask-claude.sh RAG Integration ---
 echo ""
 echo "▶ ask-claude.sh Integration"
-check "ask-claude.sh has RAG integration" grep -q "rag-query.mjs" "$BOT_HOME/bin/ask-claude.sh"
-check "ask-claude.sh has fallback" grep -q "Fallback" "$BOT_HOME/bin/ask-claude.sh"
+check "ask-claude.sh has RAG integration" grep -q "rag-query.mjs" "$BOT_HOME/lib/context-loader.sh"
+check "ask-claude.sh has fallback" grep -q "Fallback" "$BOT_HOME/lib/llm-gateway.sh"
 
 # --- Discord Bot Features ---
 echo ""
@@ -130,11 +130,19 @@ echo "▶ Document Consistency (DocDD)"
 check "ADR index exists" test -f "$BOT_HOME/adr/ADR-INDEX.md"
 check "ADR-001 exists" test -f "$BOT_HOME/adr/ADR-001.md"
 check "tasks.json has depends field" bash -c "jq -e '.tasks[0].depends' '$BOT_HOME/config/tasks.json' > /dev/null 2>&1"
-check "ask-claude.sh has cross-team context" grep -q "Cross-team Context" "$BOT_HOME/bin/ask-claude.sh"
-check "ask-claude.sh has insight filter" grep -q "system-health|rate-limit-check" "$BOT_HOME/bin/ask-claude.sh"
+check "ask-claude.sh has cross-team context" grep -q "Cross-team Context" "$BOT_HOME/lib/context-loader.sh"
+check "ask-claude.sh has insight filter" grep -q "system-health|rate-limit-check" "$BOT_HOME/lib/insight-recorder.sh"
 check "gen-inventory.sh exists" test -x "$BOT_HOME/scripts/gen-inventory.sh"
 check "cron-catalog.md exists" test -f "$HOME/Jarvis-Vault/01-system/cron-catalog.md"
 check "council reads shared-inbox" grep -q "shared-inbox" "$BOT_HOME/context/council-insight.md"
+check "pending-tasks atomic write (renameSync)" grep -q "renameSync" "$BOT_HOME/discord/lib/handlers.js"
+check "apology cooldown implemented" grep -q "apologyCooldownFile" "$BOT_HOME/discord/discord-bot.js"
+check "active-session cleanup in finally" grep -q "active-session.*finally\|finally.*active-session\|activeProcesses.size === 0" "$BOT_HOME/discord/lib/handlers.js"
+check "semaphore TOCTOU guard (stat fallback)" grep -q "stat.*2>/dev/null.*echo.*0\|2>/dev/null || echo" "$BOT_HOME/bin/semaphore.sh"
+check "market-holiday-guard has hours check" grep -q "UTC_MINS" "$BOT_HOME/scripts/market-holiday-guard.sh"
+check "watchdog active_ts validation" grep -q "active_ts.*\^.*0-9" "$BOT_HOME/scripts/watchdog.sh"
+check "tasks.json disk-alert has allowEmptyResult" bash -c "jq -e '.tasks[] | select(.id==\"disk-alert\") | .allowEmptyResult' '$BOT_HOME/config/tasks.json' > /dev/null 2>&1"
+check "streaming GC hint in finalize" grep -q "this\.buffer = ''" "$BOT_HOME/discord/lib/streaming.js"
 
 # Cron-catalog vs actual crontab consistency
 TASKS_COUNT=$(jq '[.tasks[] | select(.schedule != null and .schedule != "")] | length' "$BOT_HOME/config/tasks.json" 2>/dev/null || echo 0)

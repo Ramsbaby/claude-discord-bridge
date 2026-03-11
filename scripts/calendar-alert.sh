@@ -10,7 +10,7 @@ STATE_DIR="$BOT_HOME/state"
 ALERTED_FILE="$STATE_DIR/alerted-events.json"
 WEBHOOK_CONFIG="$BOT_HOME/config/monitoring.json"
 LOG="$BOT_HOME/logs/calendar-alert.log"
-GOOGLE_ACCOUNT="${GOOGLE_ACCOUNT:-$(grep '^GOOGLE_ACCOUNT=' "$BOT_HOME/discord/.env" 2>/dev/null | cut -d= -f2 || echo "")}"
+GOOGLE_ACCOUNT="${GOOGLE_ACCOUNT:-$(grep '^GOOGLE_ACCOUNT=' "$BOT_HOME/discord/.env" 2>/dev/null | sed 's/^GOOGLE_ACCOUNT=//' || echo "")}"
 ALERT_WINDOW_MIN=25
 ALERT_WINDOW_MAX=35
 
@@ -26,6 +26,13 @@ fi
 # python3 필요
 if ! command -v python3 &>/dev/null; then
     log "ERROR: python3 not found"
+    exit 0
+fi
+
+# GOOGLE_ACCOUNT 빈 값 검사 — 인증 없이 gog 호출하면 exit 0 + 오류 텍스트가
+# stdout으로 출력되어 JSON 파싱 실패로 이어질 수 있음
+if [[ -z "$GOOGLE_ACCOUNT" ]]; then
+    log "WARN: GOOGLE_ACCOUNT not set, skipping"
     exit 0
 fi
 
@@ -61,7 +68,8 @@ if ! WEBHOOK_URL="$(CFG_PATH="$WEBHOOK_CONFIG" python3 -c "import json,os; print
 fi
 
 # 이벤트 처리: 필터링 + 중복 체크 + 알림 전송 + 정리
-python3 - "$CALENDAR_OUTPUT" "$ALERTED_FILE" "$WEBHOOK_URL" "$WINDOW_FROM" "$WINDOW_TO" "$LOG" << 'PYEOF'
+# python3 실패(exit 1 등) 시에도 스크립트가 정상 종료되도록 || true 처리
+python3 - "$CALENDAR_OUTPUT" "$ALERTED_FILE" "$WEBHOOK_URL" "$WINDOW_FROM" "$WINDOW_TO" "$LOG" << 'PYEOF' || { log "ERROR: python3 event processing failed (exit $?)"; exit 0; }
 import json
 import sys
 import subprocess
@@ -169,8 +177,12 @@ if new_alerts:
 cutoff = (datetime.now() - timedelta(hours=24)).isoformat()
 alerted = [e for e in alerted if e.get("ts", "") > cutoff]
 
-with open(alerted_file, "w") as f:
-    json.dump(alerted, f, ensure_ascii=False, indent=2)
+try:
+    with open(alerted_file, "w") as f:
+        json.dump(alerted, f, ensure_ascii=False, indent=2)
+except OSError as e:
+    log("ERROR: Failed to write alerted file: {}".format(e))
+    sys.exit(0)
 
 if new_alerts:
     log("Total alerts sent: {}".format(len(new_alerts)))

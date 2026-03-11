@@ -2,7 +2,8 @@
  * RateTracker — sliding window rate limiter in 5-hour blocks.
  */
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, renameSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 
 const RATE_WINDOW_HOURS = 5;
 const RATE_MAX_REQUESTS = 900;
@@ -27,7 +28,13 @@ export class RateTracker {
   }
 
   save() {
-    writeFileSync(this.filePath, JSON.stringify(this.requests));
+    try {
+      const tmp = join(dirname(this.filePath), `.rate-tracker-${process.pid}.tmp`);
+      writeFileSync(tmp, JSON.stringify(this.requests));
+      renameSync(tmp, this.filePath);
+    } catch (err) {
+      console.error(`[rate-tracker] save failed: ${err.message}`);
+    }
   }
 
   prune() {

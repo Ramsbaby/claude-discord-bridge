@@ -1,0 +1,9 @@
+name: "성장팀 (Career)"
+taskId: career-weekly
+discord: jarvis-ceo
+maxTurns: 25
+tools: [Read, Write, WebSearch, Glob, Agent]
+agents:
+  skill-gap-analyst:
+    description: "채용 공고의 요구 스킬과 {{OWNER_NAME}}의 현재 스택(Java/Spring Boot/JPA/MySQL)을 비교하여 부족한 스킬을 분석한다."
+    tools: [Read, Glob]

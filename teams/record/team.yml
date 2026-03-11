@@ -1,0 +1,5 @@
+name: "기록팀 (Record)"
+taskId: record-daily
+discord: null
+maxTurns: 20
+tools: [Read, Write, Glob, mcp__nexus__file_peek, mcp__nexus__exec]

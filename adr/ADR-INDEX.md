@@ -13,3 +13,5 @@
 | ADR-006 | LLM Gateway 멀티프로바이더 | accepted | 2026-03-06 |
 | ADR-007 | File-Convention 플러그인 시스템 | accepted | 2026-03-06 |
 | ADR-008 | Lite/Company 이중 모드 | accepted | 2026-03-06 |
+| ADR-009 | Nexus MCP Gateway 3분리 (exec/rag/health) | accepted | 2026-03-10 |
+| ADR-010 | MCP Resources — URI 기반 읽기 전용 상태 접근 | accepted | 2026-03-10 |

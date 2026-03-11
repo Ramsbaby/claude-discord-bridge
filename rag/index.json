@@ -1,9 +1,0 @@
-{
-  "version": "1.0",
-  "files": [
-    {"path": "memory.md", "description": "장기 기억 - 사용자 선호/패턴", "maxChars": 2000},
-    {"path": "decisions.md", "description": "결정 로그", "maxChars": 1000},
-    {"path": "handoff.md", "description": "세션 인계 노트", "maxChars": 1000}
-  ],
-  "lastUpdated": "2026-03-01"
-}

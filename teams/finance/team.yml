@@ -1,0 +1,5 @@
+name: "파이낸스팀 (Finance)"
+taskId: finance-monitor
+discord: jarvis-ceo
+maxTurns: 15
+tools: [Read, Write, Bash, WebSearch]

@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# preply-today.sh — Preply Cloud Run API에서 오늘 수입 요약 JSON 조회
+# preply-today.sh — Preply Cloud Run API에서 수입 요약 JSON 조회
+# 사용법: preply-today.sh [YYYY-MM-DD]
+#   날짜 생략 시 오늘 기준 조회
 # Jarvis Discord bot (boram 채널)에서 호출
 
 BOT_HOME="${BOT_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
@@ -20,6 +22,14 @@ if [[ -z "$PREPLY_API_URL" ]]; then
     exit 1
 fi
 
+# 날짜 파라미터 처리 ($1이 있으면 ?date= 쿼리 추가)
+DATE_PARAM="${1:-}"
+if [[ -n "$DATE_PARAM" ]]; then
+    API_ENDPOINT="$PREPLY_API_URL/api/today?date=$DATE_PARAM"
+else
+    API_ENDPOINT="$PREPLY_API_URL/api/today"
+fi
+
 # Cloud Run auth: gcloud identity token
 AUTH_ARGS=(-H "Accept: application/json")
 if command -v gcloud &>/dev/null; then
@@ -29,5 +39,5 @@ if command -v gcloud &>/dev/null; then
     fi
 fi
 
-curl -sf "${AUTH_ARGS[@]}" "$PREPLY_API_URL/api/today" 2>/dev/null \
+curl -sf "${AUTH_ARGS[@]}" "$API_ENDPOINT" 2>/dev/null \
     || echo '{"error":"Preply API call failed"}'

@@ -29,7 +29,7 @@ done
 for logfile in "$LOG_DIR"/*.log; do
     [[ -f "$logfile" ]] || continue
     size=$(stat -f %z "$logfile" 2>/dev/null || echo "0")
-    if [[ "$size" -gt 5242880 ]]; then  # 5MB
+    if [[ "$size" -gt 2097152 ]]; then  # 2MB (이전 5MB에서 낮춤 — 현재 로그 평균 수백KB)
         mv "$logfile" "${logfile}.$(date +%F)"
         gzip "${logfile}.$(date +%F)" 2>/dev/null || true
         touch "$logfile"
@@ -46,7 +46,7 @@ for logfile in "$LOG_DIR"/discord-bot.out.log "$LOG_DIR"/discord-bot.err.log \
                "$LOG_DIR"/watchdog.out.log "$LOG_DIR"/watchdog.err.log; do
     [[ -f "$logfile" ]] || continue
     size=$(stat -f %z "$logfile" 2>/dev/null || echo "0")
-    if [[ "$size" -gt 10485760 ]]; then  # 10MB
+    if [[ "$size" -gt 3145728 ]]; then  # 3MB (이전 10MB에서 낮춤)
         # Keep last 1000 lines, truncate the rest
         tail -1000 "$logfile" > "${logfile}.tmp"
         mv "${logfile}.tmp" "$logfile"

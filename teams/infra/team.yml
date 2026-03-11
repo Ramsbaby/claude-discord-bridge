@@ -1,0 +1,5 @@
+name: "인프라팀 (Infra)"
+taskId: infra-daily
+discord: jarvis-system
+maxTurns: 20
+tools: [Read, Write, Bash, nexus]

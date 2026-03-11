@@ -8,6 +8,10 @@ set -euo pipefail
 BOT_HOME="${BOT_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 TODAY="$(date +%F)"
 
+# Structured logging
+LOG_FILE="${BOT_HOME}/logs/decision-dispatcher.log"
+source "${BOT_HOME}/lib/log-utils.sh" 2>/dev/null || true
+
 # 의존성 검증
 for _cmd in jq python3; do
     if ! command -v "$_cmd" >/dev/null 2>&1; then
@@ -82,55 +86,66 @@ action_restart_service() {
     local decision="$1"
     local uid
     uid=$(id -u)
+    local _err
+    _err=$(mktemp)
 
     # 결정 내용에서 서비스 식별
     if echo "$decision" | grep -qi "orchestrator"; then
-        # orchestrator LaunchAgent 재시작 시도
-        if launchctl list | grep -q "jarvis.orchestrator" 2>/dev/null; then
-            launchctl kickstart -k "gui/${uid}/ai.jarvis.orchestrator" 2>/dev/null && echo "OK" && return 0
+        if launchctl list 2>/dev/null | grep -q "jarvis.orchestrator"; then
+            if launchctl kickstart -k "gui/${uid}/ai.jarvis.orchestrator" 2>"$_err"; then
+                rm -f "$_err"; echo "OK"; return 0
+            fi
+            log "WARN: orchestrator kickstart: $(cat "$_err")"
         fi
-        # plist가 없으면 bootstrap 시도
         local plist="$HOME/Library/LaunchAgents/ai.jarvis.orchestrator.plist"
         if [[ -f "$plist" ]]; then
-            launchctl bootstrap "gui/${uid}" "$plist" 2>/dev/null && echo "OK" && return 0
+            if launchctl bootstrap "gui/${uid}" "$plist" 2>"$_err"; then
+                rm -f "$_err"; echo "OK"; return 0
+            fi
+            log "WARN: orchestrator bootstrap: $(cat "$_err")"
         fi
-        echo "FAIL:orchestrator plist not found"
-        return 1
+        rm -f "$_err"; echo "FAIL:orchestrator plist not found"; return 1
     elif echo "$decision" | grep -qi "discord\|bot"; then
-        "${BOT_HOME}/scripts/l3-actions/restart-bot.sh" 2>/dev/null && echo "OK" && return 0
-        echo "FAIL:bot restart failed"
-        return 1
+        if "${BOT_HOME}/scripts/l3-actions/restart-bot.sh" 2>"$_err"; then
+            rm -f "$_err"; echo "OK"; return 0
+        fi
+        log "WARN: bot restart: $(cat "$_err")"; rm -f "$_err"
+        echo "FAIL:bot restart failed"; return 1
     elif echo "$decision" | grep -qi "watchdog"; then
-        launchctl kickstart -k "gui/${uid}/ai.jarvis.watchdog" 2>/dev/null && echo "OK" && return 0
-        echo "FAIL:watchdog restart failed"
-        return 1
+        if launchctl kickstart -k "gui/${uid}/ai.jarvis.watchdog" 2>"$_err"; then
+            rm -f "$_err"; echo "OK"; return 0
+        fi
+        log "WARN: watchdog kickstart: $(cat "$_err")"; rm -f "$_err"
+        echo "FAIL:watchdog restart failed"; return 1
     fi
-    echo "SKIP:unrecognized service"
-    return 2
+    rm -f "$_err"; echo "SKIP:unrecognized service"; return 2
+}
+
+_run_l3_action() {
+    local label="$1" script="$2"
+    local _err
+    _err=$(mktemp)
+    if "$script" 2>"$_err"; then
+        rm -f "$_err"; echo "OK"; return 0
+    fi
+    log "WARN: ${label}: $(tail -2 "$_err" | tr '\n' ' ')"; rm -f "$_err"
+    echo "FAIL:${label} failed"; return 1
 }
 
 action_kill_stale() {
-    "${BOT_HOME}/scripts/l3-actions/kill-stale-claude.sh" 2>/dev/null && echo "OK" && return 0
-    echo "FAIL:kill stale failed"
-    return 1
+    _run_l3_action "kill-stale" "${BOT_HOME}/scripts/l3-actions/kill-stale-claude.sh"
 }
 
 action_cleanup_logs() {
-    "${BOT_HOME}/scripts/l3-actions/cleanup-logs.sh" 2>/dev/null && echo "OK" && return 0
-    echo "FAIL:cleanup logs failed"
-    return 1
+    _run_l3_action "cleanup-logs" "${BOT_HOME}/scripts/l3-actions/cleanup-logs.sh"
 }
 
 action_cleanup_disk() {
-    "${BOT_HOME}/scripts/l3-actions/cleanup-results.sh" 2>/dev/null && echo "OK" && return 0
-    echo "FAIL:cleanup disk failed"
-    return 1
+    _run_l3_action "cleanup-disk" "${BOT_HOME}/scripts/l3-actions/cleanup-results.sh"
 }
 
 action_cleanup_results() {
-    "${BOT_HOME}/scripts/l3-actions/cleanup-results.sh" 2>/dev/null && echo "OK" && return 0
-    echo "FAIL:cleanup results failed"
-    return 1
+    _run_l3_action "cleanup-results" "${BOT_HOME}/scripts/l3-actions/cleanup-results.sh"
 }
 
 action_analyze_cron_failure() {
@@ -296,7 +311,7 @@ fd, tmp = tempfile.mkstemp(dir=dir_name, suffix='.json')
 with os.fdopen(fd, 'w') as f:
     json.dump(data, f, ensure_ascii=False, indent=2)
 os.replace(tmp, path)
-" 2>/dev/null || log "WARN: scorecard update failed for ${team}"
+" 2>"${BOT_HOME}/logs/dispatcher-py.err" || log "WARN: scorecard update failed for ${team} — $(tail -1 "${BOT_HOME}/logs/dispatcher-py.err")"
 }
 
 # --- 주간 벌점 감쇠 (매주 월요일) ---
@@ -340,7 +355,7 @@ else:
     with os.fdopen(fd, 'w') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
     os.replace(tmp, path)
-" 2>/dev/null || log "WARN: penalty decay failed"
+" 2>"${BOT_HOME}/logs/dispatcher-py.err" || log "WARN: penalty decay failed — $(tail -1 "${BOT_HOME}/logs/dispatcher-py.err")"
 }
 
 # --- 징계위원회 알림 생성 ---
@@ -360,7 +375,7 @@ for team_name, t in data['teams'].items():
         alerts.append(f\"[WARNING] {team_name} 팀장({t['lead']}): 벌점 {t['penalty']}점\")
 if alerts:
     print('\n'.join(alerts))
-" 2>/dev/null || true
+" 2>"${BOT_HOME}/logs/dispatcher-py.err" || log "WARN: disciplinary check failed"
 }
 
 # ============================================================

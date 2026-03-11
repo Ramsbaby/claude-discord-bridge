@@ -1,0 +1,9 @@
+name: "브랜드팀 (Brand)"
+taskId: brand-weekly
+discord: jarvis-blog
+maxTurns: 20
+tools: [Read, Write, Bash, WebSearch, Glob, Agent]
+agents:
+  career-context:
+    description: "성장팀의 최신 커리어 리포트를 읽고, {{OWNER_NAME}}이 현재 포트폴리오/블로그에서 강조해야 할 스킬과 경험을 추출한다."
+    tools: [Read, Glob]

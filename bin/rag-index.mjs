@@ -6,7 +6,8 @@
  * Targets: context .md, rag .md, results (7 days)
  */
 
-import { readFile, writeFile, stat } from 'node:fs/promises';
+import { readFile, writeFile, stat, unlink } from 'node:fs/promises';
+import { writeFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { config } from 'dotenv';
@@ -23,6 +24,14 @@ import { RAGEngine } from '../lib/rag-engine.mjs';
 
 const BOT_HOME = join(process.env.BOT_HOME || join(homedir(), '.jarvis'));
 const STATE_FILE = join(BOT_HOME, 'rag', 'index-state.json');
+const PID_FILE = join(BOT_HOME, 'state', 'rag-index.pid');
+
+// PID 센티넬: rag-watch가 rag-index 실행 중임을 감지해 충돌 회피
+writeFileSync(PID_FILE, String(process.pid));
+const _cleanupPid = () => { try { unlinkSync(PID_FILE); } catch {} };
+process.on('exit', _cleanupPid);
+process.on('SIGTERM', () => { _cleanupPid(); process.exit(0); });
+process.on('SIGINT',  () => { _cleanupPid(); process.exit(0); });
 
 async function loadState() {
   try {
@@ -34,7 +43,10 @@ async function loadState() {
 }
 
 async function saveState(state) {
-  await writeFile(STATE_FILE, JSON.stringify(state, null, 2));
+  const tmp = `${STATE_FILE}.tmp`;
+  await writeFile(tmp, JSON.stringify(state, null, 2));
+  const { rename } = await import('node:fs/promises');
+  await rename(tmp, STATE_FILE);
 }
 
 async function getMtime(filePath) {
@@ -118,19 +130,31 @@ async function main() {
   // proposals-tracker
   targets.push(join(BOT_HOME, 'rag', 'teams', 'proposals-tracker.md'));
 
-  // 5. 프로젝트 문서 (README, ROADMAP, docs/) — Jarvis가 시스템 구조를 알 수 있도록
-  for (const f of ['README.md', 'ROADMAP.md']) {
-    targets.push(join(BOT_HOME, f));
-  }
-  try {
-    const docsDir = join(BOT_HOME, 'docs');
-    const docFiles = await readdir(docsDir);
-    for (const f of docFiles) {
-      if (extname(f) === '.md') targets.push(join(docsDir, f));
-    }
-  } catch { /* docs/ 없으면 스킵 */ }
+  // 5. 프로젝트 문서: README/ROADMAP/docs/adr는 봇 대화 컨텍스트에 부적합한 개발 메모이므로 제외.
+  // Jarvis가 시스템 구조를 이해하려면 config/company-dna.md(섹션 3에서 이미 포함) 활용.
 
   // 5b. Jarvis-Vault (Obsidian Knowledge Hub) — 재귀 탐색
+  //
+  // RAG_EXCLUDED_VAULT_DIRS: 봇 대화에 부적합한 개발/아키텍처 문서 디렉토리.
+  // 이 경로에 속한 파일은 BM25/벡터 검색 결과에 노이즈를 발생시키므로 인덱싱 제외.
+  // - 06-knowledge/adr: ADR 개발 의사결정 메모 (haiku 날짜 코드, bash 패턴 등 기술 노트)
+  // - 06-knowledge/architecture: 시스템 아키텍처 다이어그램/설계 문서
+  const RAG_EXCLUDED_VAULT_DIRS = [
+    'adr',
+    'architecture',
+  ];
+
+  // RAG_EXCLUDED_VAULT_FILES: 특정 파일명 제외 (디렉토리 무관)
+  const RAG_EXCLUDED_VAULT_FILES = new Set([
+    'ARCHITECTURE.md',
+    'upgrade-roadmap-v2.md',
+    'docdd-roadmap.md',
+    'obsidian-enhancement-plan.md',
+    'PKM-Obsidian-Research.md',
+    'session-changelog.md',
+    'ADR-INDEX.md',
+  ]);
+
   async function collectVaultMd(dirPath, opts = {}) {
     const { maxAgeDays } = opts;
     try {
@@ -139,8 +163,18 @@ async function main() {
         if (e.name.startsWith('.')) continue; // .obsidian 등 제외
         const fullPath = join(dirPath, e.name);
         if (e.isDirectory()) {
+          // 개발/아키텍처 문서 디렉토리 제외
+          if (RAG_EXCLUDED_VAULT_DIRS.includes(e.name)) {
+            console.log(`[rag-index] Skip excluded dir: ${fullPath}`);
+            continue;
+          }
           await collectVaultMd(fullPath, opts); // 재귀 탐색
         } else if (extname(e.name) === '.md') {
+          // 개발 메모 파일명 제외
+          if (RAG_EXCLUDED_VAULT_FILES.has(e.name)) {
+            console.log(`[rag-index] Skip excluded file: ${fullPath}`);
+            continue;
+          }
           if (maxAgeDays) {
             const mtime = await getMtime(fullPath);
             if (!mtime || (Date.now() - mtime) / (1000 * 60 * 60 * 24) > maxAgeDays) continue;
@@ -153,6 +187,7 @@ async function main() {
   try {
     const vaultBase = join(homedir(), 'Jarvis-Vault');
     // 상시 인덱싱: 01-system, 03-teams, 04-owner, 05-career, 06-knowledge (재귀)
+    // 주의: 06-knowledge 내 adr/, architecture/ 은 collectVaultMd에서 자동 제외됨
     for (const dir of ['01-system', '03-teams', '04-owner', '05-career', '06-knowledge']) {
       await collectVaultMd(join(vaultBase, dir));
     }
@@ -216,6 +251,16 @@ async function main() {
       }
     }
   } catch { /* dir may not exist */ }
+
+  // Prune state entries for files that no longer exist (메모리/디스크 누수 방지)
+  let pruned = 0;
+  for (const filePath of Object.keys(state)) {
+    if (await getMtime(filePath) === null) {
+      delete state[filePath];
+      pruned++;
+    }
+  }
+  if (pruned > 0) console.log(`[rag-index] Pruned ${pruned} stale state entries`);
 
   // Index changed files
   for (const filePath of targets) {

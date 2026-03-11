@@ -5,6 +5,7 @@ set -euo pipefail
 # Usage: retry-wrapper.sh <task-id> <prompt> [allowed-tools] [timeout] [max-budget]
 
 BOT_HOME="${BOT_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "${BOT_HOME}/lib/log-utils.sh" 2>/dev/null || true
 RETRY_LOG="${BOT_HOME}/logs/retry.jsonl"
 
 # --- Arguments ---
@@ -173,23 +174,36 @@ check_repeated_failures() {
 
     local count=0
     if [[ -f "$cron_log" ]]; then
-        count=$(grep -c "\[${task_id}\].*\[FAILED:${fail_class}\]" "$cron_log" 2>/dev/null || echo "0")
+        count=$(grep "\[${task_id}\].*\[FAILED:${fail_class}\]" "$cron_log" 2>/dev/null \
+            | awk -v cutoff="$cutoff" '$0 >= cutoff' \
+            | wc -l | tr -d ' ' || echo "0")
     fi
 
-    # 3+ failures of same type → auto-propose
-    if [[ "$count" -ge 3 ]] && [[ -f "$tracker" ]]; then
-        local proposal_id entry
-        proposal_id="P-$(date +%m%d)-auto"
-        entry="| ${proposal_id} | [${task_id}] ${fail_class} 반복 실패 (${count}회+) | L2 | ⏳ 대기 | $(date +%F) |"
+    # 3+ failures of same type → auto-propose + Discord alert
+    if [[ "$count" -ge 3 ]]; then
+        # Discord 알림 (proposals-tracker 유무와 무관하게 항상 전송)
+        # 중복 알림 방지: 오늘 날짜 기준 sentinel 파일 확인
+        local sentinel="${BOT_HOME}/logs/.repeated-fail-${task_id}-${fail_class}-$(date +%F)"
+        if [[ ! -f "$sentinel" ]]; then
+            touch "$sentinel" 2>/dev/null || true
+            "$BOT_HOME/bin/route-result.sh" alert "$task_id" \
+                "🔴 반복 실패 감지: [$task_id] $fail_class ${count}회 연속 — 점검 필요" 2>/dev/null || true
+        fi
 
-        # Avoid duplicate proposals for same task+class today
-        if ! grep -q "\[${task_id}\] ${fail_class}" "$tracker" 2>/dev/null; then
-            # Insert before the "반복 패턴 감지" section
-            if grep -q "아직 등록된 제안 없음" "$tracker" 2>/dev/null; then
-                sed -i '' "s|_아직 등록된 제안 없음_|${entry}|" "$tracker" 2>/dev/null || true
-            else
-                sed -i '' "/^## 📌 반복 패턴 감지/i\\
+        if [[ -f "$tracker" ]]; then
+            local proposal_id entry
+            proposal_id="P-$(date +%m%d)-auto"
+            entry="| ${proposal_id} | [${task_id}] ${fail_class} 반복 실패 (${count}회+) | L2 | ⏳ 대기 | $(date +%F) |"
+
+            # Avoid duplicate proposals for same task+class today
+            if ! grep -q "\[${task_id}\] ${fail_class}" "$tracker" 2>/dev/null; then
+                # Insert before the "반복 패턴 감지" section
+                if grep -q "아직 등록된 제안 없음" "$tracker" 2>/dev/null; then
+                    sed -i '' "s|_아직 등록된 제안 없음_|${entry}|" "$tracker" 2>/dev/null || true
+                else
+                    sed -i '' "/^## 📌 반복 패턴 감지/i\\
 ${entry}" "$tracker" 2>/dev/null || true
+                fi
             fi
         fi
     fi
@@ -210,6 +224,16 @@ CRON_LOG="${BOT_HOME}/logs/cron.log"
 printf '[%s] [%s] [FAILED:%s] exit=%d retries=%d\n' \
     "$(date '+%F %H:%M:%S')" "$TASK_ID" "$FAIL_CLASS" "${exit_code:-1}" "$MAX_RETRIES" \
     >> "$CRON_LOG"
+
+# FAILED:UNKNOWN 시 stdout 앞 300자를 cron.log에 추가 기록 (원인 추적용)
+if [[ "$FAIL_CLASS" == "UNKNOWN" && -f "$RESULT_TMP" ]]; then
+    _stdout_snippet=$(head -c 300 "$RESULT_TMP" 2>/dev/null | tr '\n' ' ')
+    if [[ -n "$_stdout_snippet" ]]; then
+        printf '[%s] [%s] [STDOUT_SNIPPET] %s\n' \
+            "$(date '+%F %H:%M:%S')" "$TASK_ID" "$_stdout_snippet" \
+            >> "$CRON_LOG"
+    fi
+fi
 
 # RATE_LIMIT은 Claude Max 한도 소진 — 예측 가능한 상황, Discord 알림 불필요
 if [[ "$FAIL_CLASS" == "RATE_LIMIT" ]]; then

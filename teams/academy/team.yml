@@ -1,0 +1,9 @@
+name: "학습팀 (Academy)"
+taskId: academy-support
+discord: jarvis-ceo
+maxTurns: 20
+tools: [Read, Write, WebSearch, Glob, Agent]
+agents:
+  career-priority:
+    description: "성장팀의 최신 커리어 리포트와 스킬 갭 분석을 읽고, 이번 주 학습 미션의 우선순위를 결정한다."
+    tools: [Read, Glob]

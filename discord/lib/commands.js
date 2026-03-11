@@ -97,8 +97,8 @@ export async function handleInteraction(interaction, deps) {
   } else if (commandName === 'stop') {
     const active = activeProcesses.get(sk);
     if (active) {
-      active.proc.kill('SIGTERM');
-      setTimeout(() => { if (!active.proc.killed) active.proc.kill('SIGKILL'); }, 3000);
+      active.proc.kill();
+      // AbortController는 이진(abort or not) — SIGKILL 에스컬레이션 불필요
       await interaction.reply(t('cmd.stop.stopping', { botName: BOT_NAME }));
       log('info', 'Process stopped via /stop', { sessionKey: sk });
     } else {
@@ -385,6 +385,7 @@ export async function handleInteraction(interaction, deps) {
     const TEAM_LABELS = {
       council: '\ud83d\udd0d 감사팀', infra: '\u2699\ufe0f 인프라팀', record: '\ud83d\uddc4\ufe0f 기록팀',
       brand: '\ud83d\udce3 브랜드팀', career: '\ud83d\ude80 성장팀', academy: '\ud83d\udcda 학습팀', trend: '\ud83d\udce1 정보팀',
+      recon: '\ud83d\udd2d 정보탐험대',
     };
     // 보고서 파일 경로 (company-agent.mjs의 TEAMS 정의와 동기화)
     const reportsDir = join(BOT_HOME, 'rag', 'teams', 'reports');
@@ -405,6 +406,7 @@ export async function handleInteraction(interaction, deps) {
       brand: join(reportsDir, `brand-${kstWeek}.md`),
       career: join(reportsDir, `career-${kstWeek}.md`),
       academy: join(reportsDir, `academy-${kstWeek}.md`),
+      recon: join(reportsDir, `recon-${kstDate}.md`),
     };
 
     await interaction.deferReply();

@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-set -uo pipefail
+set -euo pipefail
 
 # watchdog.sh - Discord bot process monitor & self-healer
 # KeepAlive launchd service with internal 180s loop. Monitors discord-bot, cleans stale claude -p.
 
 # --- Configuration ---
 BOT_HOME="${BOT_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "${BOT_HOME}/lib/log-utils.sh" 2>/dev/null || true
 STATE_DIR="$BOT_HOME/watchdog"
 LOG_FILE="$BOT_HOME/logs/watchdog.log"
 HEALING_LOCK="/tmp/bot-healing.lock"
@@ -13,13 +14,17 @@ DISCORD_SERVICE="${DISCORD_SERVICE:-ai.jarvis.discord-bot}"
 DISCORD_PLIST="$HOME/Library/LaunchAgents/${DISCORD_SERVICE}.plist"
 ROUTE_RESULT="$BOT_HOME/bin/route-result.sh"
 
-MEMORY_WARN_MB=512
-MEMORY_CRITICAL_MB=1024
+MEMORY_WARN_MB=700    # 실측 스파이크 최대치(964MB) 고려: 경고는 여유있게
+MEMORY_CRITICAL_MB=1200  # 재시작 임계값: OOM 발생 전 여유 확보
 CLAUDE_STALE_MINUTES=10
+HEARTBEAT_FILE="$BOT_HOME/state/bot-heartbeat"
+HEARTBEAT_STALE_SEC=900  # 15분: 하트비트 없으면 좀비
 BACKOFF_DELAYS=(10 30 90 180 300)
 MAX_RETRIES=5
 CRASH_DECAY_HOURS=6
 FATAL_ALERT_COOLDOWN_SEC=3600  # FATAL 알림 최소 1시간 간격
+CRASH_LOOP_WINDOW_SEC=1800     # 30분 내 재시작이 3회 이상이면 크래시 루프
+CRASH_LOOP_THRESHOLD=3
 
 mkdir -p "$STATE_DIR" "$(dirname "$LOG_FILE")"
 
@@ -31,6 +36,50 @@ send_alert() {
     log "ALERT: $message"
     if [[ -x "$ROUTE_RESULT" ]]; then
         "$ROUTE_RESULT" discord "watchdog" "$message" 2>/dev/null || true
+    fi
+    # ntfy 직접 전송 — Discord 봇 다운·크래시 루프 중에도 폰 알림 도달
+    local _ntfy_topic
+    _ntfy_topic=$(jq -r '.ntfy.topic // empty' "$BOT_HOME/config/monitoring.json" 2>/dev/null || true)
+    if [[ -n "$_ntfy_topic" ]]; then
+        curl -sf --max-time 5 \
+            -H "Title: Jarvis 봇 경고" \
+            -H "Priority: high" \
+            -H "Tags: warning,robot" \
+            -d "$message" \
+            "https://ntfy.sh/${_ntfy_topic}" >/dev/null 2>&1 || true
+    fi
+}
+
+# PID 변경 추적 — 크래시 루프(30분 내 3회 이상 재시작) 감지
+# 인자: 현재 PID
+detect_crash_loop() {
+    local current_pid="$1"
+    local pid_file="$STATE_DIR/last-pid"
+    local restart_log="$STATE_DIR/restart-times"
+    local prev_pid=""
+    if [[ -f "$pid_file" ]]; then prev_pid=$(cat "$pid_file"); fi
+    echo "$current_pid" > "$pid_file"
+
+    if [[ -n "$prev_pid" && "$current_pid" != "$prev_pid" ]]; then
+        # PID 바뀜 → 재시작 이벤트 기록
+        date +%s >> "$restart_log"
+        # 오래된 항목 제거 (30분 초과)
+        local threshold=$(( $(date +%s) - CRASH_LOOP_WINDOW_SEC ))
+        if [[ -f "$restart_log" ]]; then
+            local tmp="$restart_log.tmp"
+            awk -v t="$threshold" '$1>t' "$restart_log" > "$tmp" && mv "$tmp" "$restart_log" || true
+        fi
+        local restart_count
+        restart_count=$(wc -l < "$restart_log" 2>/dev/null | tr -d ' ')
+        if (( restart_count >= CRASH_LOOP_THRESHOLD )); then
+            local last_error
+            last_error=$(tail -30 "$BOT_HOME/logs/discord-bot.log" 2>/dev/null \
+                | grep -iE "Error:|TypeError|SyntaxError|Cannot find|ENOENT|FATAL" \
+                | tail -1 || echo "로그 없음")
+            send_alert "[Bot Watchdog] CRASH LOOP: ${restart_count}회 재시작 (30분 내). 마지막 에러: ${last_error}"
+            # 크래시 루프 감지 후 restart-times 초기화 (중복 알림 방지)
+            > "$restart_log"
+        fi
     fi
 }
 
@@ -157,6 +206,22 @@ cleanup_stale_claude() {
     echo "$stale_killed"
 }
 
+# active-session 파일 기반으로 좀비 재시작을 건너뛸지 판단.
+# 0(skip) = 세션 활성 중, 1(proceed) = 재시작 진행
+_should_skip_zombie_restart() {
+    local active_session_file="$BOT_HOME/state/active-session"
+    [[ -f "$active_session_file" ]] || return 1
+    local active_ts active_age
+    active_ts=$(cat "$active_session_file" 2>/dev/null || echo "0")
+    if ! [[ "$active_ts" =~ ^[0-9]+$ ]]; then active_ts=0; fi
+    active_age=$(( ( $(date +%s) * 1000 - active_ts ) / 1000 ))
+    if (( active_age < 900 )); then
+        log "Bot has active session (age=${active_age}s), skipping zombie restart"
+        return 0
+    fi
+    return 1
+}
+
 # --- Discord bot status check ---
 check_discord_bot() {
     local status_line
@@ -252,6 +317,36 @@ _reconcile_global_count() {
     fi
 }
 
+# Stale semaphore slot 직접 정리 (STALE_TIMEOUT=180s 기준)
+_cleanup_stale_semaphore_slots() {
+    local lock_dir="/tmp/claude-discord-locks"
+    local stale_sec=180
+    local cleaned=0
+    if [[ ! -d "$lock_dir" ]]; then return; fi
+    while IFS= read -r slot_dir; do
+        local pid_file="${slot_dir}/pid"
+        local slot_age
+        slot_age=$(( $(date +%s) - $(stat -f %m "$slot_dir" 2>/dev/null || echo "$(date +%s)") ))
+        if (( slot_age > stale_sec )); then
+            # PID가 살아있으면 건드리지 않음
+            if [[ -f "$pid_file" ]]; then
+                local slot_pid
+                slot_pid=$(cat "$pid_file" 2>/dev/null || echo "")
+                if [[ -n "$slot_pid" ]] && kill -0 "$slot_pid" 2>/dev/null; then
+                    continue  # 프로세스 살아있음 — 스킵
+                fi
+            fi
+            rm -rf "$slot_dir" 2>/dev/null || true
+            cleaned=$(( cleaned + 1 ))
+            log "Stale semaphore slot removed: $slot_dir (age=${slot_age}s)"
+        fi
+    done < <(find "$lock_dir" -maxdepth 1 -name 'slot-*' -type d 2>/dev/null)
+    if (( cleaned > 0 )); then
+        _reconcile_global_count
+        log "Semaphore cleanup: ${cleaned} stale slot(s) removed — cron unblocked"
+    fi
+}
+
 # --- Single monitoring pass ---
 run_one_check() {
     check_crash_decay
@@ -263,6 +358,7 @@ run_one_check() {
     fi
 
     cleanup_zombie_agents
+    _cleanup_stale_semaphore_slots
     _reconcile_global_count
 
     local bot_status crash_count memory_mb health_status
@@ -277,16 +373,63 @@ run_one_check() {
             pid="${bot_status#RUNNING:}"
             memory_mb=$(check_memory "$pid")
             health_status="healthy"
-            decrement_crash
+            # 크래시 루프 감지 (PID 변경 빈도 추적)
+            detect_crash_loop "$pid"
 
-            if (( memory_mb >= MEMORY_CRITICAL_MB )); then
-                send_alert "[Bot Watchdog] CRITICAL: Discord bot memory=${memory_mb}MB (>=${MEMORY_CRITICAL_MB}MB). Restarting."
-                graceful_kill "$pid"
-                launchctl kickstart -k "gui/$(id -u)/$DISCORD_SERVICE" 2>/dev/null || true
-                health_status="restarted:memory"
-            elif (( memory_mb >= MEMORY_WARN_MB )); then
-                log "WARN: Discord bot memory=${memory_mb}MB (>=${MEMORY_WARN_MB}MB)"
-                health_status="warning:memory"
+            # Zombie detection: PID alive but no heartbeat for 15+ minutes
+            # Safety: also check process uptime to avoid restart loop on fresh boots
+            local proc_uptime_sec
+            proc_uptime_sec=$(ps -o etime= -p "$pid" 2>/dev/null | tr -d ' ' | awk -F'[-:]' '{
+                n = NF
+                if (n == 4) print ($1*86400 + $2*3600 + $3*60 + $4)
+                else if (n == 3) print ($1*3600 + $2*60 + $3)
+                else if (n == 2) print ($1*60 + $2)
+                else print 0
+            }')
+            if ! [[ "$proc_uptime_sec" =~ ^[0-9]+$ ]]; then proc_uptime_sec=0; fi
+
+            if (( proc_uptime_sec < HEARTBEAT_STALE_SEC )); then
+                # Process recently started — skip zombie check, give it time to connect
+                log "Bot PID=$pid uptime=${proc_uptime_sec}s < ${HEARTBEAT_STALE_SEC}s, skipping zombie check"
+            elif [[ -f "$HEARTBEAT_FILE" ]]; then
+                local hb_ts now_ts hb_age
+                hb_ts=$(cat "$HEARTBEAT_FILE" 2>/dev/null || echo "0")
+                if ! [[ "$hb_ts" =~ ^[0-9]+$ ]]; then hb_ts=0; fi
+                now_ts=$(($(date +%s) * 1000))
+                hb_age=$(( (now_ts - hb_ts) / 1000 ))
+                if (( hb_age > HEARTBEAT_STALE_SEC )); then
+                    send_alert "[Bot Watchdog] ZOMBIE: Bot PID=$pid alive but heartbeat stale (${hb_age}s, uptime=${proc_uptime_sec}s). Force restarting."
+                    if _should_skip_zombie_restart; then
+                        health_status="skipped:active_session"
+                    else
+                        launchctl kickstart -k "gui/$(id -u)/$DISCORD_SERVICE" 2>/dev/null || true
+                        health_status="restarted:zombie"
+                        increment_crash
+                    fi
+                fi
+            else
+                # No heartbeat file + uptime > threshold → zombie
+                send_alert "[Bot Watchdog] ZOMBIE: Bot PID=$pid uptime=${proc_uptime_sec}s but no heartbeat file. Force restarting."
+                if _should_skip_zombie_restart; then
+                    health_status="skipped:active_session_no_hb"
+                else
+                    launchctl kickstart -k "gui/$(id -u)/$DISCORD_SERVICE" 2>/dev/null || true
+                    health_status="restarted:zombie_no_hb"
+                    increment_crash
+                fi
+            fi
+
+            # Only decrement crash counter if bot is truly healthy
+            if [[ "$health_status" == "healthy" ]]; then
+                decrement_crash
+                if (( memory_mb >= MEMORY_CRITICAL_MB )); then
+                    send_alert "[Bot Watchdog] CRITICAL: Discord bot memory=${memory_mb}MB (>=${MEMORY_CRITICAL_MB}MB). Restarting."
+                    launchctl kickstart -k "gui/$(id -u)/$DISCORD_SERVICE" 2>/dev/null || true
+                    health_status="restarted:memory"
+                elif (( memory_mb >= MEMORY_WARN_MB )); then
+                    log "WARN: Discord bot memory=${memory_mb}MB (>=${MEMORY_WARN_MB}MB)"
+                    health_status="warning:memory"
+                fi
             fi
             ;;
 

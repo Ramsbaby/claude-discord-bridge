@@ -1,0 +1,15 @@
+name: "정보탐험대 (Recon)"
+taskId: null
+discord: jarvis-ceo
+maxTurns: 40
+tools: [Read, Write, Bash, WebSearch, Glob, Grep, Agent, nexus]
+agents:
+  scout:
+    description: "최신 AI 업데이트/경쟁사 동향을 웹에서 수집하는 정찰병"
+    tools: [WebSearch, Read]
+  analyst:
+    description: "수집된 정보를 Jarvis 시스템과 대조 분석하여 적용 가능성 평가"
+    tools: [Read, Glob, Grep, nexus]
+  architect:
+    description: "구체적인 Jarvis 업그레이드 계획을 설계하고 우선순위를 매기는 설계자"
+    tools: [Read, Write, Bash, nexus]
