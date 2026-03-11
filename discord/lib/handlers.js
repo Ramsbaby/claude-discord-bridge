@@ -64,6 +64,7 @@ import { saveSessionSummary, loadSessionSummary } from './session-summary.js';
 import { classifyBudget } from './context-budget.js';
 import { pendingQueue, enqueue, processQueue } from './queue-processor.js';
 import { MessageDebouncer } from './message-debouncer.js';
+import { ProcessorContext, createPreProcessorRegistry } from './pre-processor.js';
 
 // ---------------------------------------------------------------------------
 // Message debouncer — 연속 메시지를 1.5s 대기 후 배치로 묶어 단일 Claude 호출
@@ -72,6 +73,9 @@ import { MessageDebouncer } from './message-debouncer.js';
 const _msgDebouncer = new MessageDebouncer();
 /** cancel token restart 시 restartPrompt를 debounce 경유 후에도 보존 (messageId → prompt) */
 const _promptOverrides = new Map();
+
+// Pre-processor registry (Preply schedule/income + RAG context enrichment)
+const _preProcessorRegistry = createPreProcessorRegistry(searchRagForContext);
 
 /** 배치된 메시지 내용을 하나의 프롬프트로 합침 */
 function _buildBatchContent(messages) {
@@ -828,100 +832,14 @@ async function _processBatch(messages, { sessions, rateTracker, semaphore, activ
       return { retryNeeded, needsContinuation, lastAssistantText, toolCount };
     }
 
-    // Preply 일정 데이터 사전 주입: 보람 채널에서 일정 질문 시 cal-preply.sh 직접 호출
-    // (Claude에게 위임하지 않고 여기서 API 찔러서 데이터 주입 → 할루시네이션 방지)
-    const BORAM_CHANNEL_IDS = ['1472965899790061680', '1470011814803935274'];
-    if (PREPLY_SCHEDULE_PATTERN.test(originalPrompt) && BORAM_CHANNEL_IDS.includes(effectiveChannelId)) {
-      try {
-        const { execSync } = await import('node:child_process');
-        const botHome = process.env.BOT_HOME || `${(await import('node:os')).homedir()}/.jarvis`;
-        // 날짜 범위 추출
-        const kstNow = new Date(Date.now() + 9 * 3600 * 1000);
-        const todayStr = kstNow.toISOString().slice(0, 10);
-        let dateFrom = todayStr;
-        let dateTo = todayStr;
-        if (/어제/.test(originalPrompt)) {
-          const d = new Date(kstNow); d.setDate(d.getDate() - 1);
-          dateFrom = dateTo = d.toISOString().slice(0, 10);
-        } else if (/내일/.test(originalPrompt)) {
-          const d = new Date(kstNow); d.setDate(d.getDate() + 1);
-          dateFrom = dateTo = d.toISOString().slice(0, 10);
-        } else if (/이번\s*주/.test(originalPrompt)) {
-          const dow = kstNow.getUTCDay(); // 0=Sun
-          const mon = new Date(kstNow); mon.setDate(kstNow.getUTCDate() - (dow === 0 ? 6 : dow - 1));
-          const sun = new Date(mon); sun.setDate(mon.getUTCDate() + 6);
-          dateFrom = mon.toISOString().slice(0, 10);
-          dateTo = sun.toISOString().slice(0, 10);
-        } else {
-          const isoMatch = originalPrompt.match(/(\d{4}-\d{2}-\d{2})/);
-          const krMatch = originalPrompt.match(/(\d{1,2})월\s*(\d{1,2})일/);
-          if (isoMatch) {
-            dateFrom = dateTo = isoMatch[1];
-          } else if (krMatch) {
-            const yr = kstNow.getUTCFullYear();
-            dateFrom = dateTo = `${yr}-${String(krMatch[1]).padStart(2,'0')}-${String(krMatch[2]).padStart(2,'0')}`;
-          }
-        }
-        const raw = execSync(`bash "${botHome}/scripts/cal-preply.sh" ${dateFrom} ${dateTo}`, { timeout: 15000 }).toString().trim();
-        const calJson = JSON.parse(raw);
-        if (!calJson.error) {
-          const items = (calJson.items || []).map(e => ({
-            time: (e.start?.dateTime || '').slice(11, 16),
-            summary: e.summary || '?',
-          }));
-          const label = dateFrom === dateTo ? dateFrom : `${dateFrom} ~ ${dateTo}`;
-          userPrompt = `[Google Calendar Preply 수업 일정 — 이미 로드됨] 날짜: ${label}\n` +
-            `아래 데이터가 실제 캘린더 조회 결과다. 도구 호출 없이 이 데이터만 보고 바로 답해라.\n\n` +
-            `수업 수: ${items.length}건\n` +
-            items.map(i => `- ${i.time} ${i.summary}`).join('\n') +
-            `\n\n질문: ${originalPrompt}`;
-          log('info', 'Preply schedule pre-injected (Google Calendar)', { threadId: thread.id, dateFrom, dateTo, count: items.length });
-        }
-      } catch (e) {
-        log('warn', 'Preply schedule pre-inject failed', { error: e.message });
-      }
-    }
-
-    // Preply 수입 데이터 사전 주입: 수입/금액 질문일 때만 preply-today.sh 호출
-    // 일정/스케줄 질문은 위 블록에서 처리 (보람 채널) 또는 Claude 직접 조회 (기타)
-    if (PREPLY_INCOME_PATTERN.test(originalPrompt)) {
-      try {
-        const { execSync } = await import('node:child_process');
-        const botHome = process.env.BOT_HOME || `${(await import('node:os')).homedir()}/.jarvis`;
-        // 날짜 인자 추출: "3월 5일", "5일", "어제", "2026-03-05" 등 → YYYY-MM-DD
-        const dateMatch = originalPrompt.match(/(\d{4}-\d{2}-\d{2})|(\d{1,2})월\s*(\d{1,2})일|어제/);
-        let dateArg = '';
-        if (dateMatch) {
-          if (dateMatch[1]) {
-            dateArg = dateMatch[1];
-          } else if (dateMatch[0] === '어제') {
-            const d = new Date(); d.setDate(d.getDate() - 1);
-            dateArg = d.toISOString().slice(0, 10);
-          } else if (dateMatch[2] && dateMatch[3]) {
-            const year = new Date().getFullYear();
-            dateArg = `${year}-${String(dateMatch[2]).padStart(2, '0')}-${String(dateMatch[3]).padStart(2, '0')}`;
-          }
-        }
-        const raw = execSync(`bash "${botHome}/scripts/preply-today.sh" ${dateArg}`, { timeout: 10000 }).toString().trim();
-        const json = JSON.parse(raw);
-        const dateLabel = dateArg || '오늘';
-        userPrompt = `[Preply ${dateLabel} 수입 데이터 — 이미 로드됨]\n아래 JSON이 실제 Preply 수입 데이터다. 도구 호출 없이 이 데이터만 보고 바로 답해라. Google Calendar, MCP, 세션 재시작 언급 절대 금지.\n\n${JSON.stringify(json, null, 2)}\n\n질문: ${originalPrompt}`;
-        log('info', 'Preply income data pre-injected', { threadId: thread.id, dateArg, count: json.scheduledCount });
-      } catch (e) {
-        log('warn', 'Preply income pre-inject failed', { error: e.message });
-      }
-    }
-
-    // RAG 조건부 주입: 과거 참조 질문일 때만, Preply 관련 질문은 제외
-    // (Preply는 이미 위에서 API 데이터 또는 gog calendar로 처리)
-    if (PAST_REF_PATTERN.test(originalPrompt) && !PREPLY_PATTERN.test(originalPrompt)) {
-      const ragContext = await searchRagForContext(originalPrompt).catch(() => null);
-      if (ragContext) {
-        const ragSnippet = ragContext.length > 600 ? ragContext.slice(0, 600) + '...' : ragContext;
-        userPrompt = ragSnippet + '\n\n' + userPrompt;
-        log('info', 'RAG injected (past-ref)', { threadId: thread.id, ragLen: ragSnippet.length });
-      }
-    }
+    // Pre-process: enrich userPrompt (Preply schedule/income data injection, RAG context)
+    const preCtx = new ProcessorContext({
+      originalPrompt,
+      channelId: effectiveChannelId,
+      threadId: thread.id,
+      botHome: process.env.BOT_HOME || `${homedir()}/.jarvis`,
+    });
+    userPrompt = await _preProcessorRegistry.run(userPrompt, preCtx);
 
     // First attempt
     let runResult = await runClaude(sessionId, streamer);

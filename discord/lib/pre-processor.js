@@ -1,0 +1,211 @@
+/**
+ * pre-processor.js — Message pre-processors: enrich userPrompt before Claude is called.
+ * Each processor: matches(ctx) → bool, enrich(prompt, ctx) → string|null
+ *
+ * Inspired by Omni's ToolHandler Protocol pattern.
+ */
+
+import { homedir } from 'node:os';
+import { log } from './claude-runner.js';
+import { PAST_REF_PATTERN, searchRagForContext as _defaultSearch } from './rag-helper.js';
+
+// ---------------------------------------------------------------------------
+// Patterns (copied verbatim from handlers.js lines 154–157)
+// ---------------------------------------------------------------------------
+const PREPLY_INCOME_PATTERN = /수입|매출|레슨\s*금액|얼마|정산|취소\s*보상|오늘\s*얼마/i;
+const PREPLY_SCHEDULE_PATTERN = /프레플리|preply|오늘\s*수업|내일\s*수업|이번\s*주\s*수업|수업\s*일정|수업\s*몇|레슨|오늘\s*일정|내일\s*일정|이번\s*주\s*일정/i;
+// 하위 호환: 두 패턴 합집합
+const PREPLY_PATTERN = new RegExp(`${PREPLY_INCOME_PATTERN.source}|${PREPLY_SCHEDULE_PATTERN.source}`, 'i');
+
+const BORAM_CHANNEL_IDS = ['1472965899790061680', '1470011814803935274'];
+
+// ---------------------------------------------------------------------------
+// ProcessorContext — immutable snapshot passed to every processor
+// ---------------------------------------------------------------------------
+export class ProcessorContext {
+  constructor({ originalPrompt, channelId, threadId, botHome }) {
+    this.originalPrompt = originalPrompt; // immutable original
+    this.channelId = channelId;
+    this.threadId = threadId;
+    this.botHome = botHome;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// BasePreProcessor — processors extend this
+// ---------------------------------------------------------------------------
+export class BasePreProcessor {
+  get name() { return 'BasePreProcessor'; }
+  matches(_ctx) { return false; }
+  async enrich(_prompt, _ctx) { return null; } // null = no change
+}
+
+// ---------------------------------------------------------------------------
+// PreprocessorRegistry — runs processors sequentially, threading prompt through
+// ---------------------------------------------------------------------------
+export class PreProcessorRegistry {
+  #processors = [];
+
+  register(processor) {
+    this.#processors.push(processor);
+    return this; // fluent
+  }
+
+  // Run all matching processors in order, threading prompt through each
+  async run(prompt, ctx) {
+    let result = prompt;
+    for (const p of this.#processors) {
+      if (p.matches(ctx)) {
+        try {
+          const enriched = await p.enrich(result, ctx);
+          if (enriched != null) result = enriched;
+        } catch (err) {
+          log('warn', `[pre-processor] ${p.name} failed`, { error: err.message });
+        }
+      }
+    }
+    return result;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// PreplyScheduleProcessor
+// Mirrors handlers.js lines 831–883: cal-preply.sh injection for Boram channel
+// ---------------------------------------------------------------------------
+export class PreplyScheduleProcessor extends BasePreProcessor {
+  get name() { return 'PreplyScheduleProcessor'; }
+
+  matches(ctx) {
+    return PREPLY_SCHEDULE_PATTERN.test(ctx.originalPrompt) &&
+           BORAM_CHANNEL_IDS.includes(ctx.channelId);
+  }
+
+  async enrich(prompt, ctx) {
+    const { execSync } = await import('node:child_process');
+    const botHome = ctx.botHome || `${homedir()}/.jarvis`;
+
+    // 날짜 범위 추출 (handlers.js lines 839–864)
+    const kstNow = new Date(Date.now() + 9 * 3600 * 1000);
+    const todayStr = kstNow.toISOString().slice(0, 10);
+    let dateFrom = todayStr;
+    let dateTo = todayStr;
+    if (/어제/.test(ctx.originalPrompt)) {
+      const d = new Date(kstNow); d.setDate(d.getDate() - 1);
+      dateFrom = dateTo = d.toISOString().slice(0, 10);
+    } else if (/내일/.test(ctx.originalPrompt)) {
+      const d = new Date(kstNow); d.setDate(d.getDate() + 1);
+      dateFrom = dateTo = d.toISOString().slice(0, 10);
+    } else if (/이번\s*주/.test(ctx.originalPrompt)) {
+      const dow = kstNow.getUTCDay(); // 0=Sun
+      const mon = new Date(kstNow); mon.setUTCDate(kstNow.getUTCDate() - (dow === 0 ? 6 : dow - 1));
+      const sun = new Date(mon); sun.setUTCDate(mon.getUTCDate() + 6);
+      dateFrom = mon.toISOString().slice(0, 10);
+      dateTo = sun.toISOString().slice(0, 10);
+    } else {
+      const isoMatch = ctx.originalPrompt.match(/(\d{4}-\d{2}-\d{2})/);
+      const krMatch = ctx.originalPrompt.match(/(\d{1,2})월\s*(\d{1,2})일/);
+      if (isoMatch) {
+        dateFrom = dateTo = isoMatch[1];
+      } else if (krMatch) {
+        const yr = kstNow.getUTCFullYear();
+        dateFrom = dateTo = `${yr}-${String(krMatch[1]).padStart(2,'0')}-${String(krMatch[2]).padStart(2,'0')}`;
+      }
+    }
+
+    const raw = execSync(`bash "${botHome}/scripts/cal-preply.sh" ${dateFrom} ${dateTo}`, { timeout: 15000 }).toString().trim();
+    const calJson = JSON.parse(raw);
+    if (calJson.error) return null;
+
+    const items = (calJson.items || []).map(e => ({
+      time: (e.start?.dateTime || '').slice(11, 16),
+      summary: e.summary || '?',
+    }));
+    const label = dateFrom === dateTo ? dateFrom : `${dateFrom} ~ ${dateTo}`;
+    const enriched = `[Google Calendar Preply 수업 일정 — 이미 로드됨] 날짜: ${label}\n` +
+      `아래 데이터가 실제 캘린더 조회 결과다. 도구 호출 없이 이 데이터만 보고 바로 답해라.\n\n` +
+      `수업 수: ${items.length}건\n` +
+      items.map(i => `- ${i.time} ${i.summary}`).join('\n') +
+      `\n\n질문: ${ctx.originalPrompt}`;
+
+    log('info', 'Preply schedule pre-injected (Google Calendar)', { threadId: ctx.threadId, dateFrom, dateTo, count: items.length });
+    return enriched;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// PreplyIncomeProcessor
+// Mirrors handlers.js lines 885–913: preply-today.sh injection
+// ---------------------------------------------------------------------------
+export class PreplyIncomeProcessor extends BasePreProcessor {
+  get name() { return 'PreplyIncomeProcessor'; }
+
+  matches(ctx) {
+    return PREPLY_INCOME_PATTERN.test(ctx.originalPrompt);
+  }
+
+  async enrich(prompt, ctx) {
+    const { execSync } = await import('node:child_process');
+    const botHome = ctx.botHome || `${homedir()}/.jarvis`;
+
+    // 날짜 인자 추출: "3월 5일", "5일", "어제", "2026-03-05" 등 → YYYY-MM-DD (handlers.js lines 892–903)
+    const dateMatch = ctx.originalPrompt.match(/(\d{4}-\d{2}-\d{2})|(\d{1,2})월\s*(\d{1,2})일|어제/);
+    let dateArg = '';
+    if (dateMatch) {
+      if (dateMatch[1]) {
+        dateArg = dateMatch[1];
+      } else if (dateMatch[0] === '어제') {
+        const d = new Date(); d.setDate(d.getDate() - 1);
+        dateArg = d.toISOString().slice(0, 10);
+      } else if (dateMatch[2] && dateMatch[3]) {
+        const year = new Date().getFullYear();
+        dateArg = `${year}-${String(dateMatch[2]).padStart(2, '0')}-${String(dateMatch[3]).padStart(2, '0')}`;
+      }
+    }
+
+    const raw = execSync(`bash "${botHome}/scripts/preply-today.sh" ${dateArg}`, { timeout: 10000 }).toString().trim();
+    const json = JSON.parse(raw);
+    const dateLabel = dateArg || '오늘';
+    const enriched = `[Preply ${dateLabel} 수입 데이터 — 이미 로드됨]\n아래 JSON이 실제 Preply 수입 데이터다. 도구 호출 없이 이 데이터만 보고 바로 답해라. Google Calendar, MCP, 세션 재시작 언급 절대 금지.\n\n${JSON.stringify(json, null, 2)}\n\n질문: ${ctx.originalPrompt}`;
+
+    log('info', 'Preply income data pre-injected', { threadId: ctx.threadId, dateArg, count: json.scheduledCount });
+    return enriched;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// RagContextProcessor
+// Mirrors handlers.js lines 915–924: RAG context prepend for past-reference queries
+// ---------------------------------------------------------------------------
+export class RagContextProcessor extends BasePreProcessor {
+  #searchFn;
+
+  constructor(searchFn) {
+    super();
+    this.#searchFn = searchFn;
+  }
+
+  get name() { return 'RagContextProcessor'; }
+
+  matches(ctx) {
+    return PAST_REF_PATTERN.test(ctx.originalPrompt) &&
+           !PREPLY_PATTERN.test(ctx.originalPrompt);
+  }
+
+  async enrich(prompt, ctx) {
+    const ragContext = await this.#searchFn(ctx.originalPrompt).catch(() => null);
+    if (!ragContext) return null;
+    const ragSnippet = ragContext.length > 600 ? ragContext.slice(0, 600) + '...' : ragContext;
+    log('info', 'RAG injected (past-ref)', { threadId: ctx.threadId, ragLen: ragSnippet.length });
+    return ragSnippet + '\n\n' + prompt;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Factory
+// ---------------------------------------------------------------------------
+export function createPreProcessorRegistry(searchFn = _defaultSearch) {
+  return new PreProcessorRegistry()
+    .register(new PreplyScheduleProcessor())
+    .register(new PreplyIncomeProcessor())
+    .register(new RagContextProcessor(searchFn));
+}

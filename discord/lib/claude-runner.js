@@ -19,6 +19,11 @@ import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { homedir } from 'node:os';
 import { userMemory } from './user-memory.js';
+import {
+  buildIdentitySection, buildLanguageSection, buildPersonaSection,
+  buildPrinciplesSection, buildFormatSection, buildToolsSection,
+  buildSafetySection, buildUserContextSection, isPreplyQuery, buildPreplySection,
+} from './prompt-sections.js';
 
 // ---------------------------------------------------------------------------
 // Feedback detection — recognize user signals for learning loop
@@ -463,36 +468,26 @@ export async function* createClaudeSession(prompt, {
 
   const BOT_HOME = process.env.BOT_HOME || `${homedir()}/.jarvis`;
 
-  // 5. Build system prompt
+  // 5. Build system prompt — stable sections contribute to session hash
   const systemParts = [
     // ── 정체성 ──────────────────────────────────────────────────────────────
-    `당신은 ${process.env.BOT_NAME || 'Jarvis'} — ${ownerName}님의 개인 AI 집사입니다. 이름은 항상 Jarvis. "Claude"라고 절대 자칭하지 마세요.`,
-    '한국어 존댓말 기본. 단순 질문은 짧게, 분석·코딩은 CLI와 동일한 깊이로.',
+    buildIdentitySection({ botName: process.env.BOT_NAME, ownerName }),
+    buildLanguageSection(),
 
     // ── 페르소나 ─────────────────────────────────────────────────────────────
-    `토니 스타크의 자비스: 유능하고 직설적인 집사. 아첨 없음. ${ownerName}님이 틀리면 바로 짚는다. 추측은 "추측입니다" 명시. 모르면 모른다고 인정.`,
+    buildPersonaSection({ ownerName }),
 
-    // ── 실행 원칙 ────────────────────────────────────────────────────────────
-    '지시(해줘/고쳐/처리해/진행해/만들어)는 직전 대화 흐름에서 대상을 파악 후 승인 없이 즉시 실행. 결과만 보고. 삭제·배포·서버 재시작만 사전 확인.',
-    '도구 실행 후 실제 출력이 있을 때만 "완료". 출력 없거나 오류면 "실패: [이유]" 보고. 추측 포장 금지.',
-    '이미 pre-inject된 데이터([…— 이미 로드됨] 태그)가 있으면 같은 도구 재호출 금지.',
-
-    // ── 포맷 금지 ────────────────────────────────────────────────────────────
-    'Discord 모바일: 테이블(`| |`) 기본 금지 → `- **항목** · 값` 리스트 사용. 채널 페르소나가 허용한 경우만 예외.',
-    '"진행할까요?", "알겠습니다!", "제가 도와드리겠습니다" 금지. 결과·원인·조치만 보고.',
-
-    // ── Preply 수업 ──────────────────────────────────────────────────────────
-    `Preply 수업 일정("오늘 수업", "내일 수업", "이번 주 수업") → bash ${BOT_HOME}/scripts/cal-preply.sh [YYYY-MM-DD] 실행 후 결과 포맷. 수입/금액("수입", "얼마") → bash ${BOT_HOME}/scripts/preply-today.sh [YYYY-MM-DD]. MCP 설정·Claude Code 재시작 언급 절대 금지.`,
+    // ── 실행 원칙 + 포맷 금지 ────────────────────────────────────────────────
+    buildPrinciplesSection(),
+    buildFormatSection(),
 
     // ── 도구 선택 ────────────────────────────────────────────────────────────
-    '[코드] Serena: get_symbols_overview → find_symbol(include_body=true) → search_for_pattern → find_referencing_symbols. 수정: replace_symbol_body / insert_after/before_symbol / Edit. 파일 전체 Read는 최후 수단.',
-    '[시스템] Nexus: exec(cmd) / scan(병렬) / cache_exec(TTL) / log_tail / health / file_peek. [기억] rag_search — "저번에 말한", "기억해?", "아까 얘기한" 처럼 명시적으로 이전 대화를 참조할 때만. "과거", "이전", "파라미터" 단어 단독으로는 rag_search 호출 금지 — 대화 흐름에서 의미 파악 우선.',
-    `[정보탐험] "정보탐험"/"recon" 키워드 → Bash background로 \`node ${BOT_HOME}/discord/lib/company-agent.mjs --team recon\` 실행 후 즉시 "🔭 정보탐험 시작했습니다. 7~11분 소요, 결과는 #jarvis-ceo 채널로 전송됩니다." 응답. await 금지(90초 타임아웃).`,
+    buildToolsSection({ botHome: BOT_HOME }),
 
     // ── 안전 ─────────────────────────────────────────────────────────────────
-    'rm -rf/shutdown/kill -9/DROP TABLE/API 키 노출 금지. launchctl 일절 사용 불가(봇 자신이 실행하면 대화 강제 중단). 인프라 확인은 mcp__nexus__health만.',
-    'Claude Code CLI 전용 안내("Claude Code 재시작", "MCP 활성화", "/clear", "새 세션") 절대 금지 — 이 봇은 Discord 봇.',
+    buildSafetySection(),
 
+    // ── 사용자 컨텍스트 ──────────────────────────────────────────────────────
     ...userContextParts,
   ];
 
@@ -506,6 +501,12 @@ export async function* createClaudeSession(prompt, {
   //   - usageSummary contains time-varying data ("리셋 Xm 후") → same issue
   const stableSystemPrompt = systemParts.join('\n');
   const promptVersion = createHash('md5').update(stableSystemPrompt).digest('hex').slice(0, 8);
+
+  // Dynamic sections: injected after hash (don't affect session continuity)
+  // Preply tool guidance — only when query is Preply-related (saves ~50 tokens on unrelated queries)
+  if (isPreplyQuery(prompt)) {
+    systemParts.push(buildPreplySection({ botHome: BOT_HOME }));
+  }
 
   // Per-user long-term memory (added AFTER hash — memory updates don't force session reset)
   if (userId) {
