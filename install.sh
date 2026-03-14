@@ -2,10 +2,58 @@
 set -euo pipefail
 
 # install.sh — Jarvis one-command setup
-# Usage: ./install.sh [--docker | --local]
+# Usage: ./install.sh [--docker | --local] [--tier 0|1|2]
+#
+# Dependency tiers:
+#   --tier 0  Core only: discord.js + dotenv (~150MB). No SQLite, no RAG, no embeddings.
+#             Good for: testing, resource-constrained systems, Discord-only use.
+#   --tier 1  Standard: + SQLite history + YAML support (~350MB). No LanceDB/OpenAI.
+#             Good for: most users who don't need vector search.
+#   --tier 2  Full: + LanceDB vector search + OpenAI embeddings (~700MB). (default)
+#             Good for: RAG-powered memory, semantic search across notes.
 
 BOT_HOME="$(cd "$(dirname "$0")" && pwd)"
-MODE="${1:---local}"
+INSTALL_MODE="--local"
+TIER=2
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --docker) INSTALL_MODE="--docker" ;;
+        --local)  INSTALL_MODE="--local" ;;
+        --tier)
+            shift
+            TIER="$1"
+            if [[ "$TIER" != "0" && "$TIER" != "1" && "$TIER" != "2" ]]; then
+                echo "Error: --tier must be 0, 1, or 2"
+                exit 1
+            fi
+            ;;
+        --tier=*)
+            TIER="${1#--tier=}"
+            if [[ "$TIER" != "0" && "$TIER" != "1" && "$TIER" != "2" ]]; then
+                echo "Error: --tier must be 0, 1, or 2"
+                exit 1
+            fi
+            ;;
+        -h|--help)
+            echo "Usage: ./install.sh [--docker | --local] [--tier 0|1|2]"
+            echo ""
+            echo "  --local         Install dependencies locally (default)"
+            echo "  --docker        Build and run with Docker Compose"
+            echo "  --tier 0        Core only: discord.js + dotenv (~150MB)"
+            echo "  --tier 1        Standard: + SQLite + YAML (~350MB)"
+            echo "  --tier 2        Full: + LanceDB + OpenAI embeddings (~700MB, default)"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1. Run ./install.sh --help for usage."
+            exit 1
+            ;;
+    esac
+    shift
+done
+
+MODE="$INSTALL_MODE"
 
 # --- Colors ---
 RED='\033[0;31m'
@@ -270,9 +318,26 @@ install_local() {
         warn "discord/.env needs configuration — continuing with setup..."
     fi
 
-    info "Installing Node dependencies..."
+    info "Installing Node dependencies (Tier ${TIER})..."
     cd "${BOT_HOME}/discord"
-    npm install --production
+    case "$TIER" in
+        0)
+            warn "Tier 0: core only — SQLite history, RAG, and vector search are disabled"
+            # Install only the essential packages explicitly
+            npm install --production \
+                discord.js dotenv js-yaml chokidar
+            ;;
+        1)
+            warn "Tier 1: standard — LanceDB vector search and OpenAI embeddings are disabled"
+            warn "RAG will use BM25 full-text search only (no vector embeddings)"
+            # Install without the heavy optional packages
+            npm install --production
+            npm uninstall lancedb @lancedb/lancedb openai 2>/dev/null || true
+            ;;
+        2|*)
+            npm install --production
+            ;;
+    esac
 
     # Ensure relative node_modules symlinks
     if [ ! -e "${BOT_HOME}/lib/node_modules" ]; then
@@ -299,8 +364,17 @@ install_local() {
     setup_crontab
 
     echo ""
-    echo -e "${GREEN}${BOLD}Installation complete!${NC}"
+    echo -e "${GREEN}${BOLD}Installation complete! (Tier ${TIER})${NC}"
     echo ""
+    if [[ "$TIER" == "0" ]]; then
+        echo -e "  ${YELLOW}Tier 0 — Features disabled:${NC} SQLite chat history, RAG search, vector embeddings"
+        echo -e "  ${CYAN}Upgrade later:${NC} ./install.sh --local --tier 2"
+        echo ""
+    elif [[ "$TIER" == "1" ]]; then
+        echo -e "  ${YELLOW}Tier 1 — Features disabled:${NC} Vector search (BM25 full-text search still works)"
+        echo -e "  ${CYAN}Upgrade later:${NC} cd ${BOT_HOME}/discord && npm install lancedb openai"
+        echo ""
+    fi
     echo -e "  ${CYAN}Next steps:${NC}"
     echo "  1. Run the setup wizard: ${BOT_HOME}/bin/jarvis-init.sh"
     echo "  2. Edit discord/.env with your tokens"
@@ -313,9 +387,12 @@ case "$MODE" in
     --docker) install_docker ;;
     --local)  install_local ;;
     *)
-        echo "Usage: ./install.sh [--docker | --local]"
+        echo "Usage: ./install.sh [--docker | --local] [--tier 0|1|2]"
         echo "  --local   Install dependencies locally (default, recommended)"
         echo "  --docker  Build and run with Docker Compose"
+        echo "  --tier 0  Core only (~150MB, no SQLite/RAG/embeddings)"
+        echo "  --tier 1  Standard (~350MB, no LanceDB/OpenAI)"
+        echo "  --tier 2  Full (~700MB, all features, default)"
         exit 1
         ;;
 esac
