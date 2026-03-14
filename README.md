@@ -10,7 +10,7 @@
 <h1 align="center">Jarvis — AI Company-in-a-Box</h1>
 
 <p align="center">
-  <strong>Your Claude Max subscription is idle 23 hours a day.<br>This turns it into a 24/7 AI operations system — 8 AI teams, cron orchestration, knowledge management — at $0 extra cost.</strong>
+  <strong>Your Claude Max subscription is idle 23 hours a day.<br>This turns it into a 24/7 AI operations system — 8 AI teams, 30 cron tasks, knowledge management — at $0 extra cost.</strong>
 </p>
 
 <p align="center">
@@ -18,15 +18,6 @@
 </p>
 
 ---
-
-<p align="center">
-  <img src="docs/demo.gif" alt="Demo: Discord conversation with streaming response and tool indicators" width="700">
-  <br>
-  <sub>Real-time streaming · tool-use indicators · session continuity across threads</sub>
-</p>
-
-> **No demo.gif yet?** Record one with [Kap](https://getkap.co) (macOS) or [Peek](https://github.com/phw/peek) (Linux):
-> Show a Discord message → bot thinking reaction → streamed response → ✅ done + cost embed.
 
 ---
 
@@ -37,7 +28,7 @@
 | **What** | Self-hosted Discord bot backed by `claude -p` (Claude Code's headless CLI) |
 | **Who** | Claude Max subscribers who want $0 extra AI costs |
 | **How** | Spawns `claude -p` per message, streams output to Discord in real-time |
-| **Why** | 30 scheduled cron tasks + 8 AI teams + reactive chat, with 3+ hour sessions |
+| **Why** | 30 cron tasks + 8 AI teams + reactive chat + RAG memory, at zero extra cost |
 
 ```
 You type in Discord  →  claude -p answers  →  streamed reply in your thread
@@ -129,7 +120,7 @@ Every task has **exponential backoff retry** (3 attempts), **rate-limit awarenes
 | Context management | **Nexus CIG** (98% compression) | None / basic | Basic |
 | RAG / memory | LanceDB (vector + BM25 hybrid) | Rarely | Plugin-dependent |
 | Self-healing | 4-layer watchdog + AI auto-recovery | Manual restart | Varies |
-| AI team agents | 7 specialized teams | None | None |
+| AI team agents | 8 specialized teams | None | None |
 | KPI + auto-tuning | Anomaly detection + L3 approval | None | None |
 | Human approval gate | Discord button workflow | None | None |
 | Session continuity | `--resume` multi-turn threads | Per-message | Varies |
@@ -596,6 +587,7 @@ The RAG engine runs an incremental index hourly. When you ask a question, releva
 │   ├── bot-preflight.sh        # Pre-start validation + AI auto-recovery trigger
 │   ├── bot-heal.sh             # AI auto-recovery (runs in tmux PTY, calls claude -p)
 │   ├── bot-watchdog.sh         # Discord bot process monitor
+│   ├── db-optimize.sh          # SQLite WAL checkpoint + optimize (cron Sun/Thu 02:00)
 │   ├── deploy-with-smoke.sh    # 47-item smoke test deploy gate
 │   ├── jarvis-init.sh          # Fresh install initializer
 │   ├── kill-team.sh            # Batch terminate team agents
@@ -625,6 +617,8 @@ The RAG engine runs an incremental index hourly. When you ask a question, releva
 │   ├── event-trigger.sh        # Condition-based proactive triggers
 │   ├── smart-standup.sh        # Owner-aware morning standup
 │   ├── jarvis-auditor.sh       # Automated code quality scanner
+│   ├── jira-sync.sh            # JIRA work history → Vault + Discord
+│   ├── log-rotate.sh           # Log rotation (daily 03:15)
 │   ├── measure-kpi.sh          # Weekly team KPI measurement
 │   ├── kpi-anomaly-detector.sh # KPI anomaly detection + L3 bridge
 │   ├── apply-kpi-decisions.sh  # Auto-tuning applier (dry-run default)
@@ -686,7 +680,7 @@ bash scripts/e2e-test.sh
 # 4. Submit a pull request
 ```
 
-See [ROADMAP.md](ROADMAP.md) for planned features. Current completion: **82%**, target: **90%**.
+See [ROADMAP.md](ROADMAP.md) for planned features.
 
 ---
 

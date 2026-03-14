@@ -10,7 +10,7 @@
 <h1 align="center">Jarvis — AI Company-in-a-Box</h1>
 
 <p align="center">
-  <strong>Claude Max 구독은 하루 23시간 놀고 있습니다.<br>이것을 7개 AI 팀이 운영하는 24/7 AI 운영 시스템으로 만들어 줍니다 — 추가 비용 $0.</strong>
+  <strong>Claude Max 구독은 하루 23시간 놀고 있습니다.<br>8개 AI 팀, 30개 크론 태스크, RAG 지식관리 — 추가 비용 $0으로 24/7 AI 운영 시스템을 만들어 줍니다.</strong>
 </p>
 
 <p align="center">
@@ -18,12 +18,6 @@
 </p>
 
 ---
-
-<p align="center">
-  <img src="docs/demo.gif" alt="데모: Discord 대화, 스트리밍 응답, 툴 사용 표시" width="700">
-  <br>
-  <sub>실시간 스트리밍 · 툴 사용 이모지 표시 · 스레드 세션 지속</sub>
-</p>
 
 ---
 
@@ -34,7 +28,7 @@
 | **무엇** | `claude -p` (Claude Code CLI)를 백엔드로 한 자체 호스팅 Discord 봇 |
 | **누구를 위해** | Claude Max 구독자 중 추가 API 비용 없이 쓰고 싶은 분 |
 | **어떻게** | 메시지마다 `claude -p` 프로세스를 생성, 응답을 Discord에 실시간 스트리밍 |
-| **왜** | 반응형 채팅 + 24개 예약 크론 태스크, 3시간+ 세션, 자가복구 인프라 |
+| **왜** | 30개 크론 태스크 + 8개 AI 팀 + 반응형 채팅 + RAG 메모리, 추가 비용 $0 |
 
 ```
 Discord에 메시지 입력  →  claude -p 응답  →  스레드에 실시간 스트리밍
@@ -117,7 +111,7 @@ Nexus CIG가 모든 툴 호출 결과를 Claude 컨텍스트에 들어가기 전
 
 | | **이 봇** | API 기반 봇 | Clawdbot |
 |---|---|---|---|
-| 동작 방식 | **능동형** (24개 크론 태스크) | 반응형만 | 반응형만 |
+| 동작 방식 | **능동형** (30개 크론 + 8개 AI 팀) | 반응형만 | 반응형만 |
 | 컨텍스트 관리 | **Nexus CIG** (98% 압축) | 없음 / 기본 | 기본 |
 | RAG / 메모리 | LanceDB (벡터 + BM25 하이브리드) | 드물게 | 플러그인 의존 |
 | 자가복구 | 4계층 워치독 + AI 자동복구 | 수동 재시작 | 다양 |
@@ -418,8 +412,14 @@ RAG 엔진은 매시간 증분 인덱싱. 질문 시 관련 컨텍스트를 `cla
 │   ├── tasks.json.example      # 3개 시작용 크론 태스크 예시
 │   └── monitoring.json.example # 웹훅 라우팅 설정
 ├── scripts/
-│   ├── watchdog.sh             # 봇 헬스 모니터
-│   ├── launchd-guardian.sh     # LaunchAgent 자동 복구
+│   ├── watchdog.sh             # 봇 헬스 모니터 (Layer 2)
+│   ├── launchd-guardian.sh     # LaunchAgent 자동 복구 (Layer 3)
+│   ├── jira-sync.sh            # JIRA 작업 이력 → Vault + Discord
+│   ├── log-rotate.sh           # 로그 로테이션 (매일 03:15)
+│   ├── event-trigger.sh        # 조건 기반 능동형 트리거
+│   ├── smart-standup.sh        # 접속 감지 모닝 스탠드업
+│   ├── jarvis-auditor.sh       # 자동 코드 품질 스캐너
+│   ├── vault-sync.sh           # Obsidian Vault 동기화
 │   └── e2e-test.sh             # 50개 E2E 테스트
 ├── teams/                      # 선언적 팀 정의 (YAML + 템플릿)
 │   ├── council/                # 전략팀 (council-insight)
@@ -473,7 +473,7 @@ bash scripts/e2e-test.sh
 # 4. Pull Request 제출
 ```
 
-예정 기능은 [ROADMAP.md](ROADMAP.md) 참조. 현재 완성도: **82%**, 목표: **90%**.
+예정 기능은 [ROADMAP.md](ROADMAP.md) 참조.
 
 ---
 
