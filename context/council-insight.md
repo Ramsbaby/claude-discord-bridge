@@ -40,15 +40,30 @@
 > council-insight 갱신: [날짜 시간]
 
 ## 📊 시장 신호
-시장 신호: [DNA-C001 기준] — SAFE/CAUTION/CRITICAL
+[DNA-C001 기준] — SAFE/CAUTION/CRITICAL
+- TQQQ: $XX.XX (손절선 $47 대비 여유 $X.XX)
+- 주요 매크로: [금리/VIX/달러 등 1줄]
 
 ## 💻 시스템 상태
-크론 성공률: XX% — GREEN/YELLOW/RED | [주목 이슈 한 줄]
+크론 성공률: XX% (XX/XX) — GREEN/YELLOW/RED
+- 주목 이슈: [오늘 가장 중요한 발견 1가지]
+- 실패 태스크: [있으면 명시, 없으면 '없음']
 
-## 🎯 CEO 내일 주목사항
-[내일 아침 오너가 반드시 알아야 할 것 1가지, 1줄]
+## 🏢 팀별 현황
+- brand: GREEN/YELLOW/RED — [한 줄 요약]
+- infra: GREEN/YELLOW/RED — [한 줄 요약]
+- record: GREEN/YELLOW/RED — [한 줄 요약]
+- academy: GREEN/YELLOW/RED — [한 줄 요약]
+
+## 🔗 크로스채널 인사이트
+- 반복 이슈: [2개 이상 팀 공통 문제, 없으면 '없음']
+- 공통 블로커: [있으면 기술]
+- 기회 신호: [있으면 기술]
+
+## 🎯 내일 대표님 주목사항
+[내일 아침 반드시 알아야 할 것 1가지 — 구체적으로]
 ```
-내일 모닝스탠드업이 이 파일을 읽는다. 팀별 현황, 리스크, 크로스채널 인사이트 포함 가능.
+내일 모닝스탠드업이 이 파일을 읽는다. 생략 없이 모든 섹션 채울 것.
 
 **② 모닝스탠드업 CEO 인계사항 주입**
 `~/.jarvis/context/morning-standup.md` 의 "CEO 인계사항" 섹션 내용을 오늘 분석 결과로 업데이트:
