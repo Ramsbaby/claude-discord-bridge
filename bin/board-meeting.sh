@@ -19,7 +19,9 @@ RESULTS_DIR="${BOT_HOME}/results/board-meeting"
 RESULT_FILE="${RESULTS_DIR}/${TIMESTAMP}.md"
 STDERR_LOG="${BOT_HOME}/logs/claude-stderr-board-meeting.log"
 
-for cmd in gtimeout claude jq; do
+_TIMEOUT_CMD=$(command -v gtimeout 2>/dev/null || command -v timeout 2>/dev/null || echo "")
+
+for cmd in claude jq; do
     command -v "$cmd" >/dev/null 2>&1 || { echo "ERROR: $cmd not found" >&2; exit 2; }
 done
 
@@ -327,7 +329,7 @@ if $IS_MACOS; then
   caffeinate -i -w $$ &
   CAFFEINATE_PID=$!
 fi
-trap 'rm -f "$LOCK_FILE"; ${CAFFEINATE_PID:+kill "$CAFFEINATE_PID" 2>/dev/null || true}' EXIT
+trap 'rm -f "$LOCK_FILE"; $IS_MACOS && ${CAFFEINATE_PID:+kill "$CAFFEINATE_PID" 2>/dev/null || true}' EXIT
 
 # --- Rate limit guard ---
 RATE_FILE="${BOT_HOME}/state/rate-tracker.json"

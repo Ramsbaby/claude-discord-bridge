@@ -158,7 +158,13 @@ try_tier1_fix() {
             ;;
         sed)
             if [[ -n "$sed_pattern" ]]; then
-                if sed -i '' "$sed_pattern" "$file" 2>/dev/null; then
+                local sed_ok=false
+                if ${IS_MACOS:-false}; then
+                    sed -i '' "$sed_pattern" "$file" 2>/dev/null && sed_ok=true
+                else
+                    sed -i "$sed_pattern" "$file" 2>/dev/null && sed_ok=true
+                fi
+                if [[ "$sed_ok" == true ]]; then
                     applied=true
                 fi
             fi
@@ -522,7 +528,9 @@ run_health_freshness_audit() {
         if [[ "$last_check" =~ ^[0-9]+$ ]]; then
             check_epoch="$last_check"
         else
-            check_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%S" "${last_check%%.*}" +%s 2>/dev/null || echo "0")
+            check_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%S" "${last_check%%.*}" +%s 2>/dev/null \
+                || date -d "${last_check%%.*}" +%s 2>/dev/null \
+                || echo "0")
         fi
 
         local age=$(( now - check_epoch ))

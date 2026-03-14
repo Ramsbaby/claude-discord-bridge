@@ -46,7 +46,7 @@ jarvis_restart() {
     launchctl kickstart -k "gui/$(id -u)/ai.jarvis.${svc}" 2>/dev/null || \
     launchctl stop "ai.jarvis.${svc}" && launchctl start "ai.jarvis.${svc}"
   else
-    pm2 restart "$svc" 2>/dev/null || echo "[compat] pm2 restart $svc failed"
+    pm2 restart "$svc" 2>/dev/null || { echo "[compat] pm2 restart $svc failed" >&2; return 1; }
   fi
 }
 
@@ -55,6 +55,6 @@ jarvis_status() {
   if $IS_MACOS; then
     launchctl list | grep jarvis
   else
-    pm2 list
+    if command -v pm2 &>/dev/null; then pm2 list; else echo "[compat] pm2 not installed"; return 1; fi
   fi
 }

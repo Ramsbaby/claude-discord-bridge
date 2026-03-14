@@ -28,7 +28,16 @@ fi
 
 # 2. Discord Bot 재시작
 log "Discord Bot 재시작..."
-$IS_MACOS && launchctl kickstart -k "gui/$(id -u)/ai.discord-bot" 2>/dev/null || true
+if $IS_MACOS; then
+  launchctl kickstart -k "gui/$(id -u)/ai.discord-bot" 2>/dev/null || true
+else
+  # Linux/Docker: pm2로 봇 재시작
+  if command -v pm2 &>/dev/null; then
+    pm2 restart jarvis-bot 2>/dev/null || pm2 restart all 2>/dev/null || true
+  else
+    echo "[sync-token] INFO: Token updated. Manual bot restart required (pm2 not found)."
+  fi
+fi
 sleep 3
 
 log "완료"

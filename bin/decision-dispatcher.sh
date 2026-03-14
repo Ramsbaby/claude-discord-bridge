@@ -10,6 +10,9 @@ set -euo pipefail
 BOT_HOME="${BOT_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 TODAY="$(date +%F)"
 
+# timeout 명령어 크로스플랫폼 처리 (macOS: gtimeout, Linux: timeout)
+_TIMEOUT_CMD=$(command -v gtimeout 2>/dev/null || command -v timeout 2>/dev/null || echo "")
+
 # Structured logging
 LOG_FILE="${BOT_HOME}/logs/decision-dispatcher.log"
 source "${BOT_HOME}/lib/log-utils.sh" 2>/dev/null || true
@@ -114,6 +117,15 @@ action_restart_service() {
             fi
             log "WARN: orchestrator bootstrap: $(cat "$_err")"
         fi
+        if ! $IS_MACOS; then
+            if pm2 restart jarvis-orchestrator 2>"$_err" \
+               || pm2 restart jarvis-bot 2>/dev/null \
+               || pm2 restart all 2>/dev/null; then
+                rm -f "$_err"; echo "OK"; return 0
+            fi
+            log "WARN: orchestrator pm2 restart: $(cat "$_err")"; rm -f "$_err"
+            echo "FAIL:orchestrator pm2 restart failed"; return 1
+        fi
         rm -f "$_err"; echo "FAIL:orchestrator plist not found"; return 1
     elif echo "$decision" | grep -qi "discord\|bot"; then
         if "${BOT_HOME}/scripts/l3-actions/restart-bot.sh" 2>"$_err"; then
@@ -125,6 +137,14 @@ action_restart_service() {
         if $IS_MACOS && launchctl kickstart -k "gui/${uid}/ai.jarvis.watchdog" 2>"$_err"; then
             rm -f "$_err"; echo "OK"; return 0
         fi
+        if ! $IS_MACOS; then
+            if pm2 restart jarvis-bot 2>"$_err" \
+               || pm2 restart all 2>/dev/null; then
+                rm -f "$_err"; echo "OK"; return 0
+            fi
+            log "WARN: watchdog pm2 restart: $(cat "$_err")"; rm -f "$_err"
+            echo "FAIL:watchdog pm2 restart failed"; return 1
+        fi
         log "WARN: watchdog kickstart: $(cat "$_err")"; rm -f "$_err"
         echo "FAIL:watchdog restart failed"; return 1
     fi
@@ -133,12 +153,18 @@ action_restart_service() {
 
 _run_l3_action() {
     local label="$1" script="$2" max_sec="${3:-120}"
-    local _err
+    local _err rc
     _err=$(mktemp)
-    if gtimeout "$max_sec" "$script" 2>"$_err"; then
+    if [[ -n "$_TIMEOUT_CMD" ]]; then
+        "$_TIMEOUT_CMD" "$max_sec" "$script" 2>"$_err"
+        rc=$?
+    else
+        "$script" 2>"$_err"
+        rc=$?
+    fi
+    if [[ $rc -eq 0 ]]; then
         rm -f "$_err"; echo "OK"; return 0
     fi
-    local rc=$?
     if [[ $rc -eq 124 ]]; then
         log "WARN: ${label}: timeout after ${max_sec}s"
         rm -f "$_err"; echo "FAIL:${label} timed out"; return 1
