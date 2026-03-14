@@ -226,8 +226,20 @@ _should_skip_zombie_restart() {
 
 # --- Discord bot status check ---
 check_discord_bot() {
+    if ! $IS_MACOS; then
+        # Linux/Docker: pgrep으로 봇 프로세스 직접 감지
+        local bot_pid
+        bot_pid=$(pgrep -f "discord-bot.js" 2>/dev/null | head -1 || true)
+        if [[ -n "$bot_pid" ]]; then
+            echo "RUNNING:$bot_pid"
+        else
+            echo "NOT_LOADED"
+        fi
+        return
+    fi
+
     local status_line
-    status_line=$($IS_MACOS && launchctl list 2>/dev/null | grep "$DISCORD_SERVICE" || true)
+    status_line=$(launchctl list 2>/dev/null | grep "$DISCORD_SERVICE" || true)
 
     if [[ -z "$status_line" ]]; then
         echo "NOT_LOADED"
@@ -246,6 +258,15 @@ check_discord_bot() {
         fi
     else
         echo "RUNNING:$pid"
+    fi
+}
+
+# Linux/Docker pm2 재시작 헬퍼
+_bot_restart() {
+    if $IS_MACOS; then
+        launchctl kickstart -k "gui/$(id -u)/$DISCORD_SERVICE" 2>/dev/null || true
+    else
+        pm2 restart jarvis-bot 2>/dev/null || true
     fi
 }
 
@@ -404,7 +425,7 @@ run_one_check() {
                     if _should_skip_zombie_restart; then
                         health_status="skipped:active_session"
                     else
-                        $IS_MACOS && launchctl kickstart -k "gui/$(id -u)/$DISCORD_SERVICE" 2>/dev/null || true
+                        _bot_restart
                         health_status="restarted:zombie"
                         increment_crash
                     fi
@@ -415,7 +436,7 @@ run_one_check() {
                 if _should_skip_zombie_restart; then
                     health_status="skipped:active_session_no_hb"
                 else
-                    $IS_MACOS && launchctl kickstart -k "gui/$(id -u)/$DISCORD_SERVICE" 2>/dev/null || true
+                    _bot_restart
                     health_status="restarted:zombie_no_hb"
                     increment_crash
                 fi
@@ -426,7 +447,7 @@ run_one_check() {
                 decrement_crash
                 if (( memory_mb >= MEMORY_CRITICAL_MB )); then
                     send_alert "[Bot Watchdog] CRITICAL: Discord bot memory=${memory_mb}MB (>=${MEMORY_CRITICAL_MB}MB). Restarting."
-                    $IS_MACOS && launchctl kickstart -k "gui/$(id -u)/$DISCORD_SERVICE" 2>/dev/null || true
+                    _bot_restart
                     health_status="restarted:memory"
                 elif (( memory_mb >= MEMORY_WARN_MB )); then
                     log "WARN: Discord bot memory=${memory_mb}MB (>=${MEMORY_WARN_MB}MB)"
@@ -461,11 +482,15 @@ run_one_check() {
                 log "Attempting restart #${crash_count} (backoff=${backoff}s)"
                 date +%s > "$STATE_DIR/last-restart"
 
-                if [[ "$bot_status" == "NOT_LOADED" && -f "$DISCORD_PLIST" ]]; then
-                    $IS_MACOS && { launchctl bootstrap "gui/$(id -u)" "$DISCORD_PLIST" 2>/dev/null \
-                        || launchctl load "$DISCORD_PLIST" 2>/dev/null || true; }
+                if $IS_MACOS; then
+                    if [[ "$bot_status" == "NOT_LOADED" && -f "$DISCORD_PLIST" ]]; then
+                        launchctl bootstrap "gui/$(id -u)" "$DISCORD_PLIST" 2>/dev/null \
+                            || launchctl load "$DISCORD_PLIST" 2>/dev/null || true
+                    else
+                        launchctl kickstart -k "gui/$(id -u)/$DISCORD_SERVICE" 2>/dev/null || true
+                    fi
                 else
-                    $IS_MACOS && launchctl kickstart -k "gui/$(id -u)/$DISCORD_SERVICE" 2>/dev/null || true
+                    pm2 restart jarvis-bot 2>/dev/null || true
                 fi
 
                 if (( crash_count >= 3 )); then

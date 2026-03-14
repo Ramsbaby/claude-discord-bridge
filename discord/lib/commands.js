@@ -450,7 +450,7 @@ export async function handleInteraction(interaction, deps) {
       const ldbImport = `${ldbNodeModules}/@lancedb/lancedb/dist/index.js`;
       const checkScript = [
         `import ldb from '${ldbImport}';`,
-        `const db = await ldb.connect(process.env.HOME+'/.jarvis/rag/lancedb');`,
+        `const db = await ldb.connect('${BOT_HOME}/rag/lancedb');`,
         `try {`,
         `  const t = await db.openTable('documents');`,
         `  const n = await t.countRows();`,
@@ -469,7 +469,7 @@ export async function handleInteraction(interaction, deps) {
       if (ragResult.error || ragResult.chunks === 0) {
         const dropScript = [
           `import ldb from '${ldbImport}';`,
-          `const db = await ldb.connect(process.env.HOME+'/.jarvis/rag/lancedb');`,
+          `const db = await ldb.connect('${BOT_HOME}/rag/lancedb');`,
           `try { await db.dropTable('documents'); } catch(e) {}`,
           `console.log('dropped');`,
         ].join('\n');
@@ -509,11 +509,12 @@ export async function handleInteraction(interaction, deps) {
       if (gOut.status !== 0) {
         if (IS_MACOS) {
           spawnSync('launchctl', ['load', `${HOME}/Library/LaunchAgents/ai.openclaw.glances.plist`], { encoding: 'utf-8' });
+          fixes.push('Glances 재시작');
+          glancesStatus = '⚠️ 재시작됨';
         } else {
-          spawnSync('pm2', ['restart', 'glances'], { encoding: 'utf-8' });
+          // Linux/Docker: glances는 pm2 관리 대상 아님 (선택적 모니터링 도구)
+          glancesStatus = '⚠️ 응답 없음';
         }
-        fixes.push('Glances 재시작');
-        glancesStatus = '⚠️ 재시작됨';
       } else {
         try {
           const cpu = JSON.parse(gOut.stdout || '{}');
