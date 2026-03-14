@@ -11,16 +11,16 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.2.74",
+    "@anthropic-ai/claude-agent-sdk": "^0.2.76",
     "@lancedb/lancedb": "~0.26.2",
     "@modelcontextprotocol/sdk": "~1.27.1",
     "@modelcontextprotocol/server-github": "^2025.4.8",
     "apache-arrow": "~18.1.0",
     "better-sqlite3": "~12.6.2",
     "chokidar": "~5.0.0",
-    "discord.js": "~14.25.1",
+    "discord.js": "^13.17.1",
     "dotenv": "~16.6.1",
-    "openai": "~6.25.0",
+    "openai": "~6.29.0",
     "yaml": "~2.8.2"
   },
   "engines": {

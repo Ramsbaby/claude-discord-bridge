@@ -113,7 +113,7 @@ _llm_anthropic_api() {
     local api_model="claude-sonnet-4-20250514"
     case "${model:-}" in
         *opus*)   api_model="claude-opus-4-20250514" ;;
-        *haiku*)  api_model="claude-haiku-4-5-20251015" ;;
+        *haiku*)  api_model="claude-haiku-4-5-20251001" ;;
         *sonnet*) api_model="claude-sonnet-4-20250514" ;;
     esac
 
@@ -366,7 +366,7 @@ llm_call() {
         local complexity
         complexity=$(_detect_complexity "$prompt")
         case "$complexity" in
-            budget) model="claude-haiku-4-5-20251015" ;;
+            budget) model="claude-haiku-4-5-20251001" ;;
             small)  model="claude-sonnet-4-20250514" ;;
             large)  model="claude-opus-4-20250514" ;;
         esac
