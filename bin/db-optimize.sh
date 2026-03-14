@@ -14,9 +14,9 @@ if [[ ! -f "$DB_PATH" ]]; then
   exit 0
 fi
 
-BEFORE=$(stat -f %z "$DB_PATH" 2>/dev/null || echo "0")
+BEFORE=$(stat -f %z "$DB_PATH" 2>/dev/null || stat -c '%s' "$DB_PATH" 2>/dev/null || echo "0")
 WAL_PATH="${DB_PATH}-wal"
-WAL_BEFORE=$(stat -f %z "$WAL_PATH" 2>/dev/null || echo "0")
+WAL_BEFORE=$(stat -f %z "$WAL_PATH" 2>/dev/null || stat -c '%s' "$WAL_PATH" 2>/dev/null || echo "0")
 
 log "시작 — DB: ${BEFORE} bytes, WAL: ${WAL_BEFORE} bytes"
 
@@ -25,7 +25,7 @@ PRAGMA optimize;
 PRAGMA wal_checkpoint(RESTART);
 SQL
 
-AFTER=$(stat -f %z "$DB_PATH" 2>/dev/null || echo "0")
-WAL_AFTER=$(stat -f %z "$WAL_PATH" 2>/dev/null || echo "0")
+AFTER=$(stat -f %z "$DB_PATH" 2>/dev/null || stat -c '%s' "$DB_PATH" 2>/dev/null || echo "0")
+WAL_AFTER=$(stat -f %z "$WAL_PATH" 2>/dev/null || stat -c '%s' "$WAL_PATH" 2>/dev/null || echo "0")
 
 log "완료 — DB: ${AFTER} bytes, WAL: ${WAL_AFTER} bytes (WAL 감소: $((WAL_BEFORE - WAL_AFTER)) bytes)"

@@ -213,6 +213,32 @@ print_issue() {
 # ============================================================================
 # 파일 스캔
 # ============================================================================
+
+# 파일 최상단(1~25줄)에 macOS-only early-exit 선언이 있으면 파일 전체가 macOS-only
+# e.g.  $IS_MACOS || exit 0   /   if ! $IS_MACOS; then exit 0; fi
+is_macos_only_file() {
+  local filepath="$1"
+  # 패턴: $IS_MACOS || exit  /  if ! $IS_MACOS; then ... exit  /  IS_MACOS 단독 early-return
+  head -25 "$filepath" 2>/dev/null \
+    | grep -qE '\$IS_MACOS\s*\|\|\s*exit|if\s*!\s*\$IS_MACOS|uname.*Darwin.*exit|\bIS_MACOS\b.*\|\|\s*exit' 2>/dev/null
+}
+
+# 매칭 라인이 IS_MACOS guard 블록 안에 있는지 휴리스틱 검사
+# - 파일 최상단 early-exit guard OR 매칭 라인 기준 앞 50줄 안에 IS_MACOS 조건문 → "가드됨"
+is_guarded() {
+  local filepath="$1"
+  local lineno="$2"
+
+  # 파일 전체가 macOS-only인 경우
+  if is_macos_only_file "$filepath"; then
+    return 0
+  fi
+
+  local start=$(( lineno > 50 ? lineno - 50 : 1 ))
+  sed -n "${start},${lineno}p" "$filepath" 2>/dev/null \
+    | grep -qE '\$\{?IS_MACOS[^}]*\}?|\bIS_MACOS\b|uname -s.*Darwin|Darwin.*uname' 2>/dev/null
+}
+
 scan_file() {
   local filepath="$1"
   local display_path="${filepath#"$JARVIS_HOME/"}"
@@ -235,6 +261,31 @@ scan_file() {
         local lineno matched_text
         lineno=$(printf '%s' "$match_line" | cut -d: -f1)
         matched_text=$(printf '%s' "$match_line" | cut -d: -f2-)
+
+        # IS_MACOS 가드 안에 있으면 skip (false positive 방지)
+        if is_guarded "$filepath" "$lineno"; then
+          continue
+        fi
+
+        # 동일 원본 라인에 Linux 대체 패턴이 있으면 skip (이미 fallback 처리됨)
+        # stat -f ... || stat -c '%Y'  /  command -v gtimeout || command -v timeout
+        local raw_line
+        raw_line=$(sed -n "${lineno}p" "$filepath" 2>/dev/null || true)
+        if printf '%s' "$raw_line" | grep -qE 'stat -c|command -v timeout'; then
+          continue
+        fi
+
+        # 문자열 리터럴 또는 echo/log/heredoc 안의 패턴은 skip (실제 실행 아님)
+        # e.g. log "launchd 스팸 방지..."  /  echo "  brew install jq"  /  heredoc 안 설명문
+        if printf '%s' "$raw_line" | grep -qE \
+          '^\s*(log|echo|warn|err|printf|#|"[^"]+").*\b(launchctl|launchd|brew|gtimeout)\b' \
+          2>/dev/null; then
+          continue
+        fi
+        # 홑따옴표 문자열 리터럴 (패턴 배열 정의 등) skip
+        if printf '%s' "$raw_line" | grep -qE "^[[:space:]]+'[^']+'" 2>/dev/null; then
+          continue
+        fi
 
         print_issue "$severity" "$display_path" "$lineno" "$label" "$matched_text" "$hint"
 
@@ -262,8 +313,12 @@ for scan_dir in "${SCAN_DIRS[@]}"; do
   fi
 
   while IFS= read -r -d '' filepath; do
-    # 중복 파일 건너뜀 (심볼릭 링크 등)
+    # 이 스크립트 자신은 건너뜀 (패턴 정의 문자열이 false positive 유발)
     real_path=$(realpath "$filepath" 2>/dev/null || echo "$filepath")
+    if [[ "$real_path" == "$(realpath "$0" 2>/dev/null || echo "$0")" ]]; then
+      continue
+    fi
+    # 중복 파일 건너뜀 (심볼릭 링크 등)
     if grep -qxF "$real_path" "$SEEN_FILES_TMP" 2>/dev/null; then
       continue
     fi
