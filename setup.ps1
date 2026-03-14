@@ -19,10 +19,9 @@ if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
 $dockerVersion = docker --version
 Write-Host "Docker 확인: $dockerVersion" -ForegroundColor Green
 
-# Docker 데몬 실행 여부 확인
-try {
-    docker info | Out-Null
-} catch {
+# Docker 데몬 실행 여부 확인 (외부 명령은 $ErrorActionPreference 무관 → $LASTEXITCODE 사용)
+docker info 2>&1 | Out-Null
+if ($LASTEXITCODE -ne 0) {
     Write-Host "Docker Desktop이 실행 중이지 않습니다." -ForegroundColor Red
     Write-Host "트레이에서 Docker Desktop을 시작한 후 재실행하세요."
     exit 1
@@ -88,7 +87,22 @@ if ($ownerDiscordId) {
     $envContent = $envContent -replace "OWNER_DISCORD_ID=.*", "OWNER_DISCORD_ID=$ownerDiscordId"
 }
 
+Write-Host ""
+Write-Host "--- Claude CLI 인증 경로 ---" -ForegroundColor DarkCyan
+Write-Host "claude auth login 으로 인증한 계정의 자격증명 폴더 경로입니다." -ForegroundColor DarkGray
+Write-Host "기본값: $env:USERPROFILE (Enter 누르면 자동 설정)" -ForegroundColor DarkGray
+$claudeHome = Read-Host "Claude 홈 경로 (기본: $env:USERPROFILE)"
+if (-not $claudeHome) { $claudeHome = $env:USERPROFILE }
+# Windows 경로를 Docker 볼륨용 슬래시 형식으로 변환 (C:\Users\foo → C:/Users/foo)
+$claudeHome = $claudeHome -replace "\\", "/"
+$envContent = $envContent -replace "# CLAUDE_HOME=.*", "CLAUDE_HOME=$claudeHome"
+if ($envContent -notmatch "CLAUDE_HOME=") {
+    $envContent += "`nCLAUDE_HOME=$claudeHome"
+}
+
 Set-Content ".env" $envContent -NoNewline
+Write-Host ""
+Write-Host "Claude 인증 경로 설정: $claudeHome" -ForegroundColor Green
 Write-Host ""
 Write-Host ".env 저장 완료." -ForegroundColor Green
 

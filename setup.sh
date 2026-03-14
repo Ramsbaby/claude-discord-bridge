@@ -119,6 +119,14 @@ if [ -n "$OWNER_DISCORD_ID" ]; then
   sedi "s|OWNER_DISCORD_ID=.*|OWNER_DISCORD_ID=$OWNER_DISCORD_ID|" .env
 fi
 
+# CLAUDE_HOME 자동 설정 (docker-compose.yml 볼륨 마운트용)
+CLAUDE_HOME_DEFAULT="$HOME"
+if grep -q "^# CLAUDE_HOME=" .env 2>/dev/null; then
+  sedi "s|^# CLAUDE_HOME=.*|CLAUDE_HOME=$CLAUDE_HOME_DEFAULT|" .env
+elif ! grep -q "^CLAUDE_HOME=" .env 2>/dev/null; then
+  echo "CLAUDE_HOME=$CLAUDE_HOME_DEFAULT" >> .env
+fi
+
 echo -e "\n${GREEN}.env 저장 완료.${RESET}"
 
 # 4. 실행

@@ -9,8 +9,8 @@ RUN apk add --no-cache bash curl git jq dcron
 # gtimeout → timeout 심볼릭 링크 (macOS GNU coreutils 호환)
 RUN ln -sf /usr/bin/timeout /usr/local/bin/gtimeout
 
-# PM2 글로벌 설치
-RUN npm install -g pm2
+# PM2 + Claude CLI 글로벌 설치
+RUN npm install -g pm2 @anthropic-ai/claude-code
 
 WORKDIR /jarvis
 

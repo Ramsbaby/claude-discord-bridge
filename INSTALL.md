@@ -74,12 +74,15 @@ wsl --status
 PowerShell을 **관리자 권한**으로 열고:
 
 ```powershell
+# 1회만 필요: 스크립트 실행 허용
+Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+
 git clone https://github.com/Ramsbaby/claude-discord-bridge $env:USERPROFILE\.jarvis
 cd $env:USERPROFILE\.jarvis
 .\setup.ps1
 ```
 
-스크립트가 Docker 확인, .env 생성, 필수 항목 대화형 입력, 컨테이너 시작을 자동으로 처리합니다.
+스크립트가 Docker 확인, .env 생성, 필수 항목 대화형 입력, Claude 경로 자동 설정, 컨테이너 시작을 자동으로 처리합니다.
 
 ---
 
