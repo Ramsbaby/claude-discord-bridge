@@ -1,31 +1,22 @@
-# Jarvis — AI Company-in-a-Box Docker Compose
-# Usage: docker compose up -d
+# Jarvis — Docker Compose
+# Windows/Linux 설치: docker compose up -d
 
 services:
-  bot:
+  jarvis:
     build: .
     container_name: jarvis
     restart: unless-stopped
-    env_file: discord/.env
-    volumes:
-      # Claude CLI authentication (read-only)
-      - ~/.claude:/root/.claude:ro
-      # Persistent data
-      - ./context:/app/context
-      - ./state:/app/state
-      - ./logs:/app/logs
-      - ./rag:/app/rag
-      - ./results:/app/results
-      - ./plugins:/app/plugins:ro
-      # Config overrides (read-only)
-      - ./discord/personas.json:/app/discord/personas.json:ro
-      - ./config:/app/config:ro
+    env_file: .env
     environment:
+      - JARVIS_HOME=/jarvis
       - NODE_ENV=production
-      - BOT_HOME=/app
-    healthcheck:
-      test: ["CMD", "pgrep", "-f", "discord-bot.js"]
-      interval: 60s
-      timeout: 5s
-      retries: 3
-      start_period: 30s
+    volumes:
+      # 데이터 영속화 (컨테이너 재시작 시 유지)
+      - ./rag:/jarvis/rag
+      - ./inbox:/jarvis/inbox
+      - ./logs:/jarvis/logs
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

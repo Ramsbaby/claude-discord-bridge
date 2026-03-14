@@ -1,4 +1,5 @@
 # 민감 정보 (개인 설정)
+.env
 discord/.env
 config/monitoring.json
 config/tasks.json
