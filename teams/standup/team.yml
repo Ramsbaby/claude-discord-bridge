@@ -2,4 +2,5 @@ name: "모닝 스탠드업"
 taskId: morning-standup
 discord: jarvis
 maxTurns: 20
+model: large
 tools: [Read, Bash, WebSearch, nexus]

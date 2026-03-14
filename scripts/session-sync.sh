@@ -58,6 +58,25 @@ fi
 
 log "START — log_age=${LOG_AGE}s bus_age=${BUS_AGE}s, syncing..."
 
+# ── Phase 1 보완: 비활동 세션 요약 파일 점검 ──────────────────────────────
+# sessions.json 없으면 건너뜀
+SESSIONS_JSON="$BOT_HOME/state/sessions.json"
+SESSION_SUMMARY_DIR="$BOT_HOME/state/session-summaries"
+if [[ -f "$SESSIONS_JSON" && -d "$SESSION_SUMMARY_DIR" ]]; then
+    IDLE_COUNT=0
+    while IFS= read -r -d '' summary_file; do
+        SUMMARY_MTIME=$(stat -f %m "$summary_file" 2>/dev/null || stat -c '%Y' "$summary_file" 2>/dev/null || echo 0)
+        SUMMARY_AGE=$(( NOW - SUMMARY_MTIME ))
+        # 요약 파일이 2시간 이상 업데이트 안 된 경우 → stale 로그 기록
+        if (( SUMMARY_AGE > 7200 )); then
+            IDLE_COUNT=$(( IDLE_COUNT + 1 ))
+        fi
+    done < <(find "$SESSION_SUMMARY_DIR" -name '*.md' -print0 2>/dev/null)
+    if (( IDLE_COUNT > 0 )); then
+        log "INFO — ${IDLE_COUNT} session summary file(s) not updated in 2h+ (idle sessions)"
+    fi
+fi
+
 # 최근 대화 내용 추출 (최근 200줄, 최대 4000자)
 RECENT_CONV=$(tail -200 "$DAILY_LOG" | head -c 4000)
 

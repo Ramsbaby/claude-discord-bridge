@@ -521,6 +521,7 @@ export async function autoExtractMemory(userId, userMsg, botMsg) {
 export async function* createClaudeSession(prompt, {
   sessionId, threadId, channelId, ragContext, attachments = [],
   contextBudget, userId, signal,
+  injectedSummary = '',
 } = {}) {
   // 1. Setup stable workDir — same 4-layer token isolation as before
   const stableDir = join('/tmp', 'claude-discord', String(threadId));
@@ -653,6 +654,13 @@ export async function* createClaudeSession(prompt, {
       ? '게스트(미등록 사용자)'
       : `${activeUserProfile.name}(${activeUserProfile.title})`;
     ctxParts.push(`[대화 상대] ${senderLabel}`);
+    // Phase 2: 이전 세션 요약 주입 (resume 성공 시에도 DYNAMIC 섹션에 삽입)
+    // 조건: injectedSummary 존재 (handlers.js가 30분+ 경과 시에만 전달)
+    if (injectedSummary) {
+      const truncated = injectedSummary.length > 300 ? injectedSummary.slice(0, 300) + '…' : injectedSummary;
+      ctxParts.push(`[이전 작업 요약] ${truncated}`);
+      log('debug', 'createClaudeSession: injected previous session summary on resume', { threadId, summaryLen: truncated.length });
+    }
     // 사용량 현황은 80% 이상일 때만 주입 — 낮을 때 주입하면 Claude self-throttling 유발
     // 예외: 사용자가 "사용량" 키워드로 직접 조회할 때는 항상 주입
     if (usageSummary) {

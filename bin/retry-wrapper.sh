@@ -94,6 +94,14 @@ for attempt in $(seq 1 "$MAX_RETRIES"); do
     # Classify by exit code first
     classification=$(classify_exit_code "$exit_code")
 
+    # INC-1/2 안전장치: exit=1이지만 Discord 전송 성공(sent id=) 시 success로 강제
+    # council-insight, dev-run-async에서 SDK 내부 exit=1이지만 기능은 성공한 케이스 대응
+    if [[ "$exit_code" -eq 1 && -f "$RESULT_TMP" ]] && grep -qE "sent id=[0-9]+" "$RESULT_TMP" 2>/dev/null; then
+        classification="success"
+        printf '{"timestamp":"%s","task_id":"%s","attempt":%d,"override":"exit1_but_sent_id_found"}\n' \
+            "$(date -u +%FT%TZ)" "$TASK_ID" "$attempt" >> "$RETRY_LOG"
+    fi
+
     # If retryable by exit code, refine classification from output
     if [[ "$classification" == "retryable" && "$exit_code" -ne 0 ]]; then
         stdout_class=$(classify_error "$RESULT_TMP")

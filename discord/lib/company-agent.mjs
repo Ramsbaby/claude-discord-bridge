@@ -260,7 +260,7 @@ async function runTeam(name, eventPromptPrefix = '') {
     allowDangerouslySkipPermissions: true,
     mcpServers: MCP,
     maxTurns: team.maxTurns,
-    model: MODELS.medium,
+    model: (team.model && MODELS[team.model]) ? MODELS[team.model] : MODELS.medium,
     systemPrompt: `${team.system}
 [공통 원칙] 긍정 편향 금지. "정상", "✅ 문제없음" 남발하지 마라. 이상 있는 것만 상세히, 정상은 한 줄 이하로.
 모든 수치는 직접 확인한 데이터 기반. 과거 기억이나 추정으로 보고 금지. URL/링크 포함 금지.`,

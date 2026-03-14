@@ -146,7 +146,35 @@ function _clearPendingTask(sessionKey) {
 }
 
 // ---------------------------------------------------------------------------
-// Session thinking-block detector
+// Session end detection helpers (Phase 1)
+// ---------------------------------------------------------------------------
+
+/** 명시적 세션 종료 신호 패턴 */
+const SESSION_END_PATTERN = /^(끝|마무리|여기까지|\/done)$/i;
+
+/** 비활동 타임아웃: 30분 초과 시 이전 세션 자동 요약 트리거 */
+const SESSION_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
+
+/**
+ * 세션 마지막 활동 시각 기준 30분 경과 여부 확인.
+ * sessions.data[sessionKey].updatedAt 필드 활용.
+ */
+function _isSessionIdle(sessions, sessionKey) {
+  const entry = sessions.data?.[sessionKey];
+  if (!entry?.updatedAt) return false;
+  return Date.now() - entry.updatedAt > SESSION_IDLE_TIMEOUT_MS;
+}
+
+/**
+ * 명시적 종료 신호 또는 비활동 타임아웃 감지 시 백그라운드 요약 트리거.
+ * 메인 흐름을 차단하지 않음 (fire-and-forget).
+ */
+function _triggerSessionEndSummary(sessionKey, reason) {
+  compactSessionWithAI(sessionKey).catch((e) =>
+    log('debug', `_triggerSessionEndSummary: compaction failed (${reason})`, { sessionKey, error: e?.message }),
+  );
+  log('info', `Session end summary triggered (${reason})`, { sessionKey });
+}
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -529,6 +557,22 @@ async function _processBatch(messages, { sessions, rateTracker, semaphore, activ
     sessionKey = isThread ? thread.id : `${thread.id}-${message.author.id}`;
     sessionId = sessions.get(sessionKey);
 
+    // ── Phase 1: 세션 종료 감지 ───────────────────────────────────────────
+    // 1a. 명시적 종료 신호: "끝", "마무리", "여기까지", "/done"
+    if (SESSION_END_PATTERN.test(userPrompt.trim())) {
+      _triggerSessionEndSummary(sessionKey, 'explicit_end');
+      await message.reply('세션을 마무리했어요. 대화 내용을 요약 저장합니다. 👋');
+      processingMsgIds.delete(message.id);
+      return;
+    }
+
+    // 1b. 비활동 타임아웃: 새 메시지 수신 시 이전 세션 마지막 활동 30분+ 경과 확인
+    if (sessionId && _isSessionIdle(sessions, sessionKey)) {
+      log('info', 'Session idle >30min — triggering background summary before new turn', { sessionKey });
+      _triggerSessionEndSummary(sessionKey, 'idle_timeout');
+      // 세션은 유지 (요약만 백그라운드 트리거, 대화는 계속)
+    }
+
     // /compact 명령어: 수동 세션 컴팩트
     if (userPrompt.trim().toLowerCase() === '/compact') {
       const turns = sessionTokenCounts.get(sessionKey) ?? 0;
@@ -789,6 +833,26 @@ ${extracted}
       let hasStreamEvents = false;
       let lastStreamBlockWasTool = false; // 툴 블록 직후 텍스트 개행 삽입용
 
+      // Phase 2: resume 성공 시에도 이전 요약 주입
+      // 조건: resume 세션 존재 && 마지막 활동 30분+ 경과 && 요약 파일 존재
+      let _injectedSummary = '';
+      if (sid && _isSessionIdle(sessions, sessionKey)) {
+        try {
+          const rawSummary = loadSessionSummary(sessionKey);
+          if (rawSummary) {
+            // 헤더/마크다운 제거 후 본문만 추출하여 300자 truncate
+            const bodyOnly = rawSummary
+              .replace(/^##.*$/gm, '')
+              .replace(/\n{3,}/g, '\n')
+              .trim();
+            _injectedSummary = bodyOnly.slice(0, 300);
+            log('info', 'Phase2: previous session summary will be injected on resume', { sessionKey, len: _injectedSummary.length });
+          }
+        } catch (e) {
+          log('debug', 'Phase2: failed to load session summary (non-critical)', { error: e?.message });
+        }
+      }
+
       for await (const event of createClaudeSession(userPrompt, {
         sessionId: sid,
         threadId: thread.id,
@@ -797,6 +861,7 @@ ${extracted}
         userId: message.author.id,
         contextBudget,
         signal: abortController.signal,
+        injectedSummary: _injectedSummary,
       })) {
         if (event.type === 'system') {
           if (event.session_reset) {

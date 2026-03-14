@@ -105,6 +105,7 @@ export function loadTeams(teamsDir, vars, reportsDir) {
         tools,
         system: systemText,
         prompt: promptText,
+        ...(yml.model && { model: yml.model }),
         ...(agents && { agents }),
       };
     } catch (err) {

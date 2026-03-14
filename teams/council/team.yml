@@ -2,6 +2,7 @@ name: "감사팀 (Council)"
 taskId: council-insight
 discord: jarvis-ceo
 maxTurns: 40
+model: large
 tools: [Read, Write, Glob, Agent, nexus]
 agents:
   kpi-analyst:
