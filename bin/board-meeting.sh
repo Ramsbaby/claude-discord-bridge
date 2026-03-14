@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Cross-platform compat
+source "${JARVIS_HOME:-${BOT_HOME:-$HOME/.jarvis}}/lib/compat.sh" 2>/dev/null || true
 set -euo pipefail
 
 # board-meeting.sh — 자비스 컴퍼니 Board Meeting (단일 에이전트 + OKR/감사 연동)
@@ -39,8 +41,9 @@ if [[ -f "$CRON_LOG" ]]; then
     CRON_FAIL=$(grep -E "^\[($SEVEN_DAYS_PATTERN)" "$CRON_LOG" 2>/dev/null | \
         awk '/ (FAILED|ABORTED)/' | wc -l | tr -d ' ') || CRON_FAIL=0
 fi
-CRON_SUCCESS="${CRON_SUCCESS:-0}"
-CRON_FAIL="${CRON_FAIL:-0}"
+# 공백/개행 제거 후 숫자 강제 변환 (set -e에서 빈 문자열 → unbound variable crash 방지)
+CRON_SUCCESS=$(printf '%d' "${CRON_SUCCESS:-0}" 2>/dev/null || echo 0)
+CRON_FAIL=$(printf '%d' "${CRON_FAIL:-0}" 2>/dev/null || echo 0)
 CRON_TOTAL=$(( CRON_SUCCESS + CRON_FAIL ))
 if [[ "$CRON_TOTAL" -gt 0 ]]; then
     CRON_RATE=$(( CRON_SUCCESS * 100 / CRON_TOTAL ))
@@ -50,7 +53,7 @@ fi
 
 DISK_PCT=$(df -h / 2>/dev/null | tail -1 | awk '{print $5}' || echo "?")
 LOAD=$(uptime 2>/dev/null | sed 's/.*load averages: //' || echo "?")
-LAUNCHD=$(launchctl list 2>/dev/null | grep -E 'jarvis' | awk '{printf "%s(pid:%s) ", $3, $1}' || echo "확인불가")
+LAUNCHD=$($IS_MACOS && launchctl list 2>/dev/null | grep -E 'jarvis' | awk '{printf "%s(pid:%s) ", $3, $1}' || echo "확인불가")
 
 # Latest results snippets
 read_latest() {
@@ -60,10 +63,10 @@ read_latest() {
     if [[ -n "$f" ]]; then head -c "$max_chars" "$f" 2>/dev/null; else echo "데이터 없음"; fi
 }
 
-HEALTH_SNAP=$(read_latest "${BOT_HOME}/results/system-health" 300)
-TQQQ_SNAP=$(read_latest "${BOT_HOME}/results/tqqq-monitor" 500)
-INFRA_SNAP=$(read_latest "${BOT_HOME}/results/infra-daily" 500)
-NEWS_SNAP=$(read_latest "${BOT_HOME}/results/news-briefing" 300)
+HEALTH_SNAP=$(read_latest "${BOT_HOME}/results/system-health" 200)
+TQQQ_SNAP=$(read_latest "${BOT_HOME}/results/tqqq-monitor" 350)
+INFRA_SNAP=$(read_latest "${BOT_HOME}/results/infra-daily" 350)
+NEWS_SNAP=$(read_latest "${BOT_HOME}/results/news-briefing" 200)
 
 # OKR current values
 GOALS_JSON=$(cat "${BOT_HOME}/config/goals.json" 2>/dev/null || echo '{}')
@@ -75,7 +78,7 @@ DNA_CORE=$(sed -n '/^## 핵심 DNA/,/^## 일반 DNA/p' "${BOT_HOME}/config/compa
 PREV_BUS=$(head -c 400 "${BOT_HOME}/state/context-bus.md" 2>/dev/null || echo "없음")
 
 # Shared inbox
-INBOX_FILES=$(ls "${BOT_HOME}/rag/teams/shared-inbox/"*.md 2>/dev/null | grep -v README || echo "")
+INBOX_FILES=$(find "${BOT_HOME}/rag/teams/shared-inbox/" -maxdepth 1 -name "*.md" ! -name "README*" 2>/dev/null || true)
 INBOX_SUMMARY=""
 if [[ -n "$INBOX_FILES" ]]; then
     INBOX_SUMMARY="미처리 메시지 $(echo "$INBOX_FILES" | wc -l | tr -d ' ')건: $(echo "$INBOX_FILES" | xargs -I{} basename {} | tr '\n' ', ')"
@@ -110,48 +113,17 @@ if [[ -f "$PREV_DISPATCH_FILE" ]]; then
 fi
 
 # Load CEO profile (agents/ceo.md = SSoT for CEO behavior)
+# 판정 순서 + 팀장 관리 섹션만 추출 (출력 형식/산출물은 프롬프트에 포함)
 CEO_PROFILE=""
 if [[ -f "${BOT_HOME}/agents/ceo.md" ]]; then
-    CEO_PROFILE=$(cat "${BOT_HOME}/agents/ceo.md")
-fi
-
-# Load specialist profiles (역할+판정기준만 추출해 프롬프트 비대화 방지)
-_load_agent_profile() {
-    local file="$1"
-    [[ -f "$file" ]] || { echo ""; return; }
-    # ## 역할 섹션 추출 (최대 5줄)
-    awk '/^## 역할/{p=1} /^## 수집 항목|^## 보고 형식|^## 산출물/{p=0} p{print}' "$file" | head -5
-    echo "---"
-    # ## 판정 기준 섹션 추출 (최대 8줄)
-    awk 'BEGIN{p=0} /^## 판정 기준/{p=1; print; next} p && /^## /{p=0} p{print}' "$file" | head -8
-}
-INFRA_PROFILE=""
-if [[ -f "${BOT_HOME}/agents/infra-chief.md" ]]; then
-    INFRA_PROFILE=$(_load_agent_profile "${BOT_HOME}/agents/infra-chief.md")
-fi
-STRATEGY_PROFILE=""
-if [[ -f "${BOT_HOME}/agents/strategy-advisor.md" ]]; then
-    STRATEGY_PROFILE=$(_load_agent_profile "${BOT_HOME}/agents/strategy-advisor.md")
-fi
-RECORD_PROFILE=""
-if [[ -f "${BOT_HOME}/agents/record-keeper.md" ]]; then
-    RECORD_PROFILE=$(_load_agent_profile "${BOT_HOME}/agents/record-keeper.md")
+    CEO_PROFILE=$(awk '/^## 판정 순서|^## 팀장 관리/{p=1} /^## 출력 형식|^## 산출물/{p=0} p{print}' "${BOT_HOME}/agents/ceo.md")
 fi
 
 # --- Build prompt ---
 PROMPT="$(cat <<PROMPT_EOF
+# 자비스 컴퍼니 CEO — Board Meeting
+
 ${CEO_PROFILE}
-
-## 전문가 패널 관점 (CEO 판단의 참고 자료)
-
-### 인프라 수석 관점
-${INFRA_PROFILE}
-
-### 전략 고문 관점
-${STRATEGY_PROFILE}
-
-### 기록 담당 관점
-${RECORD_PROFILE}
 
 아래 사전 수집 데이터를 종합 분석하고 산출물 4종을 작성해.
 
@@ -186,59 +158,58 @@ ${GOALS_JSON}
 ${DNA_CORE}
 
 ## 판정 기준
-- 시스템: GREEN(성공률 95%+) / YELLOW(70-95%) / RED(70% 미만)
+- 시스템: GREEN(95%+) / YELLOW(70-95%) / RED(<70%)
 - 시장: SAFE(TQQQ>\$50) / CAUTION(\$47-50) / CRITICAL(<\$47)
-- 2주 연속 동일 이슈 → DNA 후보 등록 검토
 
 ## 산출물 (Write 도구로 반드시 작성)
 
 ### 1. context-bus.md 갱신
 파일: ~/.jarvis/state/context-bus.md (덮어쓰기)
+다른 팀 크론이 이 파일을 참고한다. 수치 포함.
 형식:
 \`\`\`
 # 자비스 컴퍼니 Context Bus
 _업데이트: ${TODAY}T$(date +%H:%M) KST_
-
 ## 시스템 상태
 크론 성공률: XX% — GREEN/YELLOW/RED
+주요 실패 태스크: [없으면 '없음']
 LaunchAgent: [상태 요약]
-
 ## 시장 신호
 TQQQ: \$XX.XX — SAFE/CAUTION/CRITICAL
-손절선(\$47) 대비: XX% 여유
-
+손절선(\$47) 대비: +\$X.XX (XX% 여유)
+## 이번 주 중요 신호
+[핵심 트렌드/변화 2~3개, 수치 포함]
+## 팀별 핵심 현황
+[각 팀 1줄. GREEN/YELLOW/RED + 핵심 이슈]
 ## CEO 주목사항
-[가장 중요한 발견/권고 1줄]
+[가장 중요한 발견/권고 1~2줄]
 \`\`\`
-500자 이내.
 
 ### 2. 회의록
 파일: ~/.jarvis/state/board-minutes/${TODAY}.md
-내용: 인프라 요약, 시장 요약, CEO 판단, OKR 진척 변경, 결정사항
+내용: 인프라/시장 분석(수치+원인), CEO 판단 근거, OKR 진척, 결정사항
 
 ### 3. 의사결정 감사 로그
-파일: ~/.jarvis/state/decisions/${TODAY}.jsonl (append, 기존 내용 유지)
-형식 (1줄 1결정):
-{"ts":"$(date -u +%FT%TZ)","decision":"내용","rationale":"근거","team":"담당팀","okr":"KR ID","status":"confirmed"}
+파일: ~/.jarvis/state/decisions/${TODAY}.jsonl (append)
+형식: {"ts":"$(date -u +%FT%TZ)","decision":"내용","rationale":"근거","team":"담당팀","okr":"KR ID","status":"confirmed"}
 
 ### 4. OKR 진척도 갱신 (측정 가능할 때만)
-파일: ~/.jarvis/config/goals.json
-keyResults의 current 값을 오늘 데이터 기반으로 업데이트. lastUpdated 갱신.
-측정 불가능한 KR은 null 유지.
+파일: ~/.jarvis/config/goals.json — current 값 업데이트, lastUpdated 갱신. 측정 불가 KR은 null 유지.
 
 ## 최종 출력 (stdout, Discord 전송용)
-800자 이내. 형식:
-[Board Meeting — ${TODAY} $(date +%H:%M)]
-시스템: GREEN/YELLOW/RED | 크론 XX%
-시장: SAFE/CAUTION/CRITICAL | TQQQ \$XX.XX
-주목: [1줄]
-결정: [1~2줄]
+800자 이내. 아래 형식 사용. placeholder(XX%) 금지, 실수치 필수.
 
-## Connections 도출 (필수)
-오늘 분석된 주요 인사이트들 사이의 연관성을 최대 5개 찾아주세요.
-응답 마지막에 반드시 아래 형식으로 출력:
-CONNECTIONS_JSON:[{"from":"인사이트A 핵심 키워드","to":"인사이트B 핵심 키워드","relationship":"연관 이유 한 줄","strength":0.0}]
-(한 줄에 전부, 줄바꿈 없이)
+📋 **이사회 보고 — ${TODAY} $(date +%H:%M)**
+🟢/🟡/🔴 **시스템** · 크론 XX% (목표 95%) — GREEN/YELLOW/RED
+📈 **시장** · TQQQ \$XX.XX — 손절선(\$47) 대비 +\$X.XX (SAFE/CAUTION/CRITICAL)
+🎯 **OKR** · [가장 진척/위험 KR 1줄]
+⚡ **주목** · [오늘 가장 중요한 발견 1줄]
+✅ **결정**
+- [결정사항] (담당팀 명시)
+
+## Connections 도출 (내부용)
+Write 도구로 ~/.jarvis/state/connections-draft.json 에만 저장. stdout 출력 금지.
+형식: [{"from":"A","to":"B","relationship":"이유","strength":0.0}] 최대 5개.
 PROMPT_EOF
 )"
 
@@ -382,7 +353,7 @@ llm_call \
     --prompt "$PROMPT" \
     --timeout 300 \
     --allowed-tools "Read,Bash,Write" \
-    --max-budget "2.00" \
+    --max-budget "1.20" \
     --model "claude-sonnet-4-20250514" \
     --mcp-config "${BOT_HOME}/config/empty-mcp.json" \
     --output "$CLAUDE_OUTPUT_TMP" \
@@ -416,25 +387,39 @@ echo "$RESULT" > "$RESULT_FILE"
 log "SUCCESS (${DURATION}s, cost \$${COST})"
 
 # --- Extract and store insight connections ---
+# connections-draft.json (Write 도구로 생성) 또는 결과파일 내 CONNECTIONS_JSON: 에서 추출
 CONNECTIONS_FILE="${BOT_HOME}/state/connections.jsonl"
+CONNECTIONS_DRAFT="${BOT_HOME}/state/connections-draft.json"
 SESSION_LABEL=$(date +%H | awk '{print ($1+0 < 12) ? "am" : "pm"}')
 python3 -c "
-import sys, json, re
-result = open('${RESULT_FILE}').read()
-m = re.search(r'CONNECTIONS_JSON:(\[.+\])', result)
-if not m:
+import sys, json, re, os
+conns = None
+# 1순위: connections-draft.json (프롬프트에서 Write 도구로 저장)
+draft = '${CONNECTIONS_DRAFT}'
+if os.path.exists(draft):
+    try:
+        conns = json.load(open(draft))
+        os.remove(draft)
+    except: pass
+# 2순위: 결과파일 내 CONNECTIONS_JSON: (fallback)
+if not conns:
+    result = open('${RESULT_FILE}').read()
+    m = re.search(r'CONNECTIONS_JSON:(\[.+\])', result)
+    if m:
+        try: conns = json.loads(m.group(1))
+        except: pass
+if not conns:
     sys.exit(0)
-conns = json.loads(m.group(1))
 record = json.dumps({'date': '$(date +%Y-%m-%d)', 'session': '${SESSION_LABEL}', 'connections': conns}, ensure_ascii=False)
 with open('${CONNECTIONS_FILE}', 'a') as f:
     f.write(record + '\n')
-" 2>/dev/null || log "WARN: connections 파싱 실패 (결과에 CONNECTIONS_JSON 없을 수 있음)"
+" 2>/dev/null || log "WARN: connections 파싱 실패"
 
 # --- Route to Discord (pm은 council-insight(23:00)가 담당하므로 스킵) ---
 if [[ "$MEETING_TYPE" != "pm" ]]; then
     WEBHOOK=$(jq -r '.webhooks["jarvis-ceo"]' "${BOT_HOME}/config/monitoring.json" 2>/dev/null || echo "")
     if [[ -n "$WEBHOOK" ]] && [[ "$WEBHOOK" != "null" ]]; then
-        DISCORD_MSG=$(echo "$RESULT" | head -c 1950)
+        DISCORD_MSG=$(echo "$RESULT" | sed '/^CONNECTIONS_JSON:/d' | sed '/^$/N;/^\n$/d' | head -c 1950)
         curl -s -X POST "$WEBHOOK" \
             -H "Content-Type: application/json" \
             -d "$(jq -n --arg content "$DISCORD_MSG" '{content: $content}')" \
@@ -525,10 +510,10 @@ try:
 except Exception:
     pass
 
-# --- KR4-2: 월간 운영 비용 (Claude Max 정액제 = $0 추가비용) ---
-# Claude Max는 $100/월 정액 구독 — API 사용량과 무관하게 추가 비용 없음
+# --- KR4-2: 월간 운영 비용 (Claude Max 정액제 = \$0 추가비용) ---
+# Claude Max는 \$100/월 정액 구독 — API 사용량과 무관하게 추가 비용 없음
 # OpenAI API(RAG enrichment)는 ENABLE_RAG_ENRICHMENT=1일 때만 발생 (현재 비활성)
-cost_str = "$0 (Claude Max 정액)"
+cost_str = "\$0 (Claude Max 정액)"
 
 # --- 수동측정 note 대상 키워드 ---
 MANUAL_KEYWORDS = ('학습', '포트폴리오', '이력서', '알림', 'RAG')
@@ -580,7 +565,7 @@ if updated:
 PYEOF
 fi
 
-echo "$RESULT"
+echo "$RESULT" | sed '/^CONNECTIONS_JSON:/d'
 
 # --- Decision Dispatcher: 결정사항 자동 실행 + 팀 성과 평가 ---
 DISPATCHER="${BOT_HOME}/bin/decision-dispatcher.sh"

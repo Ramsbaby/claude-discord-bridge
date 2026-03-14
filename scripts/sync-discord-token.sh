@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Cross-platform compat
+source "${JARVIS_HOME:-${BOT_HOME:-$HOME/.jarvis}}/lib/compat.sh" 2>/dev/null || true
 set -euo pipefail
 
 # sync-discord-token.sh — Discord 봇 토큰 업데이트 후 재시작
@@ -26,7 +28,7 @@ fi
 
 # 2. Discord Bot 재시작
 log "Discord Bot 재시작..."
-launchctl kickstart -k "gui/$(id -u)/ai.discord-bot" 2>/dev/null || true
+$IS_MACOS && launchctl kickstart -k "gui/$(id -u)/ai.discord-bot" 2>/dev/null || true
 sleep 3
 
 log "완료"

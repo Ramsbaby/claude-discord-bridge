@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Cross-platform compat
+source "${JARVIS_HOME:-${BOT_HOME:-$HOME/.jarvis}}/lib/compat.sh" 2>/dev/null || true
 # system-cleanup.sh — OS 재부팅 대신 경량 리소스 청소
 # 매일 새벽 04:00 cron 실행 (pmset 예약 재시작 대체)
 #
@@ -19,12 +21,14 @@ LOG_FILE="${BOT_HOME}/logs/system-cleanup.log"
 _log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG_FILE"; }
 
 get_mem_free_pct() {
+    $IS_MACOS || { echo "0"; return; }
     memory_pressure 2>/dev/null \
         | awk '/System-wide memory free percentage:/{gsub(/%/,"",$NF); print $NF+0}' || echo "0"
 }
 
 restart_launchagent() {
     local label="$1"
+    $IS_MACOS || { _log "SKIP: $label (non-macOS)"; return; }
     if launchctl list | grep -q "$label"; then
         launchctl stop "$label" 2>/dev/null || true
         sleep 2

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Cross-platform compat
+source "${JARVIS_HOME:-${BOT_HOME:-$HOME/.jarvis}}/lib/compat.sh" 2>/dev/null || true
 set -uo pipefail
 # jarvis-auditor.sh - Autonomous code quality auditor
 # set -e 없음: 감지 실패는 정상 흐름 (e2e-test.sh와 동일 패턴)
@@ -455,6 +457,7 @@ run_antipattern_audit() {
 
 # 4. LaunchAgent audit
 run_launchagent_audit() {
+    $IS_MACOS || { report "### LaunchAgent Status"; report ""; report "- SKIP: non-macOS"; report ""; return 0; }
     log "Starting LaunchAgent audit"
     report "### LaunchAgent Status"
     report ""

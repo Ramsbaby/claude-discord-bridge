@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
+# Cross-platform compat
+source "${JARVIS_HOME:-${BOT_HOME:-$HOME/.jarvis}}/lib/compat.sh" 2>/dev/null || true
 set -euo pipefail
+
+# macOS launchctl 의존 — Linux에서는 실행 불필요
+$IS_MACOS || exit 0
 
 # bot-watchdog.sh - Discord bot log-freshness monitor
 # Detects silent death: process alive but WebSocket dead (no log output).

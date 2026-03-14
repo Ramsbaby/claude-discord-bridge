@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Cross-platform compat
+source "${JARVIS_HOME:-${BOT_HOME:-$HOME/.jarvis}}/lib/compat.sh" 2>/dev/null || true
 set -euo pipefail
 
 # ============================================================
@@ -118,6 +120,7 @@ EOF
 # 2. launchd-manifest.md
 # ==========================================================
 generate_launchd_manifest() {
+  $IS_MACOS || { log "SKIP: launchd-manifest (non-macOS)"; return; }
   local outfile="$OUT_DIR/launchd-manifest.md"
   log "Generating launchd-manifest.md ..."
 

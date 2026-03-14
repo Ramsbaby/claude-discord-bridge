@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Cross-platform compat
+source "${JARVIS_HOME:-${BOT_HOME:-$HOME/.jarvis}}/lib/compat.sh" 2>/dev/null || true
 set -euo pipefail
 
 # decision-dispatcher.sh — Board Meeting 결정사항 자동 실행 + 팀 성과 평가
@@ -62,6 +64,14 @@ stale|kill-stale
 로그 정리|cleanup-logs
 디스크 정리|cleanup-disk
 결과 정리|cleanup-results
+RAG 재시작|restart-rag
+rag 재시작|restart-rag
+rag restart|restart-rag
+Vault 동기화|sync-vault
+vault 동기화|sync-vault
+vault sync|sync-vault
+e2e 실행|run-e2e
+e2e test|run-e2e
 "
 
 match_action() {
@@ -91,14 +101,14 @@ action_restart_service() {
 
     # 결정 내용에서 서비스 식별
     if echo "$decision" | grep -qi "orchestrator"; then
-        if launchctl list 2>/dev/null | grep -q "jarvis.orchestrator"; then
+        if $IS_MACOS && launchctl list 2>/dev/null | grep -q "jarvis.orchestrator"; then
             if launchctl kickstart -k "gui/${uid}/ai.jarvis.orchestrator" 2>"$_err"; then
                 rm -f "$_err"; echo "OK"; return 0
             fi
             log "WARN: orchestrator kickstart: $(cat "$_err")"
         fi
         local plist="$HOME/Library/LaunchAgents/ai.jarvis.orchestrator.plist"
-        if [[ -f "$plist" ]]; then
+        if $IS_MACOS && [[ -f "$plist" ]]; then
             if launchctl bootstrap "gui/${uid}" "$plist" 2>"$_err"; then
                 rm -f "$_err"; echo "OK"; return 0
             fi
@@ -112,7 +122,7 @@ action_restart_service() {
         log "WARN: bot restart: $(cat "$_err")"; rm -f "$_err"
         echo "FAIL:bot restart failed"; return 1
     elif echo "$decision" | grep -qi "watchdog"; then
-        if launchctl kickstart -k "gui/${uid}/ai.jarvis.watchdog" 2>"$_err"; then
+        if $IS_MACOS && launchctl kickstart -k "gui/${uid}/ai.jarvis.watchdog" 2>"$_err"; then
             rm -f "$_err"; echo "OK"; return 0
         fi
         log "WARN: watchdog kickstart: $(cat "$_err")"; rm -f "$_err"
@@ -122,11 +132,16 @@ action_restart_service() {
 }
 
 _run_l3_action() {
-    local label="$1" script="$2"
+    local label="$1" script="$2" max_sec="${3:-120}"
     local _err
     _err=$(mktemp)
-    if "$script" 2>"$_err"; then
+    if gtimeout "$max_sec" "$script" 2>"$_err"; then
         rm -f "$_err"; echo "OK"; return 0
+    fi
+    local rc=$?
+    if [[ $rc -eq 124 ]]; then
+        log "WARN: ${label}: timeout after ${max_sec}s"
+        rm -f "$_err"; echo "FAIL:${label} timed out"; return 1
     fi
     log "WARN: ${label}: $(tail -2 "$_err" | tr '\n' ' ')"; rm -f "$_err"
     echo "FAIL:${label} failed"; return 1
@@ -146,6 +161,29 @@ action_cleanup_disk() {
 
 action_cleanup_results() {
     _run_l3_action "cleanup-results" "${BOT_HOME}/scripts/l3-actions/cleanup-results.sh"
+}
+
+action_restart_rag() {
+    local uid
+    uid=$(id -u)
+    local _err
+    _err=$(mktemp)
+    if $IS_MACOS && launchctl kickstart -k "gui/${uid}/ai.jarvis.rag-watcher" 2>"$_err"; then
+        rm -f "$_err"; echo "OK:rag-watcher restarted"; return 0
+    fi
+    if ! $IS_MACOS; then
+        pm2 restart jarvis-rag-watcher 2>"$_err" && { rm -f "$_err"; echo "OK:rag-watcher restarted"; return 0; } || true
+    fi
+    log "WARN: rag-watcher kickstart: $(cat "$_err")"; rm -f "$_err"
+    echo "FAIL:rag-watcher restart failed"; return 1
+}
+
+action_sync_vault() {
+    _run_l3_action "sync-vault" "${BOT_HOME}/scripts/vault-sync.sh" 300
+}
+
+action_run_e2e() {
+    _run_l3_action "run-e2e" "${BOT_HOME}/scripts/e2e-test.sh" 600
 }
 
 action_analyze_cron_failure() {
@@ -237,6 +275,15 @@ dispatch_decision() {
             ;;
         cleanup-disk|cleanup-results)
             result=$(action_cleanup_results) || exit_code=$?
+            ;;
+        restart-rag)
+            result=$(action_restart_rag) || exit_code=$?
+            ;;
+        sync-vault)
+            result=$(action_sync_vault) || exit_code=$?
+            ;;
+        run-e2e)
+            result=$(action_run_e2e) || exit_code=$?
             ;;
         analyze-cron)
             result=$(action_analyze_cron_failure) || exit_code=$?
@@ -402,7 +449,7 @@ while IFS= read -r line || [[ -n "$line" ]]; do
     if [[ -z "$line" ]]; then continue; fi
 
     # 이미 처리된 결정인지 체크 (decision 해시)
-    line_hash=$(echo "$line" | md5 -q 2>/dev/null || echo "$line" | md5sum | cut -d' ' -f1)
+    line_hash=$(echo "$line" | md5 -q 2>/dev/null || echo "$line" | shasum | cut -d' ' -f1)
     if grep -q "$line_hash" "$PROCESSED_FILE" 2>/dev/null; then
         log "SKIP (already processed): ${line}"
         continue
