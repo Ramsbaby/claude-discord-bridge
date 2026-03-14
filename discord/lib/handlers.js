@@ -37,6 +37,9 @@ const EMOJI = {
   STALL_HARD: '⚠️',
 };
 
+// Dedup: prevent same message from being processed twice (shard resume / race condition)
+const processingMsgIds = new Set();
+
 // ---------------------------------------------------------------------------
 // handleMessage
 // ---------------------------------------------------------------------------
@@ -52,6 +55,13 @@ export async function handleMessage(message, { sessions, rateTracker, semaphore,
   });
 
   if (message.author.bot) return;
+
+  // Dedup guard: skip if this message is already being processed
+  if (processingMsgIds.has(message.id)) {
+    log('debug', 'Duplicate messageCreate ignored', { messageId: message.id });
+    return;
+  }
+  processingMsgIds.add(message.id);
 
   // Support multiple channels (CHANNEL_IDS comma-separated, fallback to CHANNEL_ID)
   const channelIds = (process.env.CHANNEL_IDS || process.env.CHANNEL_ID || '')
@@ -387,6 +397,7 @@ export async function handleMessage(message, { sessions, rateTracker, semaphore,
     } catch { /* Can't send to channel either */ }
     sendNtfy(`${process.env.BOT_NAME || 'Claude Bot'} Error`, err.message, 'high');
   } finally {
+    processingMsgIds.delete(message.id);
     if (typingInterval) clearInterval(typingInterval);
     if (stallTimer) clearInterval(stallTimer);
     if (timeoutHandle) clearTimeout(timeoutHandle);
