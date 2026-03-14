@@ -10,14 +10,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Send ntfy notification
-        # NTFY_TOPIC secret이 설정된 경우만 실행
-        if: ${{ secrets.NTFY_TOPIC != '' }}
+        # GitHub Actions는 secrets를 if: 조건에서 평가 불가 → bash 조건으로 처리
         run: |
-          curl -s -X POST "https://ntfy.sh/${{ secrets.NTFY_TOPIC }}" \
-            -H "Title: Jarvis 새 커밋 푸시됨" \
-            -H "Priority: default" \
-            -H "Tags: jarvis,deploy" \
-            -d "브랜치: ${{ github.ref_name }} | 커밋: ${{ github.sha }} | 작성자: ${{ github.actor }} | update-broadcast.sh가 자동 픽업합니다"
+          if [ -n "${{ secrets.NTFY_TOPIC }}" ]; then
+            curl -s -X POST "https://ntfy.sh/${{ secrets.NTFY_TOPIC }}" \
+              -H "Title: Jarvis 새 커밋 푸시됨" \
+              -H "Priority: default" \
+              -H "Tags: jarvis,deploy" \
+              -d "브랜치: ${{ github.ref_name }} | 커밋: ${{ github.sha }} | 작성자: ${{ github.actor }} | update-broadcast.sh가 자동 픽업합니다"
+          else
+            echo "NTFY_TOPIC secret 미설정 — 알림 스킵"
+          fi
         continue-on-error: true
 
       - name: Log deploy notification
