@@ -62,9 +62,22 @@ set_cooldown() {
     date +%s > "$COOLDOWN_FILE"
 }
 
+append_incident() {
+    local summary="$1"
+    local ts
+    ts=$(date '+%Y-%m-%d %H:%M:%S')
+    local incident_file="$BOT_HOME/rag/incidents.md"
+    echo "" >> "$incident_file"
+    echo "- [$ts] **[rag-quality]** $summary" >> "$incident_file"
+}
+
 alert_and_exit() {
     local message="$1"
     echo "$message"
+    # incidents.md 자동 기록 (쿨다운 무관 — 항상 기록)
+    local first_line
+    first_line=$(echo "$message" | head -1)
+    append_incident "$first_line"
     if is_in_cooldown; then
         echo "Cooldown active, skipping Discord alert."
         return 0
@@ -163,7 +176,7 @@ if [[ -d "$DB_PATH" ]]; then
           const t = await db.openTable('documents');
           const rows = await t.query().limit(1).toArray();
           console.log(rows.length > 0 ? 'OK' : '0');
-        } catch(e) { console.log('ERROR:' + e.message.slice(0,100)); }
+        } catch(e) { console.log('ERROR:' + e.message.slice(0,200)); }
       })();
     " 2>/dev/null || echo "ERROR:node-exec-failed")
 
@@ -188,4 +201,18 @@ MSG
     fi
 fi
 
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] RAG quality check: OK (last index ${elapsed_min}min ago, DB query OK)"
+# 5) LanceDB 크기 경고 (500MB 이상 → compact 권장)
+if [[ -d "$DB_PATH" ]]; then
+    db_mb=$(du -sm "$DB_PATH" 2>/dev/null | awk '{print $1}')
+    if (( db_mb > 500 )); then
+        alert_and_exit "$(cat <<MSG
+⚠️ LanceDB 크기 경고
+현재: ${db_mb}MB (기준: 500MB)
+조치: rag-compact 실행 권장 (cd ${JARVIS_HOME:-$HOME/.jarvis}/discord && BOT_HOME=${JARVIS_HOME:-$HOME/.jarvis} node --input-type=module -e "import {RAGEngine} from '${JARVIS_HOME:-$HOME/.jarvis}/lib/rag-engine.mjs'; const r=new RAGEngine(); await r.init(); await r.compact(); process.exit(0)")
+MSG
+)"
+        exit 0
+    fi
+fi
+
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] RAG quality check: OK (last index ${elapsed_min}min ago, DB query OK, size ${db_mb:-?}MB)"

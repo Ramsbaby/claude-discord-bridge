@@ -1,16 +1,10 @@
-# Jarvis — Docker image
-# Enables Jarvis to run on Windows (via Docker Desktop) and Linux servers.
-#
-# Build:  docker build -t jarvis .
-# Run:    docker compose up -d
-
 FROM node:22-alpine
 
 LABEL maintainer="ramsbaby" \
       description="Jarvis AI 집사 — Discord bot + automation"
 
-# bash, curl, git, jq (스크립트 의존성)
-RUN apk add --no-cache bash curl git jq
+# bash, curl, git, jq, dcron (crontab 지원)
+RUN apk add --no-cache bash curl git jq dcron
 
 # PM2 글로벌 설치
 RUN npm install -g pm2
@@ -24,11 +18,11 @@ RUN cd discord && npm ci --omit=dev
 # 전체 소스 복사
 COPY . .
 
-# 로그 디렉토리 생성
-RUN mkdir -p logs inbox rag
+# 디렉토리 생성
+RUN mkdir -p logs inbox rag context state results
 
 ENV JARVIS_HOME=/jarvis \
     NODE_ENV=production
 
-# PM2 런타임으로 실행 (foreground, Docker 친화적)
-CMD ["pm2-runtime", "ecosystem.config.cjs"]
+# crond 시작 후 PM2 런타임 실행
+CMD ["/bin/bash", "-c", "crond && pm2-runtime ecosystem.config.cjs"]

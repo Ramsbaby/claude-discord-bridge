@@ -11,10 +11,16 @@ services:
       - JARVIS_HOME=/jarvis
       - NODE_ENV=production
     volumes:
-      # 데이터 영속화 (컨테이너 재시작 시 유지)
+      # Claude CLI 인증 (read-only)
+      - ~/.claude:/root/.claude:ro
+      # 데이터 영속화
       - ./rag:/jarvis/rag
       - ./inbox:/jarvis/inbox
       - ./logs:/jarvis/logs
+      - ./context:/jarvis/context
+      - ./state:/jarvis/state
+      - ./results:/jarvis/results
+      - ./plugins:/jarvis/plugins:ro
     logging:
       driver: "json-file"
       options:

@@ -13,6 +13,9 @@ import { userMemory } from './user-memory.js';
 import { t } from './i18n.js';
 import { getActivities } from './lounge.js';
 
+// Cross-platform: launchctl은 macOS 전용
+const IS_MACOS = process.platform === 'darwin';
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -248,20 +251,43 @@ export async function handleInteraction(interaction, deps) {
     }
     await interaction.deferReply();
     try {
-      const { execFileSync } = await import('node:child_process');
+      const { spawn } = await import('node:child_process');
       const cronScript = join(BOT_HOME, 'bin', 'bot-cron.sh');
       log('info', 'Manual task run via /run', { taskId, user: interaction.user.tag });
-      execFileSync('/bin/bash', [cronScript, taskId], {
-        timeout: 300_000,
-        encoding: 'utf-8',
+
+      const proc = spawn('/bin/bash', [cronScript, taskId], {
         env: { ...process.env, HOME },
+        stdio: ['ignore', 'pipe', 'pipe'],
       });
-      const embed = new EmbedBuilder()
-        .setTitle(t('cmd.run.done', { taskId }))
-        .setColor(0x2ecc71)
-        .setDescription(t('cmd.run.doneDesc', { user: interaction.user.tag }))
-        .setTimestamp();
-      await interaction.editReply({ embeds: [embed] });
+
+      let stdout = '';
+      let stderr = '';
+      proc.stdout.on('data', (chunk) => { stdout += chunk.toString('utf-8'); });
+      proc.stderr.on('data', (chunk) => { stderr += chunk.toString('utf-8'); });
+
+      const timeout = setTimeout(() => {
+        proc.kill('SIGTERM');
+      }, 300_000); // 5분 timeout
+
+      proc.on('close', async (code) => {
+        clearTimeout(timeout);
+        if (code === 0) {
+          const embed = new EmbedBuilder()
+            .setTitle(t('cmd.run.done', { taskId }))
+            .setColor(0x2ecc71)
+            .setDescription(t('cmd.run.doneDesc', { user: interaction.user.tag }))
+            .setTimestamp();
+          await interaction.editReply({ embeds: [embed] });
+        } else {
+          const embed = new EmbedBuilder()
+            .setTitle(t('cmd.run.fail', { taskId }))
+            .setColor(0xe74c3c)
+            .setDescription('```\n' + (stderr || stdout || `Exit code: ${code}`).slice(0, 500) + '\n```')
+            .setTimestamp();
+          await interaction.editReply({ embeds: [embed] });
+          log('error', 'Manual task run failed', { taskId, code, stderr: stderr.slice(0, 200) });
+        }
+      });
     } catch (err) {
       const embed = new EmbedBuilder()
         .setTitle(t('cmd.run.fail', { taskId }))
@@ -391,19 +417,26 @@ export async function handleInteraction(interaction, deps) {
       const timestamp = kstNow.toISOString().slice(0, 16).replace('T', ' ');
 
       // 1. LaunchAgents
-      const launchOut = spawnSync('launchctl', ['list'], { encoding: 'utf-8' });
-      const launchLines = (launchOut.stdout || '').split('\n').filter(l => /jarvis|openclaw/.test(l));
-      const requiredAgents = ['ai.jarvis.discord-bot', 'ai.jarvis.watchdog', 'ai.jarvis.rag-watcher'];
-      const runningAgents = launchLines.map(l => (l.split('\t')[2] || '').trim());
-      const missingAgents = requiredAgents.filter(a => !runningAgents.some(r => r === a));
-      for (const agent of missingAgents) {
-        const plistPath = `${HOME}/Library/LaunchAgents/${agent}.plist`;
-        spawnSync('launchctl', ['load', plistPath], { encoding: 'utf-8' });
-        fixes.push(`${agent} 재등록`);
+      let agentStatus;
+      if (IS_MACOS) {
+        const launchOut = spawnSync('launchctl', ['list'], { encoding: 'utf-8' });
+        const launchLines = (launchOut.stdout || '').split('\n').filter(l => /jarvis|openclaw/.test(l));
+        const requiredAgents = ['ai.jarvis.discord-bot', 'ai.jarvis.watchdog', 'ai.jarvis.rag-watcher'];
+        const runningAgents = launchLines.map(l => (l.split('\t')[2] || '').trim());
+        const missingAgents = requiredAgents.filter(a => !runningAgents.some(r => r === a));
+        for (const agent of missingAgents) {
+          const plistPath = `${HOME}/Library/LaunchAgents/${agent}.plist`;
+          spawnSync('launchctl', ['load', plistPath], { encoding: 'utf-8' });
+          fixes.push(`${agent} 재등록`);
+        }
+        agentStatus = missingAgents.length === 0
+          ? `✅ ${launchLines.length}개 실행 중`
+          : `⚠️ ${missingAgents.length}개 재등록됨`;
+      } else {
+        const pm2Out = spawnSync('pm2', ['list', '--no-color'], { encoding: 'utf-8' });
+        const jarvisRunning = /jarvis/.test(pm2Out.stdout || '');
+        agentStatus = jarvisRunning ? '✅ pm2 실행 중' : '⚠️ pm2 프로세스 없음 (비macOS)';
       }
-      const agentStatus = missingAgents.length === 0
-        ? `✅ ${launchLines.length}개 실행 중`
-        : `⚠️ ${missingAgents.length}개 재등록됨`;
       rows.push(['LaunchAgents', agentStatus]);
 
       // 2. Discord bot process
@@ -474,7 +507,11 @@ export async function handleInteraction(interaction, deps) {
       const gOut = spawnSync('curl', ['-sf', '--max-time', '3', 'http://localhost:61208/api/4/cpu'],
         { encoding: 'utf-8' });
       if (gOut.status !== 0) {
-        spawnSync('launchctl', ['load', `${HOME}/Library/LaunchAgents/ai.openclaw.glances.plist`], { encoding: 'utf-8' });
+        if (IS_MACOS) {
+          spawnSync('launchctl', ['load', `${HOME}/Library/LaunchAgents/ai.openclaw.glances.plist`], { encoding: 'utf-8' });
+        } else {
+          spawnSync('pm2', ['restart', 'glances'], { encoding: 'utf-8' });
+        }
         fixes.push('Glances 재시작');
         glancesStatus = '⚠️ 재시작됨';
       } else {

@@ -5,6 +5,8 @@ set -euo pipefail
 # Usage: health-check.sh [--json]
 
 BOT_HOME="${BOT_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+# Cross-platform compat
+source "${JARVIS_HOME:-${BOT_HOME:-$HOME/.jarvis}}/lib/compat.sh" 2>/dev/null || true
 JSON_MODE="${1:-}"
 
 check() {
@@ -20,7 +22,7 @@ check() {
 }
 
 # 1. Discord Bot (launchd)
-bot_status=$(launchctl list 2>/dev/null | grep "ai.jarvis.discord-bot" || echo "")
+bot_status=$($IS_MACOS && launchctl list 2>/dev/null | grep "ai.jarvis.discord-bot" || echo "")
 if [[ -z "$bot_status" ]]; then
     check "discord-bot" "fail" "not loaded in launchd"
 else
@@ -40,7 +42,7 @@ else
 fi
 
 # 2. Watchdog (launchd)
-wd_status=$(launchctl list 2>/dev/null | grep "ai.jarvis.watchdog" || echo "")
+wd_status=$($IS_MACOS && launchctl list 2>/dev/null | grep "ai.jarvis.watchdog" || echo "")
 if [[ -z "$wd_status" ]]; then
     check "watchdog" "fail" "not loaded in launchd"
 else
@@ -123,7 +125,7 @@ _write_health_json() {
     fi
     _rss_mb=0
     local _bot_pid_h
-    _bot_pid_h=$(launchctl list 2>/dev/null | awk '/ai\.jarvis\.discord-bot/{print $1}' | grep -v '^-' || echo "")
+    _bot_pid_h=$($IS_MACOS && launchctl list 2>/dev/null | awk '/ai\.jarvis\.discord-bot/{print $1}' | grep -v '^-' || echo "")
     if [[ -n "$_bot_pid_h" ]] && [[ "$_bot_pid_h" =~ ^[0-9]+$ ]]; then
         local _rss_kb
         _rss_kb=$(ps -p "$_bot_pid_h" -o rss= 2>/dev/null | tr -d ' ' || echo "0")
@@ -136,7 +138,7 @@ _write_health_json() {
     _bot_status_h="down"
     _bot_pid_val=0
     local _bot_launchd
-    _bot_launchd=$(launchctl list 2>/dev/null | grep "ai\.jarvis\.discord-bot" || echo "")
+    _bot_launchd=$($IS_MACOS && launchctl list 2>/dev/null | grep "ai\.jarvis\.discord-bot" || echo "")
     if [[ -n "$_bot_launchd" ]]; then
         _bot_loaded="true"
         _bot_pid_int=$(echo "$_bot_launchd" | awk '{print $1}')
@@ -165,14 +167,14 @@ _write_health_json() {
     # --- services: watchdog ---
     local _wd_loaded
     _wd_loaded="false"
-    if launchctl list 2>/dev/null | grep -q "ai\.jarvis\.watchdog"; then
+    if $IS_MACOS && launchctl list 2>/dev/null | grep -q "ai\.jarvis\.watchdog"; then
         _wd_loaded="true"
     fi
 
     # --- services: rag_watcher ---
     local _rag_loaded
     _rag_loaded="false"
-    if launchctl list 2>/dev/null | grep -q "ai\.jarvis\.rag-watch\|rag.watch\|rag-watch" 2>/dev/null; then
+    if $IS_MACOS && launchctl list 2>/dev/null | grep -q "ai\.jarvis\.rag-watch\|rag.watch\|rag-watch" 2>/dev/null; then
         _rag_loaded="true"
     fi
     # fallback: check if rag-watch process is running

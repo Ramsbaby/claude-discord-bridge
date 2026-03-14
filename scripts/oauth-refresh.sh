@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 # oauth-refresh.sh — Claude Code OAuth 토큰 자동 갱신
+
+# cron 환경에서 node/claude 경로 확보
+export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+# Cross-platform compat
+source "${JARVIS_HOME:-${BOT_HOME:-$HOME/.jarvis}}/lib/compat.sh" 2>/dev/null || true
 #
 # 역할: credentials.json의 refreshToken으로 새 accessToken을 발급받아
 #       credentials.json을 갱신하고, 만료 임박 시 봇을 재시작.
@@ -104,9 +109,12 @@ JSEOF
 log "✅ 갱신 완료 — 새 만료: $(node -e "process.stdout.write(new Date(${NEW_EXPIRES_AT}).toISOString())")"
 
 # 봇이 구 토큰을 쓰고 있었다면 재시작
-if launchctl list ai.jarvis.discord-bot &>/dev/null; then
+if $IS_MACOS && launchctl list ai.jarvis.discord-bot &>/dev/null; then
   log "봇 재시작 (새 토큰 반영)"
   launchctl kickstart -k "gui/$(id -u)/ai.jarvis.discord-bot" &>/dev/null || true
+elif ! $IS_MACOS; then
+  log "봇 재시작 (새 토큰 반영 — pm2)"
+  pm2 restart discord-bot 2>/dev/null || true
 fi
 
 exit 0

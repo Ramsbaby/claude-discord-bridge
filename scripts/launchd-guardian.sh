@@ -6,6 +6,14 @@ set -euo pipefail
 # Ensures critical LaunchAgents remain registered after system sleep or restart.
 
 BOT_HOME="${BOT_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+# Cross-platform compat
+source "${JARVIS_HOME:-${BOT_HOME:-$HOME/.jarvis}}/lib/compat.sh" 2>/dev/null || true
+
+# launchd-guardian is macOS-only; exit gracefully on other platforms
+if ! $IS_MACOS; then
+    echo "[compat] launchd-guardian skipped on non-macOS"
+    exit 0
+fi
 LOG_FILE="$BOT_HOME/logs/launchd-guardian.log"
 ROUTE_RESULT="$BOT_HOME/bin/route-result.sh"
 UID_NUM=$(id -u)

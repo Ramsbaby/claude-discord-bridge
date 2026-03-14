@@ -6,6 +6,8 @@ set -euo pipefail
 
 # --- Configuration ---
 BOT_HOME="${BOT_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+# Cross-platform compat
+source "${JARVIS_HOME:-${BOT_HOME:-$HOME/.jarvis}}/lib/compat.sh" 2>/dev/null || true
 source "${BOT_HOME}/lib/log-utils.sh" 2>/dev/null || true
 STATE_DIR="$BOT_HOME/watchdog"
 LOG_FILE="$BOT_HOME/logs/watchdog.log"
@@ -14,8 +16,8 @@ DISCORD_SERVICE="${DISCORD_SERVICE:-ai.jarvis.discord-bot}"
 DISCORD_PLIST="$HOME/Library/LaunchAgents/${DISCORD_SERVICE}.plist"
 ROUTE_RESULT="$BOT_HOME/bin/route-result.sh"
 
-MEMORY_WARN_MB=700    # 실측 스파이크 최대치(964MB) 고려: 경고는 여유있게
-MEMORY_CRITICAL_MB=1200  # 재시작 임계값: OOM 발생 전 여유 확보
+MEMORY_WARN_MB=900    # LanceDB 인덱스 로드 포함 실측치 고려
+MEMORY_CRITICAL_MB=1400  # 재시작 임계값: session-sync 스파이크(+450MB) 여유 확보
 CLAUDE_STALE_MINUTES=10
 HEARTBEAT_FILE="$BOT_HOME/state/bot-heartbeat"
 HEARTBEAT_STALE_SEC=900  # 15분: 하트비트 없으면 좀비
@@ -78,7 +80,7 @@ detect_crash_loop() {
                 | tail -1 || echo "로그 없음")
             send_alert "[Bot Watchdog] CRASH LOOP: ${restart_count}회 재시작 (30분 내). 마지막 에러: ${last_error}"
             # 크래시 루프 감지 후 restart-times 초기화 (중복 알림 방지)
-            > "$restart_log"
+            true > "$restart_log"
         fi
     fi
 }
@@ -225,7 +227,7 @@ _should_skip_zombie_restart() {
 # --- Discord bot status check ---
 check_discord_bot() {
     local status_line
-    status_line=$(launchctl list 2>/dev/null | grep "$DISCORD_SERVICE" || true)
+    status_line=$($IS_MACOS && launchctl list 2>/dev/null | grep "$DISCORD_SERVICE" || true)
 
     if [[ -z "$status_line" ]]; then
         echo "NOT_LOADED"
@@ -402,7 +404,7 @@ run_one_check() {
                     if _should_skip_zombie_restart; then
                         health_status="skipped:active_session"
                     else
-                        launchctl kickstart -k "gui/$(id -u)/$DISCORD_SERVICE" 2>/dev/null || true
+                        $IS_MACOS && launchctl kickstart -k "gui/$(id -u)/$DISCORD_SERVICE" 2>/dev/null || true
                         health_status="restarted:zombie"
                         increment_crash
                     fi
@@ -413,7 +415,7 @@ run_one_check() {
                 if _should_skip_zombie_restart; then
                     health_status="skipped:active_session_no_hb"
                 else
-                    launchctl kickstart -k "gui/$(id -u)/$DISCORD_SERVICE" 2>/dev/null || true
+                    $IS_MACOS && launchctl kickstart -k "gui/$(id -u)/$DISCORD_SERVICE" 2>/dev/null || true
                     health_status="restarted:zombie_no_hb"
                     increment_crash
                 fi
@@ -424,7 +426,7 @@ run_one_check() {
                 decrement_crash
                 if (( memory_mb >= MEMORY_CRITICAL_MB )); then
                     send_alert "[Bot Watchdog] CRITICAL: Discord bot memory=${memory_mb}MB (>=${MEMORY_CRITICAL_MB}MB). Restarting."
-                    launchctl kickstart -k "gui/$(id -u)/$DISCORD_SERVICE" 2>/dev/null || true
+                    $IS_MACOS && launchctl kickstart -k "gui/$(id -u)/$DISCORD_SERVICE" 2>/dev/null || true
                     health_status="restarted:memory"
                 elif (( memory_mb >= MEMORY_WARN_MB )); then
                     log "WARN: Discord bot memory=${memory_mb}MB (>=${MEMORY_WARN_MB}MB)"
@@ -460,10 +462,10 @@ run_one_check() {
                 date +%s > "$STATE_DIR/last-restart"
 
                 if [[ "$bot_status" == "NOT_LOADED" && -f "$DISCORD_PLIST" ]]; then
-                    launchctl bootstrap "gui/$(id -u)" "$DISCORD_PLIST" 2>/dev/null \
-                        || launchctl load "$DISCORD_PLIST" 2>/dev/null || true
+                    $IS_MACOS && { launchctl bootstrap "gui/$(id -u)" "$DISCORD_PLIST" 2>/dev/null \
+                        || launchctl load "$DISCORD_PLIST" 2>/dev/null || true; }
                 else
-                    launchctl kickstart -k "gui/$(id -u)/$DISCORD_SERVICE" 2>/dev/null || true
+                    $IS_MACOS && launchctl kickstart -k "gui/$(id -u)/$DISCORD_SERVICE" 2>/dev/null || true
                 fi
 
                 if (( crash_count >= 3 )); then
@@ -484,6 +486,16 @@ run_one_check() {
   "crash_count": $crash_count
 }
 HEALTHEOF
+
+    # LanceDB 크기 감시 (1GB 초과 시 경고 — 방치 시 2GB+ 급증 선례)
+    lancedb_path="$BOT_HOME/rag/lancedb"
+    if [[ -d "$lancedb_path" ]]; then
+        lancedb_mb=$(du -sm "$lancedb_path" 2>/dev/null | awk '{print $1}')
+        if (( lancedb_mb > 1024 )); then
+            log "WARN: LanceDB ${lancedb_mb}MB — compact 필요: rag-compact 실행 권장"
+            send_alert "[Watchdog] LanceDB ${lancedb_mb}MB 초과 — compact 필요"
+        fi
+    fi
 
     log "Check complete: bot=$health_status mem=${memory_mb}MB stale_killed=$stale_killed crashes=$crash_count"
 }

@@ -5,6 +5,8 @@
 
 set -euo pipefail
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:${HOME}/.local/bin:${PATH}"
+# Cross-platform compat
+source "${JARVIS_HOME:-${BOT_HOME:-$HOME/.jarvis}}/lib/compat.sh" 2>/dev/null || true
 
 BOT_HOME="${BOT_HOME:-$HOME/.jarvis}"
 SERVICE="ai.jarvis.discord-bot"
@@ -65,7 +67,7 @@ fi
 # 4. JSON 유효성
 echo ""
 echo "▶ JSON 유효성..."
-for f in "$BOT_HOME/discord/personas.json" "$BOT_HOME/config/tasks.json"; do
+for f in "$BOT_HOME/discord/personas.json" "$BOT_HOME/config/tasks.json" "$BOT_HOME/config/effective-tasks.json"; do
     if node -e "JSON.parse(require('fs').readFileSync('$f','utf8'))" 2>/dev/null; then
         ok "JSON 유효: ${f##*/}"
     else
@@ -90,6 +92,15 @@ else
     done
 fi
 
+# 6. node_modules 존재 확인
+echo ""
+echo "▶ 의존성 확인..."
+if [[ -d "$BOT_HOME/discord/node_modules" ]]; then
+    ok "node_modules 존재"
+else
+    fail "node_modules 없음 — npm install 필요: cd $BOT_HOME/discord && npm install"
+fi
+
 # ── 결과 판단 ─────────────────────────────────────────────────────
 echo ""
 echo "=== 결과: ${PASS}/$((PASS+FAIL)) 통과 ==="
@@ -105,9 +116,14 @@ fi
 # ── 봇 재시작 ─────────────────────────────────────────────────────
 echo ""
 echo "▶ 봇 재시작..."
-launchctl stop "$SERVICE" 2>/dev/null || true
-sleep 2
-launchctl start "$SERVICE" 2>/dev/null || launchctl kickstart -k "gui/$(id -u)/$SERVICE" 2>/dev/null
+if $IS_MACOS; then
+    launchctl stop "$SERVICE" 2>/dev/null || true
+    sleep 2
+    launchctl start "$SERVICE" 2>/dev/null || launchctl kickstart -k "gui/$(id -u)/$SERVICE" 2>/dev/null
+else
+    echo "[compat] 봇 재시작: pm2 restart discord-bot"
+    pm2 restart discord-bot 2>/dev/null || true
+fi
 
 # ── 생존 확인 (10초 대기 — 즉시 크래시 감지) ─────────────────────
 echo "  (10초 대기 중...)"
