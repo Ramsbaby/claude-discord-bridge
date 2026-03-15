@@ -78,7 +78,7 @@ fi
 unset _jitter
 
 # --- Read task config from tasks.json ---
-TASK_CONFIG=$(jq -r --arg id "$TASK_ID" '.tasks[] | select(.id == $id)' "$TASKS_FILE")
+TASK_CONFIG=$(jq -r --arg id "$TASK_ID" '.tasks[] | select(.id == $id or ((.aliases // []) | index($id)) != null)' "$TASKS_FILE")
 if [[ -z "$TASK_CONFIG" || "$TASK_CONFIG" == "null" ]]; then
     log "ERROR: Task '$TASK_ID' not found in tasks.json"
     exit 1
