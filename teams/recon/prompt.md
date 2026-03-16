@@ -192,6 +192,8 @@ cp [대상파일] [대상파일].recon-backup-{{DATE}}
 
 ### 자율 구현 금지 영역 (절대 건드리지 않음)
 - `discord-bot.js`, `claude-runner.js` (핵심 봇 로직)
+- `commands.js`, `prompt-sections.js` (봇 명령 처리 / 시스템 프롬프트 구성)
+- `company-agent.mjs`, `team-loader.mjs` (팀 에이전트 엔진)
 - `bot-cron.sh` (크론 엔진)
 - `.env` 파일
 - `state/` 디렉토리

@@ -593,8 +593,13 @@ export async function handleInteraction(interaction, deps) {
 
       log('info', `Team summoned via /team`, { team: teamName, user: interaction.user.tag });
 
+      // 요청 채널로 결과 전송 (webhook key = Discord channel name)
+      const requestChannel = interaction.channel?.name ?? null;
+      const agentArgs = ['--team', teamName];
+      if (requestChannel) agentArgs.push('--channel', requestChannel);
+
       await execFileAsync(
-        '/opt/homebrew/bin/node', [agentPath, '--team', teamName],
+        '/opt/homebrew/bin/node', [agentPath, ...agentArgs],
         { timeout: 300_000, env: { ...process.env, HOME }, cwd: BOT_HOME },
       );
 

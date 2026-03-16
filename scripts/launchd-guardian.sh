@@ -82,8 +82,26 @@ for service in "${KEEPALIVE_SERVICES[@]}"; do
         pid=$(echo "$status_line" | awk '{print $1}')
         if [[ "$pid" == "-" ]]; then
             log "RECOVERY: $service not running (PID=-), kickstarting"
+
+            # 연속 실패 카운터: 3회 이상이면 npm install 후 재시작
+            FAIL_FILE="/tmp/jarvis-guardian-${service//[^a-zA-Z0-9]/-}-fails"
+            fail_count=$(cat "$FAIL_FILE" 2>/dev/null || echo 0)
+            fail_count=$(( fail_count + 1 ))
+            echo "$fail_count" > "$FAIL_FILE"
+
+            if [[ "$fail_count" -ge 3 && "$service" == "ai.jarvis.discord-bot" ]]; then
+                log "RECOVERY: $service failed ${fail_count}x — running npm install to repair"
+                npm install --prefix "$BOT_HOME/discord" --silent 2>>"$LOG_FILE" || true
+                echo "0" > "$FAIL_FILE"
+                log "RECOVERY: npm install done, kickstarting"
+            fi
+
             launchctl kickstart -k "gui/${UID_NUM}/${service}" 2>/dev/null || true
             recovered=$(( recovered + 1 ))
+        else
+            # 정상 실행 중이면 실패 카운터 초기화
+            FAIL_FILE="/tmp/jarvis-guardian-${service//[^a-zA-Z0-9]/-}-fails"
+            echo "0" > "$FAIL_FILE"
         fi
     fi
 done

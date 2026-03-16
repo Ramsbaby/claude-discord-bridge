@@ -154,38 +154,38 @@ export async function compactSessionWithAI(sessionKey) {
   ].join('\n');
 
   try {
+    // SDK query()는 내부에서 streamInput(undefined) 호출하는 버그 있음 → spawn+stdin으로 직접 호출
+    // -p 인자 대신 stdin 파이프: ARG_MAX 초과 없이 긴 세션 내용도 안전하게 전달
+    const { spawn } = await import('node:child_process');
     const { join: pathJoin } = await import('node:path');
     const { homedir: hd } = await import('node:os');
-    const { query } = await import('@anthropic-ai/claude-agent-sdk');
 
     const claudeBinary = process.env.CLAUDE_BINARY || pathJoin(hd(), '.local/bin/claude');
-    const stableDir = '/tmp/claude-compact-work';
-    const { mkdirSync: mds } = await import('node:fs');
-    mds(stableDir, { recursive: true });
 
-    let summary = '';
-    const iter = query(summarizePrompt, {
-      pathToClaudeCodeExecutable: claudeBinary,
-      model: 'haiku',
-      maxTurns: 1,
-      permissionMode: 'bypassPermissions',
-      allowDangerouslySkipPermissions: true,
-      cwd: stableDir,
+    const stdout = await new Promise((resolve, reject) => {
+      const proc = spawn(
+        claudeBinary,
+        ['--model', 'claude-haiku-4-5', '--output-format', 'text', '--dangerously-skip-permissions'],
+        {
+          timeout: 60_000,
+          stdio: ['pipe', 'pipe', 'pipe'],
+          env: { ...process.env, ANTHROPIC_API_KEY: '', CLAUDECODE: '' },
+        },
+      );
+      let out = '';
+      proc.stdout.on('data', (d) => { out += d; });
+      proc.stdin.write(summarizePrompt, 'utf-8');
+      proc.stdin.end();
+      proc.on('close', (code) => {
+        if (code === 0) resolve(out);
+        else reject(new Error(`claude exited ${code}`));
+      });
+      proc.on('error', reject);
     });
 
-    for await (const event of iter) {
-      if (event.type === 'assistant') {
-        for (const block of (event.message?.content ?? [])) {
-          if (block.type === 'text') summary += block.text;
-        }
-      }
-      if (event.type === 'result' && !summary && event.result) {
-        summary = event.result;
-      }
-    }
-
-    if (summary && summary.trim().length > 50) {
-      saveCompactionSummary(sessionKey, summary.trim());
+    const summary = (stdout || '').trim();
+    if (summary && summary.length > 50) {
+      saveCompactionSummary(sessionKey, summary);
       log('info', 'compactSessionWithAI: AI summary saved', { sessionKey, bytes: summary.length });
     }
   } catch (err) {

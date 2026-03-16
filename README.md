@@ -1,6 +1,6 @@
 <p align="center">
   <img src="https://img.shields.io/badge/cost-$0%2Fmonth-brightgreen?style=flat-square" alt="$0/month">
-  <img src="https://img.shields.io/badge/E2E_tests-50%2F50-brightgreen?style=flat-square" alt="Tests">
+  <img src="https://img.shields.io/badge/E2E_tests-60%2F61-brightgreen?style=flat-square" alt="Tests">
   <img src="https://img.shields.io/badge/context_compression-98%25-blueviolet?style=flat-square" alt="98% compression">
   <img src="https://img.shields.io/badge/session_length-3%2B_hours-blue?style=flat-square" alt="3+ hours">
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey?style=flat-square" alt="Platform">
@@ -10,7 +10,7 @@
 <h1 align="center">Jarvis — AI Company-in-a-Box</h1>
 
 <p align="center">
-  <strong>Your Claude Max subscription is idle 23 hours a day.<br>This turns it into a 24/7 AI operations system — 8 AI teams, 30 cron tasks, knowledge management — at $0 extra cost.</strong>
+  <strong>Your Claude Max subscription is idle 23 hours a day.<br>This turns it into a 24/7 AI operations system — 11 AI teams, 30 cron tasks, knowledge management — at $0 extra cost.</strong>
 </p>
 
 <p align="center">
@@ -32,7 +32,7 @@
 | **What** | Self-hosted Discord bot backed by `claude -p` (Claude Code's headless CLI) |
 | **Who** | Claude Max subscribers who want $0 extra AI costs |
 | **How** | Spawns `claude -p` per message, streams output to Discord in real-time |
-| **Why** | 30 cron tasks + 8 AI teams + reactive chat + RAG memory, at zero extra cost |
+| **Why** | 30 cron tasks + 11 AI teams + reactive chat + RAG memory, at zero extra cost |
 
 ```
 You type in Discord  →  claude -p answers  →  streamed reply in your thread
@@ -99,7 +99,7 @@ Most bots are **reactive** — they wait for you to type. This one is **proactiv
  00:30  zzz   → Log rotation + backup cleanup
  01:00  zzz   → RAG index + Vault sync (hourly)
  ────────────────────────────────────────────────────────────
-              30 cron tasks + 8 AI teams. Zero manual intervention.
+              30 cron tasks + 11 AI teams. Zero manual intervention.
 ```
 
 Every task has **exponential backoff retry** (3 attempts), **rate-limit awareness** (shared 5-hour sliding window), and **failure alerts** pushed to your phone via [ntfy](https://ntfy.sh).
@@ -120,7 +120,7 @@ Every task has **exponential backoff retry** (3 attempts), **rate-limit awarenes
 
 | | **This bot** | API-based bots | Clawdbot |
 |---|---|---|---|
-| Behavior model | **Proactive** (30 cron + 8 teams) | Reactive only | Reactive only |
+| Behavior model | **Proactive** (30 cron + 11 teams) | Reactive only | Reactive only |
 | Context management | **Nexus CIG** (98% compression) | None / basic | Basic |
 | RAG / memory | LanceDB (vector + BM25 hybrid) | Rarely | Plugin-dependent |
 | Self-healing | 4-layer watchdog + AI auto-recovery | Manual restart | Varies |
@@ -128,7 +128,7 @@ Every task has **exponential backoff retry** (3 attempts), **rate-limit awarenes
 | KPI + auto-tuning | Anomaly detection + L3 approval | None | None |
 | Human approval gate | Discord button workflow | None | None |
 | Session continuity | `--resume` multi-turn threads | Per-message | Varies |
-| E2E test suite | **50/50** automated checks | Rare | Partial |
+| E2E test suite | **60/61** automated checks | Rare | Partial |
 | Messenger support | Discord | Discord | 25+ platforms |
 
 ---
@@ -141,7 +141,7 @@ Every task has **exponential backoff retry** (3 attempts), **rate-limit awarenes
 - **Claude Code CLI** — `npm install -g @anthropic-ai/claude-code`
 - **Claude Max subscription** — required for `claude -p` headless mode
 - **Discord bot token** — [Discord Developer Portal](https://discord.com/developers/applications)
-- **OpenAI API key** — for RAG embeddings (`text-embedding-3-small`, cheap)
+- **OpenAI API key** *(optional)* — only for RAG enrichment; embeddings use local model (zero cost)
 
 ### Option A: Docker
 
@@ -194,7 +194,7 @@ DISCORD_TOKEN=your_bot_token
 GUILD_ID=your_server_id
 CHANNEL_IDS=channel_id_1,channel_id_2
 OWNER_NAME=YourName
-OPENAI_API_KEY=your_key              # for RAG embeddings
+OPENAI_API_KEY=your_key              # optional: RAG enrichment only (embeddings are local)
 NTFY_TOPIC=your_ntfy_topic          # optional: push notifications
 ```
 
@@ -319,7 +319,7 @@ Layer 0: bot-preflight.sh  (every cold start)
   │   ├─ ANTHROPIC_API_KEY passed via tmux -e flag (launchd env isolation)
   │   ├─ Recovery Learnings: past fixes accumulated in state/recovery-learnings.md
   │   └─ MAX_HEAL_ATTEMPTS=3, exponential backoff 30s→90s→180s, 6h auto-decay
-  └─ Success → exec node (process replacement — launchd tracks node PID directly)
+  └─ Success → monitoring mode (fast crash detection: 3 crashes in <10s → auto-heal)
 
 Layer 1: launchd  (KeepAlive unconditional — restarts on SIGTERM, crash, or clean exit)
   └─ discord-bot.js auto-restarts on any exit (ThrottleInterval=10s)
@@ -377,6 +377,10 @@ A virtual organization of AI teams, each with a specialized role. Every team run
 | **Brand** | Content strategy, blog ideas | Weekly brand report |
 | **Career** | Learning goals, skill tracking | Weekly growth report |
 | **Academy** | Study material curation | Weekly learning digest |
+| **Finance** | TQQQ position, market monitoring | Market alerts |
+| **Recon** | Deep research on demand | On-demand intelligence report |
+| **Security-Scan** | Codebase security audit | Vulnerability report |
+| **Standup** | Owner-aware morning briefing | Daily standup |
 
 Reports are saved to `rag/teams/reports/` (indexed by RAG) and mirrored to an Obsidian Vault.
 
@@ -551,11 +555,12 @@ Each team folder retains the 7 most recent reports. Enables browsing AI-generate
 
 The bot remembers everything. Every conversation turn, cron result, and context file is indexed into a local LanceDB database:
 
-- **Vector search** — OpenAI `text-embedding-3-small` (1536 dims)
+- **Vector search** — Local `all-MiniLM-L6-v2` (384 dims, zero API cost)
 - **Full-text search** — BM25 keyword matching
 - **Reranking** — Reciprocal Rank Fusion (RRF) merges both signals
+- **Upsert indexing** — `mergeInsert` for efficient incremental updates (no destructive deletes)
 
-The RAG engine runs an incremental index hourly. When you ask a question, relevant context is injected into the `claude -p` prompt automatically — without consuming extra context window space.
+The RAG engine runs an incremental index hourly, plus real-time file watching via `rag-watch.mjs`. When you ask a question, relevant context is injected into the `claude -p` prompt automatically — without consuming extra context window space.
 
 ---
 

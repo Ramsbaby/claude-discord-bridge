@@ -50,7 +50,7 @@ send_ntfy "Jarvis 자동복구 시작" "$ERROR_REASON\n\n모니터링: ssh 후 t
 # ── 에러 컨텍스트 수집 ─────────────────────────────────────────────────────────
 PREFLIGHT_LOG=$(tail -30 "$BOT_HOME/logs/preflight.log" 2>/dev/null || echo "없음")
 BOT_ERR=$(tail -50 "$BOT_HOME/logs/discord-bot.err.log" 2>/dev/null | tail -20 || echo "없음")
-BOT_LOG_ERRORS=$(tail -50 "$BOT_HOME/logs/discord-bot.log" 2>/dev/null \
+BOT_LOG_ERRORS=$(tail -50 "$BOT_HOME/logs/discord-bot.out.log" 2>/dev/null \
     | grep -iE "Error:|TypeError|SyntaxError|Cannot find|ENOENT|FATAL" \
     | tail -10 || echo "없음")
 

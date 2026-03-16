@@ -37,8 +37,11 @@ du -sh ~/.jarvis/rag/lancedb/ 2>/dev/null
 jq 'length' ~/.jarvis/rag/index-state.json 2>/dev/null
 # → 어제 대비 감소하면 경고
 
-# rag-watch.mjs 프로세스 생존
-pgrep -f "rag-watch" 2>/dev/null
+# rag-watch.mjs 프로세스 생존 (pgrep은 sandbox에서 안 보임 → 로그 freshness로 판단)
+# 로그가 최근 30분 이내 갱신됐으면 RUNNING, 아니면 STOPPED
+find ~/.jarvis/logs/rag-watch.log -mmin -30 2>/dev/null | head -1
+# → 출력 있으면 RUNNING, 없으면 STOPPED
+# 보조: launchctl list ai.jarvis.rag-watcher 2>/dev/null | grep PID
 ```
 
 ### 4. Generated Inventory 최신성

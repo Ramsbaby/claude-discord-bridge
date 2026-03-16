@@ -63,8 +63,8 @@ print('REPEATED_PATTERNS:', json.dumps(repeated[:5], ensure_ascii=False))
 ## 출력 포맷 (Step 3 — Discord #jarvis-ceo)
 
 아래 형식을 **정확히** 따를 것. 마크다운 테이블 금지.
+⚠️ 코드블록(```) 절대 사용 금지 — 일반 텍스트로 그대로 출력할 것.
 
-```
 ━━━━━━━━━━━━━━━━━━━━
 🔗 주간 Connections 인사이트 (MM-DD ~ MM-DD)
 ━━━━━━━━━━━━━━━━━━━━
@@ -84,7 +84,6 @@ print('REPEATED_PATTERNS:', json.dumps(repeated[:5], ensure_ascii=False))
 **대표님 주목사항**
 → [이번 주 가장 중요한 패턴 + 권고 액션 1개]
 ━━━━━━━━━━━━━━━━━━━━
-```
 
 ## 주의사항
 - 데이터가 3일 미만이면 "데이터 누적 중 (N일)" 문구 추가 후 가용 데이터로 분석

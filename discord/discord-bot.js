@@ -610,9 +610,17 @@ process.on('unhandledRejection', (reason) => {
     'Cannot send messages to this user',
   ];
   const isBenign = BENIGN_PATTERNS.some(p => msg.includes(p));
+  // compactSession 백그라운드 작업 실패 — 봇 재시작 불필요
+  const isCompactFailure = reason instanceof Error &&
+    reason.stack?.includes('compactSessionWithAI');
 
   if (isBenign) {
     log('warn', 'Unhandled rejection (benign, ignored)', { error: msg });
+    return;
+  }
+
+  if (isCompactFailure) {
+    log('warn', 'Unhandled rejection (compactSession, ignored)', { error: msg });
     return;
   }
 

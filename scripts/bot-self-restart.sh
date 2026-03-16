@@ -18,7 +18,16 @@ LOG="${BOT_HOME}/logs/bot-self-restart.log"
 STAMP=$(date '+%Y-%m-%d %H:%M:%S')
 
 mkdir -p "$(dirname "$LOG")"
-echo "[$STAMP] 재시작 요청: $REASON (요청 PID: $$)" >> "$LOG"
+
+# 호출자 추적: 부모 프로세스 체인 기록
+CALLER_PID="${PPID:-?}"
+CALLER_CMD=$(ps -p "$CALLER_PID" -o args= 2>/dev/null | head -c 200 || echo "unknown")
+GRANDPARENT_PID=$(ps -p "$CALLER_PID" -o ppid= 2>/dev/null | tr -d ' ' || echo "?")
+GRANDPARENT_CMD=$(ps -p "$GRANDPARENT_PID" -o args= 2>/dev/null | head -c 200 || echo "unknown")
+
+echo "[$STAMP] 재시작 요청: $REASON" >> "$LOG"
+echo "[$STAMP]   호출자(PPID=$CALLER_PID): $CALLER_CMD" >> "$LOG"
+echo "[$STAMP]   상위(PPID=$GRANDPARENT_PID): $GRANDPARENT_CMD" >> "$LOG"
 
 # 실행할 임시 스크립트를 파일로 생성 (단따옴표 이스케이프 문제 회피)
 RUNNER="/tmp/jarvis-restart-$$.sh"

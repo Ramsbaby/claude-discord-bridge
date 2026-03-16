@@ -18,6 +18,9 @@ LOG_FILE="$BOT_HOME/logs/preflight.log"
 BACKUP_DIR="$BOT_HOME/state/config-backups"
 HEAL_ATTEMPTS_FILE="$BOT_HOME/state/heal-attempts"
 MAX_HEAL_ATTEMPTS=3
+FAST_CRASH_FILE="$BOT_HOME/state/fast-crash-count"
+FAST_CRASH_THRESHOLD=3    # N회 빠른 크래시 시 heal 트리거
+FAST_CRASH_WINDOW_SEC=10  # 기동 후 N초 이내 종료 = 빠른 크래시 (node 시작 오버헤드 + 여유)
 
 mkdir -p "$BACKUP_DIR"
 
@@ -68,6 +71,21 @@ fail_and_heal() {
 
     echo $(( attempts + 1 )) > "$HEAL_ATTEMPTS_FILE"
     log "복구 시도 $(( attempts + 1 ))/${MAX_HEAL_ATTEMPTS}"
+
+    # ── heal-in-progress 락 확인 (watchdog과의 중복 heal 방지) ────────────────────
+    local heal_lock="$BOT_HOME/state/heal-in-progress"
+    if [[ -f "$heal_lock" ]]; then
+        local lock_age
+        lock_age=$(( $(date +%s) - $(stat -f %m "$heal_lock" 2>/dev/null || stat -c '%Y' "$heal_lock" 2>/dev/null || echo 0) ))
+        if (( lock_age < 600 )); then
+            log "heal 이미 진행 중 (${lock_age}s ago) — 신규 기동 생략, 완료 대기"
+            sleep 30
+            exit 1
+        else
+            log "WARN: 오래된 heal 락 제거 (${lock_age}s) — 재기동 허용"
+            rm -f "$heal_lock"
+        fi
+    fi
 
     # tmux에서 AI 복구 세션 실행 (PTY 환경 — claude -p 정상 동작 보장)
     if tmux has-session -t jarvis-heal 2>/dev/null; then
@@ -147,7 +165,38 @@ log "백업 저장 완료"
 # 검증 통과 → 복구 시도 카운터 리셋
 rm -f "$HEAL_ATTEMPTS_FILE"
 
-log "검증 통과 → 봇 시작 (exec node)"
+log "검증 통과 → 봇 시작 (모니터링 모드)"
 
-# exec: bash → node 프로세스 교체 (launchd가 node PID 직접 추적)
-exec "$NODE_BIN" "$BOT_SCRIPT"
+# exec 대신 직접 실행: 종료 후 빠른 크래시 여부 판단 가능
+# (launchd는 bash PID를 추적 → node 종료 후 bash도 종료 → launchd가 재시작)
+_start_ts=$(date +%s)
+"$NODE_BIN" "$BOT_SCRIPT"
+_exit_code=$?
+_runtime=$(( $(date +%s) - _start_ts ))
+
+if (( _exit_code != 0 && _runtime < FAST_CRASH_WINDOW_SEC )); then
+    # 빠른 크래시 감지 (SyntaxError, import 실패 등 런타임 즉사)
+    _fast_count=0
+    if [[ -f "$FAST_CRASH_FILE" ]]; then
+        _fast_count=$(cat "$FAST_CRASH_FILE" 2>/dev/null || echo 0)
+    fi
+    _fast_count=$(( _fast_count + 1 ))
+    echo "$_fast_count" > "$FAST_CRASH_FILE"
+    log "빠른 크래시 감지 (runtime=${_runtime}s, exit=${_exit_code}, count=${_fast_count}/${FAST_CRASH_THRESHOLD})"
+
+    if (( _fast_count >= FAST_CRASH_THRESHOLD )); then
+        rm -f "$FAST_CRASH_FILE"
+        _last_err=$(tail -30 "$BOT_HOME/logs/discord-bot.err.log" 2>/dev/null \
+            | grep -iE "Error:|SyntaxError|TypeError|Cannot find|ENOENT" \
+            | tail -1 || echo "알 수 없음")
+        fail_and_heal "빠른 크래시 ${_fast_count}회 반복 (runtime<${FAST_CRASH_WINDOW_SEC}s): ${_last_err}"
+    fi
+else
+    # 정상 실행(오래 돌았거나 정상 종료) → 빠른 크래시 카운터 리셋
+    if [[ -f "$FAST_CRASH_FILE" ]]; then
+        log "정상 실행 후 종료 (runtime=${_runtime}s) → fast-crash 카운터 리셋"
+        rm -f "$FAST_CRASH_FILE"
+    fi
+fi
+
+exit $_exit_code

@@ -42,6 +42,14 @@ const teamArg = (() => {
   return eq?.split('=')[1] ?? null;
 })();
 
+// --channel <key> argument (결과 전송 채널 override)
+const channelOverride = (() => {
+  const idx = process.argv.indexOf('--channel');
+  if (idx !== -1) return process.argv[idx + 1];
+  const eq = process.argv.find((a) => a.startsWith('--channel='));
+  return eq?.split('=')[1] ?? null;
+})();
+
 // --event <type> --data <json> argument (이벤트 드리븐 팀 활성화)
 const eventArg = (() => {
   const idx = process.argv.indexOf('--event');
@@ -161,6 +169,8 @@ const TEAMS_DIR = join(BOT_HOME, 'teams');
 const TEMPLATE_VARS = {
   DATE, WEEK, OWNER_NAME, BOT_HOME, LOG_DIR, REPORTS, CTX_BUS,
   DATE_MONTH: DATE.slice(0, 7),
+  YEAR: DATE.slice(0, 4),
+  MONTH: KST.toLocaleString('en-US', { month: 'long', timeZone: 'Asia/Seoul' }),
 };
 
 const TEAMS = loadTeams(TEAMS_DIR, TEMPLATE_VARS, REPORTS);
@@ -316,10 +326,11 @@ async function runTeam(name, eventPromptPrefix = '') {
     } catch (e) { log('warn', `Vault save failed: ${e.message}`); }
   }
 
-  // Discord 웹훅 전송
-  if (result && team.discord) {
-    await sendWebhook(team.discord, result);
-    log('info', `Sent to #${team.discord}`);
+  // Discord 웹훅 전송 (--channel override 우선)
+  const targetChannel = channelOverride || team.discord;
+  if (result && targetChannel) {
+    await sendWebhook(targetChannel, result);
+    log('info', `Sent to #${targetChannel}${channelOverride ? ' (override)' : ''}`);
   }
 
   // Council → context-bus 업데이트

@@ -17,6 +17,7 @@ DISCORD_PLIST="$HOME/Library/LaunchAgents/${DISCORD_SERVICE}.plist"
 ROUTE_RESULT="$BOT_HOME/bin/route-result.sh"
 
 MEMORY_WARN_MB=900    # LanceDB 인덱스 로드 포함 실측치 고려
+MEMORY_SOFT_MB=1100   # 조용한 선제 재시작 (Discord 알림 없음)
 MEMORY_CRITICAL_MB=1400  # 재시작 임계값: session-sync 스파이크(+450MB) 여유 확보
 CLAUDE_STALE_MINUTES=10
 HEARTBEAT_FILE="$BOT_HOME/state/bot-heartbeat"
@@ -75,12 +76,18 @@ detect_crash_loop() {
         restart_count=$(wc -l < "$restart_log" 2>/dev/null | tr -d ' ')
         if (( restart_count >= CRASH_LOOP_THRESHOLD )); then
             local last_error
-            last_error=$(tail -30 "$BOT_HOME/logs/discord-bot.log" 2>/dev/null \
+            # stdout + stderr 양쪽 확인 (SyntaxError 등은 stderr에만 기록됨)
+            last_error=$(cat "$BOT_HOME/logs/discord-bot.out.log" "$BOT_HOME/logs/discord-bot.err.log" 2>/dev/null \
+                | tail -50 \
                 | grep -iE "Error:|TypeError|SyntaxError|Cannot find|ENOENT|FATAL" \
                 | tail -1 || echo "로그 없음")
-            # 실제 에러 로그가 있을 때만 알림 — 의도적 재시작(에러 없음)은 무시
-            if [[ "$last_error" != "로그 없음" ]]; then
-                send_alert "[Bot Watchdog] CRASH LOOP: ${restart_count}회 재시작 (30분 내). 마지막 에러: ${last_error}"
+            # 에러 유무 무관 알림 + bot-heal.sh 트리거
+            send_alert "[Bot Watchdog] CRASH LOOP: ${restart_count}회 재시작 (30분 내). 에러: ${last_error}"
+            # 자가치유 시도 (heal-in-progress 락이 없을 때만)
+            if [[ ! -f "$BOT_HOME/state/heal-in-progress" ]]; then
+                log "CRASH LOOP: bot-heal.sh 트리거"
+                nohup bash "$BOT_HOME/scripts/bot-heal.sh" "CRASH LOOP ${restart_count}회: ${last_error}" \
+                    >> "$BOT_HOME/logs/bot-heal.log" 2>&1 &
             fi
             # 크래시 루프 감지 후 restart-times 초기화 (중복 알림 방지)
             true > "$restart_log"
@@ -452,6 +459,10 @@ run_one_check() {
                     send_alert "[Bot Watchdog] CRITICAL: Discord bot memory=${memory_mb}MB (>=${MEMORY_CRITICAL_MB}MB). Restarting."
                     _bot_restart
                     health_status="restarted:memory"
+                elif (( memory_mb >= MEMORY_SOFT_MB )); then
+                    log "SOFT_RESTART: Discord bot memory=${memory_mb}MB (>=${MEMORY_SOFT_MB}MB). Quiet restart."
+                    _bot_restart
+                    health_status="restarted:memory_soft"
                 elif (( memory_mb >= MEMORY_WARN_MB )); then
                     log "WARN: Discord bot memory=${memory_mb}MB (>=${MEMORY_WARN_MB}MB)"
                     health_status="warning:memory"
@@ -471,7 +482,21 @@ run_one_check() {
                 last_ts=0
                 if [[ -f "$fatal_last" ]]; then last_ts=$(cat "$fatal_last"); fi
                 if (( now_ts - last_ts >= FATAL_ALERT_COOLDOWN_SEC )); then
-                    send_alert "[Bot Watchdog] FATAL: Discord bot crashed ${crash_count} times, max retries reached. Manual intervention required."
+                    # 빠른 크래시(SyntaxError 등)는 RUNNING 상태를 거치지 않아
+                    # detect_crash_loop에서 잡히지 않음 → 여기서 bot-heal.sh 트리거
+                    if [[ ! -f "$BOT_HOME/state/heal-in-progress" ]]; then
+                        local bot_err_last
+                        bot_err_last=$(cat "$BOT_HOME/logs/discord-bot.out.log" "$BOT_HOME/logs/discord-bot.err.log" 2>/dev/null \
+                            | tail -50 \
+                            | grep -iE "Error:|TypeError|SyntaxError|Cannot find|ENOENT|FATAL" \
+                            | tail -1 || echo "로그 없음")
+                        log "FATAL: MAX_RETRIES 도달 → bot-heal.sh 트리거 (에러: ${bot_err_last})"
+                        send_alert "[Bot Watchdog] FATAL: Discord bot crashed ${crash_count} times. 자동복구 시도 중..."
+                        nohup bash "$BOT_HOME/scripts/bot-heal.sh" "MAX_RETRIES ${crash_count}회: ${bot_err_last}" \
+                            >> "$BOT_HOME/logs/bot-heal.log" 2>&1 &
+                    else
+                        send_alert "[Bot Watchdog] FATAL: Discord bot crashed ${crash_count} times. (heal 진행 중)"
+                    fi
                     echo "$now_ts" > "$fatal_last"
                 else
                     log "FATAL alert suppressed (cooldown: $(( FATAL_ALERT_COOLDOWN_SEC - (now_ts - last_ts) ))s remaining)"

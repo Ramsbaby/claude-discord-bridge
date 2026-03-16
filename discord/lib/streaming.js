@@ -2,13 +2,9 @@
  * StreamingMessage — debounced edit-in-place with code-fence awareness.
  */
 
-import {
-  ActionRowBuilder,
-  AttachmentBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  MessageFlags,
-} from 'discord.js';
+// discord.js is CJS — use default import to avoid ESM named-export errors
+import discordPkg from 'discord.js';
+const { ActionRowBuilder, AttachmentBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = discordPkg;
 import { readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
