@@ -255,18 +255,19 @@ client.once('clientReady', async () => {
     } catch { /* 파일 없으면 첫 재시작 */ }
 
     if (reason) {
-      const reasonLabel = reason.startsWith('crash:') ? `⚠️ 크래시: ${reason.slice(7)}`
-        : reason.startsWith('graceful') ? `정상 종료 (${reason})`
-        : `⚠️ ${reason}`;
-
-      const isGraceful = reason.startsWith('graceful');
+      const isCrash = reason.startsWith('crash:');
+      const isGraceful = reason.startsWith('graceful') || reason === 'requested';
+      const reasonLabel = isCrash ? `크래시: ${reason.slice(7)}`
+        : reason === 'requested' ? '요청됨'
+        : reason.startsWith('graceful') ? '정상 종료'
+        : reason;
 
       // 활성 세션 채널에 알림 (graceful shutdown: 진행 중이던 채널만)
       if (notifyChannels.length > 0 && !suppressApology) {
-        const isRequestedRestart = reason === 'requested';
+        const isRequestedRestart = isGraceful;
         const restartMsg = isRequestedRestart
-          ? '✅ 재시작됐습니다.'
-          : `🔄 재시작됐습니다. 이전 응답이 중단되었으니 다시 말씀해 주세요.\n> 사유: ${reasonLabel}`;
+          ? '-# ✅ 재시작됐습니다.'
+          : `🔄 재시작됐습니다. 이전 응답이 중단되었으니 다시 말씀해 주세요.\n> ⚠️ 사유: ${reasonLabel}`;
         const quietIds = (process.env.QUIET_CHANNEL_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
         for (const chId of notifyChannels.filter(id => !quietIds.includes(id))) {
           const ch = client.channels.cache.get(chId) || await client.channels.fetch(chId).catch(() => null);

@@ -658,13 +658,10 @@ EOJSON
 if [[ "$DRY_RUN" == false ]]; then
     local_summary="[Auditor] $(date +%F): $TOTAL_ISSUES issues (T1:$TIER1_FIXED fixed, T2:$TIER2_ESCALATED escalated)"
 
-    if [[ $WARN_ISSUES -gt 0 ]]; then
+    # T1/T2가 있을 때만 Discord 알림 (shellcheck 경고만 있는 경우는 노이즈)
+    if [[ $TIER1_FIXED -gt 0 || $TIER2_ESCALATED -gt 0 ]]; then
         "$BOT_HOME/bin/route-result.sh" discord "code-auditor" "$local_summary" "jarvis-system" 2>/dev/null || true
-    fi
-
-    # Alert if 5+ issues
-    if [[ $WARN_ISSUES -ge 5 ]]; then
-        "$BOT_HOME/scripts/alert.sh" warning "Auditor Alert" "[Auditor] $TOTAL_ISSUES issues detected — review $REPORT_FILE" 2>/dev/null || true
+        "$BOT_HOME/scripts/alert.sh" warning "Auditor Alert" "[Auditor] T1:$TIER1_FIXED fixed, T2:$TIER2_ESCALATED escalated — review $REPORT_FILE" 2>/dev/null || true
     fi
 fi
 
