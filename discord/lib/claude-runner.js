@@ -199,15 +199,19 @@ function getUserProfile(discordUserId) {
 // execRagAsync — semantic memory search via rag-query.mjs
 // ---------------------------------------------------------------------------
 
-export async function execRagAsync(query) {
+export async function execRagAsync(query, opts = {}) {
   // execFileSync → execFile (Promise) 로 교체: 이벤트 루프 차단(최대 7초) 방지
   const { execFile } = await import('node:child_process');
   const { promisify } = await import('node:util');
   const execFileP = promisify(execFile);
+
+  // --episodic 플래그: discord-history 에피소딕 메모리를 결과 앞에 노출
+  const extraFlags = opts.episodic ? ['--episodic'] : [];
+
   try {
     const { stdout } = await execFileP(
       process.execPath,
-      [join(BOT_HOME, 'lib', 'rag-query.mjs'), query],
+      [join(BOT_HOME, 'lib', 'rag-query.mjs'), ...extraFlags, query],
       { timeout: 7000, encoding: 'utf-8', maxBuffer: 1024 * 200 },
     );
     return stdout || '';
@@ -608,7 +612,16 @@ export async function* createClaudeSession(prompt, {
 
   // Per-user long-term memory (added AFTER hash — memory updates don't force session reset)
   if (userId) {
-    const memSnippet = userMemory.getPromptSnippet(userId);
+    let memSnippet;
+    try {
+      if (prompt) {
+        memSnippet = userMemory.getRelevantMemories(userId, prompt);
+      } else {
+        memSnippet = userMemory.getPromptSnippet(userId);
+      }
+    } catch {
+      memSnippet = userMemory.getPromptSnippet(userId);
+    }
     if (memSnippet) systemParts.push('', '--- 사용자 기억 (User Memory) ---', memSnippet);
   }
 
@@ -657,9 +670,8 @@ export async function* createClaudeSession(prompt, {
     // Phase 2: 이전 세션 요약 주입 (resume 성공 시에도 DYNAMIC 섹션에 삽입)
     // 조건: injectedSummary 존재 (handlers.js가 30분+ 경과 시에만 전달)
     if (injectedSummary) {
-      const truncated = injectedSummary.length > 300 ? injectedSummary.slice(0, 300) + '…' : injectedSummary;
-      ctxParts.push(`[이전 작업 요약] ${truncated}`);
-      log('debug', 'createClaudeSession: injected previous session summary on resume', { threadId, summaryLen: truncated.length });
+      ctxParts.push(`[이전 작업 요약] ${injectedSummary}`);
+      log('debug', 'createClaudeSession: injected previous session summary on resume', { threadId, summaryLen: injectedSummary.length });
     }
     // 사용량 현황은 80% 이상일 때만 주입 — 낮을 때 주입하면 Claude self-throttling 유발
     // 예외: 사용자가 "사용량" 키워드로 직접 조회할 때는 항상 주입

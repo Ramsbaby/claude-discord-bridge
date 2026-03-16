@@ -70,6 +70,101 @@ export const userMemory = {
     _save(data);
   },
 
+  getRelevantMemories(userId, currentPrompt, topN = 8) {
+    try {
+      const data = _load(userId);
+      if (!data.facts.length) return this.getPromptSnippet(userId);
+
+      // 불용어 집합
+      const STOPWORDS = new Set([
+        'the', 'is', 'a', 'an', 'in', 'of', 'to', 'and', 'or', 'for',
+        '이', '가', '을', '를', '은', '는', '에', '의', '도', '로', '한',
+        '하', '그', '저', '어', '이다', '있다', '없다', '것', '수', '등',
+      ]);
+
+      // 단어 토큰화 (불용어 + 1글자 제거)
+      const tokenize = (text) =>
+        (text || '').toLowerCase()
+          .split(/[\s,.\-!?()[\]{}:;'"]+/)
+          .filter(w => w.length > 1 && !STOPWORDS.has(w));
+
+      const promptWords = new Set(tokenize(currentPrompt));
+      const now = Date.now();
+      const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
+      const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+
+      // facts 정규화
+      const normalize = (f) => typeof f === 'string'
+        ? { text: f, addedAt: null }
+        : { text: f?.text ?? '', addedAt: f?.addedAt ?? null };
+
+      const allFacts = data.facts
+        .map(normalize)
+        .filter(f => f.text.length > 0);
+
+      // 각 fact에 관련성 점수 산출
+      const scored = allFacts.map(f => {
+        const factWords = tokenize(f.text);
+        const factSet = new Set(factWords);
+        let score = 0;
+        if (factSet.size > 0) {
+          let intersect = 0;
+          for (const w of promptWords) {
+            if (factSet.has(w)) intersect++;
+          }
+          score = intersect / factSet.size;
+        }
+        if (f.addedAt) {
+          const age = now - new Date(f.addedAt).getTime();
+          if (age <= SEVEN_DAYS_MS) score += 0.3;
+          if (age <= THREE_DAYS_MS) score += 0.2;
+        }
+        return { ...f, score };
+      });
+
+      // 점수 내림차순 정렬
+      scored.sort((a, b) => b.score - a.score);
+
+      // topN 선택
+      const selected = scored.slice(0, topN);
+      const selectedTexts = new Set(selected.map(f => f.text));
+
+      // 최신 기억 3개 최소 보장 (시간 기준 정렬)
+      const byTime = [...allFacts].sort((a, b) => {
+        const ta = a.addedAt ? new Date(a.addedAt).getTime() : 0;
+        const tb = b.addedAt ? new Date(b.addedAt).getTime() : 0;
+        return tb - ta;
+      });
+      for (const f of byTime.slice(0, 3)) {
+        if (!selectedTexts.has(f.text)) {
+          selected.push({ ...f, score: 0 });
+          selectedTexts.add(f.text);
+        }
+      }
+
+      if (!selected.length) return this.getPromptSnippet(userId);
+
+      // 출력 형식: getPromptSnippet()과 동일한 텍스트 형식
+      const lines = [];
+      const factLines = ['## 사용자 장기 기억'];
+      for (const f of selected) {
+        factLines.push(`- ${f.text}`);
+      }
+      lines.push(factLines.join('\n'));
+
+      if (data.preferences.length) lines.push('## 선호 패턴\n' + data.preferences.map(p => `- ${p}`).join('\n'));
+      if (data.corrections.length) lines.push('## 수정 사항\n' + data.corrections.map(c => `- ${c}`).join('\n'));
+      if (data.plans.length) {
+        const activePlans = data.plans.filter(p => !p.done);
+        if (activePlans.length) lines.push('## 진행 중인 계획\n' + activePlans.map(p => `- [${p.key}] ${p.summary}`).join('\n'));
+      }
+      return lines.join('\n\n');
+    } catch (err) {
+      // 오류 시 fallback
+      return this.getPromptSnippet(userId);
+    }
+  },
+
   getPromptSnippet(userId) {
     const data = _load(userId);
     const lines = [];
