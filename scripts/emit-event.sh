@@ -69,4 +69,4 @@ LOG_MSG="[${HUMAN_TIME}] [emit-event] EMITTED event=${EVENT_NAME} payload=${PAYL
 echo "$LOG_MSG" >> "$LOG" 2>/dev/null || true
 
 echo "OK: event '${EVENT_NAME}' triggered → ${TRIGGER_FILE}"
-echo "    event-watcher.sh가 ${30}초 내에 감지하여 매칭 태스크를 실행합니다."
+echo "    event-watcher.sh가 30초 내에 감지하여 매칭 태스크를 실행합니다."
