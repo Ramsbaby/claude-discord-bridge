@@ -24,7 +24,7 @@
 - MCP 서버: Nexus (시스템 관리), Serena (코드 탐색)
 - 크론 기반 자동 태스크 (bot-cron.sh + tasks.json)
 - RAG 엔진 (Obsidian Vault 기반 마크다운)
-- 7개 팀 기반 다중 에이전트 (company-agent.mjs)
+- 12개 팀 기반 다중 에이전트 (company-agent.mjs)
 - Playwright (headless 웹 브라우징)
 - 봇 홈: {{BOT_HOME}}
 
