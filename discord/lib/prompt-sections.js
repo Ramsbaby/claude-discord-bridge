@@ -28,6 +28,7 @@ export function buildPrinciplesSection() {
   return [
     '지시(해줘/고쳐/처리해/진행해/만들어)는 직전 대화 흐름에서 대상을 파악 후 승인 없이 즉시 실행. 결과만 보고. 삭제·배포·서버 재시작만 사전 확인.',
     '도구 실행 후 실제 출력이 있을 때만 "완료". 출력 없거나 오류면 "실패: [이유]" 보고. 추측 포장 금지.',
+    '⚠️ 실행 검증 원칙: "했다"/"완료"/"전달 완료"/"등록됐어요" 등 완료 표현은 반드시 해당 도구(exec/Write/Edit/Bash 등)를 실제 호출하고 출력을 확인한 후에만 사용. 의도만 있고 도구 호출 없이 완료 선언 절대 금지. 특히 "전달하겠다"→exec("bash relay-to-owner.sh ..."), "저장하겠다"→Write/Edit, "실행하겠다"→exec 실제 호출 필수.',
     '이미 pre-inject된 데이터([…— 이미 로드됨] 태그)가 있으면 같은 도구 재호출 금지.',
   ].join('\n');
 }
@@ -51,7 +52,7 @@ export function buildSafetySection({ botHome }) {
   return [
     'rm -rf/shutdown/kill -9/DROP TABLE/API 키 노출 금지.',
     `봇 재시작 필요 시: 직접 launchctl 호출 금지(자신을 죽임). 반드시 \`bash ${botHome}/scripts/bot-self-restart.sh "이유"\` 사용 — setsid 분리 프로세스로 15초 후 자동 실행됨. 오너에게 터미널 실행 요청 금지.`,
-    `crontab 수정: crontab -e 금지. 비인터랙티브 방식만 사용: \`(crontab -l 2>/dev/null; echo "...") | crontab -\` 또는 \`crontab -l | sed ... | crontab -\`.`,
+    `crontab 수정: com.vix.cron 데몬 비활성 상태로 crontab 명령이 hang됨. 신규 스케줄은 반드시 launchd plist(~/Library/LaunchAgents/) 방식으로 등록. crontab -e 절대 금지.`,
     '오너에게 터미널 실행 요청이 허용되는 유일한 경우: OAuth/API 재인증 (gog auth login, claude setup-token 등 TTY 대화형 인증).',
     'Claude Code CLI 전용 안내("Claude Code 재시작", "MCP 활성화", "/clear", "새 세션") 절대 금지 — 이 봇은 Discord 봇.',
   ].join('\n');

@@ -4,8 +4,10 @@
 
 set -euo pipefail
 BOT_HOME="${BOT_HOME:-$HOME/.jarvis}"
+# shellcheck source=/dev/null
+if [[ -f "$BOT_HOME/.env" ]]; then source "$BOT_HOME/.env"; fi
 PERIOD="${1:-아침}"
-WEBHOOK="https://discord.com/api/webhooks/1482899334940069953/luZX4DSYDvXvcZlIoyUEwyzqCXhdgoWSslHHM0LEmH_VW2JKHUT8Sjw_U9YQ8hAjcchr"
+WEBHOOK="${BORAM_DISCORD_WEBHOOK:?BORAM_DISCORD_WEBHOOK not set in $BOT_HOME/.env}"
 
 case "$PERIOD" in
   아침) MSG="☀️ 보람님, 아침 약 드실 시간이에요! 💊💕" ;;

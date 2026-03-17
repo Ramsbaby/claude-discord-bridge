@@ -43,10 +43,10 @@ main() {
     log_info "부팅 후 인증 검증 시작 — ${BOOT_WAIT_SECONDS}초 대기 중..."
     sleep "$BOOT_WAIT_SECONDS"
 
-    # 네트워크 연결 확인 (macOS 네이티브 네트워크 상태 — 외부 ping 불필요)
+    # 네트워크 연결 확인 (curl 기반 — scutil --nwi는 환경에 따라 빈 출력 반환 버그 있음)
     local retry=0
     local max_retries=60  # 5초×60회 = 최대 5분
-    while ! scutil --nwi 2>/dev/null | grep -q "Network reachable"; do
+    while ! curl -sf --max-time 3 https://1.1.1.1 > /dev/null 2>&1; do
         retry=$((retry + 1))
         if [[ $retry -ge $max_retries ]]; then
             log_error "네트워크 연결 실패 (5초×${max_retries}회). 알림 전송."
