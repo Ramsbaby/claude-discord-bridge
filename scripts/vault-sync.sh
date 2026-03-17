@@ -358,7 +358,7 @@ INDEX_FILE="$VAULT_BASE/05-insights/_index.md"
     echo ""
     echo "# 📊 Knowledge Insights"
     echo ""
-    echo "> knowledge-synthesizer 매일 03:30 자동 생성 | Claude Opus 분석"
+    echo "> insight-extractor 매일 03:30 자동 생성 | Claude Opus 분석"
     echo ""
     echo "## Daily Synthesis (최근 2주)"
     for f in "$INSIGHTS_DEST"/*.md; do

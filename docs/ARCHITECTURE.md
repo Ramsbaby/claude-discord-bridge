@@ -333,7 +333,7 @@ task_transitions (task_id, from_status, to_status, triggered_by, created_at)
 ### Integration
 
 ```
-knowledge-synthesizer.mjs  ──► addTask()        (new tasks from AI synthesis)
+insight-extractor.mjs  ──► addTask()        (new tasks from AI synthesis)
 extras-gateway.mjs          ──► listTasks()      (MCP tool: dev_queue)
 dev-runner.sh               ──► node task-store.mjs [pick|field|transition|count-queued]
 ```
