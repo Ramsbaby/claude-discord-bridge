@@ -1,6 +1,5 @@
 <p align="center">
   <img src="https://img.shields.io/badge/추가비용-월_$0-brightgreen?style=flat-square" alt="$0/month">
-  <img src="https://img.shields.io/badge/E2E_테스트-50%2F50-brightgreen?style=flat-square" alt="Tests">
   <img src="https://img.shields.io/badge/컨텍스트_압축-98%25-blueviolet?style=flat-square" alt="98% 압축">
   <img src="https://img.shields.io/badge/세션_지속-3시간+-blue?style=flat-square" alt="3+ hours">
   <img src="https://img.shields.io/badge/플랫폼-macOS%20%7C%20Linux-lightgrey?style=flat-square" alt="Platform">
@@ -10,7 +9,7 @@
 <h1 align="center">Jarvis — AI Company-in-a-Box</h1>
 
 <p align="center">
-  <strong>Claude Max 구독은 하루 23시간 놀고 있습니다.<br>12개 AI 팀, 45개 크론 태스크, RAG 지식관리 — 추가 비용 $0으로 24/7 AI 운영 시스템을 만들어 줍니다.</strong>
+  <strong>Claude Max 구독은 하루 23시간 놀고 있습니다.<br>11개 AI 팀, 49개 크론 태스크, RAG 지식관리 — 추가 비용 $0으로 24/7 AI 운영 시스템을 만들어 줍니다.</strong>
 </p>
 
 <p align="center">
@@ -32,7 +31,7 @@
 | **무엇** | `claude -p` (Claude Code CLI)를 백엔드로 한 자체 호스팅 Discord 봇 |
 | **누구를 위해** | Claude Max 구독자 중 추가 API 비용 없이 쓰고 싶은 분 |
 | **어떻게** | 메시지마다 `claude -p` 프로세스를 생성, 응답을 Discord에 실시간 스트리밍 |
-| **왜** | 45개 크론 태스크 + 12개 AI 팀 + 반응형 채팅 + RAG 메모리, 추가 비용 $0 |
+| **왜** | 49개 크론 태스크 + 11개 AI 팀 + 반응형 채팅 + RAG 메모리, 추가 비용 $0 |
 
 ```
 Discord에 메시지 입력  →  claude -p 응답  →  스레드에 실시간 스트리밍
@@ -115,30 +114,27 @@ Nexus CIG가 모든 툴 호출 결과를 Claude 컨텍스트에 들어가기 전
 
 | | **이 봇** | API 기반 봇 | Clawdbot |
 |---|---|---|---|
-| 동작 방식 | **능동형** (45개 크론 + 12개 AI 팀) | 반응형만 | 반응형만 |
+| 동작 방식 | **능동형** (49개 크론 + 11개 AI 팀) | 반응형만 | 반응형만 |
 | 컨텍스트 관리 | **Nexus CIG** (98% 압축) | 없음 / 기본 | 기본 |
 | RAG / 메모리 | LanceDB (벡터 + BM25 하이브리드) | 드물게 | 플러그인 의존 |
 | 자가복구 | 4계층 워치독 + AI 자동복구 | 수동 재시작 | 다양 |
 | 세션 연속성 | `--resume` 멀티턴 스레드 | 메시지별 | 다양 |
-| E2E 테스트 | **50/50** 자동화 | 드물게 | 일부 |
 | 지원 메신저 | Discord | Discord | 25+ 플랫폼 |
 
 ---
 
 ## 빠른 시작
 
-### 사전 요구사항
-
-- **Node.js ≥ 20** — `node -v`
-- **Claude Code CLI** — `npm install -g @anthropic-ai/claude-code`
-- **Claude Max 구독** — `claude -p` 헤드리스 모드 필수
-- **Discord 봇 토큰** — [Discord Developer Portal](https://discord.com/developers/applications)
-- **OpenAI API 키** — RAG 임베딩용 (`text-embedding-3-small`, 저렴)
+> **사전 요구사항**
+>
+> - **Claude Max 구독** ($100/월) — 이 봇의 모든 응답과 크론 태스크는 `claude -p`를 호출합니다. 구독 없이는 봇이 시작되지 않습니다.
+> - **Claude Code CLI** — `npm install -g @anthropic-ai/claude-code` 후 `claude` 로 인증
+> - **Node.js ≥ 20**, **jq**
 
 ### A안: Docker (가장 간단)
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/jarvis ~/.jarvis
+git clone https://github.com/Ramsbaby/claude-discord-bridge ~/.jarvis
 cd ~/.jarvis
 cp discord/.env.example discord/.env
 # discord/.env 편집 — 토큰 입력
@@ -151,7 +147,7 @@ docker compose up -d
 
 ```bash
 # 1. 클론
-git clone https://github.com/YOUR_USERNAME/jarvis ~/.jarvis
+git clone https://github.com/Ramsbaby/claude-discord-bridge ~/.jarvis
 cd ~/.jarvis
 
 # 2. 설치 스크립트 실행
@@ -424,7 +420,7 @@ RAG 엔진은 매시간 증분 인덱싱. 질문 시 관련 컨텍스트를 `cla
 │   ├── smart-standup.sh        # 접속 감지 모닝 스탠드업
 │   ├── jarvis-auditor.sh       # 자동 코드 품질 스캐너
 │   ├── vault-sync.sh           # Obsidian Vault 동기화
-│   └── e2e-test.sh             # 50개 E2E 테스트
+│   └── e2e-test.sh             # E2E 테스트
 ├── teams/                      # 선언적 팀 정의 (YAML + 템플릿)
 │   ├── council/                # 전략팀 (council-insight)
 │   ├── infra/                  # 인프라팀 (infra-daily)
@@ -466,13 +462,12 @@ RAG 엔진은 매시간 증분 인덱싱. 질문 시 관련 컨텍스트를 `cla
 
 ```bash
 # 1. Fork + 클론
-git clone https://github.com/YOUR_USERNAME/jarvis
+git clone https://github.com/Ramsbaby/claude-discord-bridge
 
 # 2. 변경 작업
 
 # 3. 테스트 실행
 bash scripts/e2e-test.sh
-# → 50 passed, 0 failed
 
 # 4. Pull Request 제출
 ```
