@@ -22,8 +22,6 @@
 
 ---
 
----
-
 ## 한눈에 보기
 
 | | |
@@ -93,7 +91,7 @@ Nexus CIG가 모든 툴 호출 결과를 Claude 컨텍스트에 들어가기 전
  00:30  zzz   → 로그 로테이션 + 백업 정리
  01:00  zzz   → RAG 인덱스 재빌드 (매시간, 증분)
  ───────────────────────────────────────────────────────────
-              30개 태스크. 수동 개입 없음.
+              49개 크론 태스크 + 11개 AI 팀. 수동 개입 없음.
 ```
 
 모든 태스크에 **지수 백오프 재시도** (3회), **레이트 리밋 인식** (5시간 슬라이딩 윈도우), **실패 알림** ([ntfy](https://ntfy.sh) 푸시)이 내장되어 있습니다.
@@ -373,7 +371,7 @@ RAG 엔진은 매시간 증분 인덱싱. 질문 시 관련 컨텍스트를 `cla
 │       ├── streaming.js        # StreamingMessage (chunked Discord output)
 │       ├── team-loader.mjs     # YAML team definition loader
 │       ├── user-memory.js      # 유저별 영구 메모리 (/remember)
-│       ├── company-agent.mjs   # 8팀 가상 조직 엔진
+│       ├── company-agent.mjs   # 11팀 가상 조직 엔진
 │       ├── orchestrator.mjs    # SQLite 메시지 큐 + 채널 라우팅
 │       ├── lounge.js           # 라운지 채널 로직
 │       ├── error-tracker.js    # 에러 추적기
