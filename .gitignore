@@ -66,3 +66,9 @@ heartbeats/
 *.pid
 context/discord-history/
 config/secrets/
+
+# 개발 임시 파일 (백업 아티팩트)
+*.backup
+*.bak
+*-backup-*
+*.recon-backup-*
