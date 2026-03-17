@@ -43,7 +43,7 @@
 
 ## 추적 파일
 - `{{BOT_HOME}}/state/recon-tracker.md` — MT/LT 미완료 항목, CEO 피드백, 반복 패턴
-- `{{BOT_HOME}}/state/recon-search-focus.md` — 검색 우선순위 (자동 + 대표 지정)
+- `{{BOT_HOME}}/state/recon-search-focus.md` — 검색 우선순위 (시스템 약점 + 성장 기회, 자율 관리)
 
 ## 수집 대상
 - **Anthropic/Claude** — Claude API 변경, Agent SDK 신규 기능, 모델 업데이트
