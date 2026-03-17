@@ -72,3 +72,4 @@ config/secrets/
 *.bak
 *-backup-*
 *.recon-backup-*
+data/

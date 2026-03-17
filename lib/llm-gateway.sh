@@ -127,10 +127,10 @@ print(json.dumps(msgs))
     local body
     if [[ -n "$system" ]]; then
         body=$(_llm_py "anthropic-body" -c "
-import json, sys
+import json, sys, os
 body = {
     'model': sys.argv[1],
-    'max_tokens': 4096,
+    'max_tokens': int(os.environ.get('JARVIS_MAX_OUTPUT_TOKENS', 0)) or 4096,
     'system': sys.argv[2],
     'messages': json.loads(sys.argv[3])
 }
@@ -138,10 +138,10 @@ print(json.dumps(body))
 " "$api_model" "$system" "$messages") || return 1
     else
         body=$(_llm_py "anthropic-body" -c "
-import json, sys
+import json, sys, os
 body = {
     'model': sys.argv[1],
-    'max_tokens': 4096,
+    'max_tokens': int(os.environ.get('JARVIS_MAX_OUTPUT_TOKENS', 0)) or 4096,
     'messages': json.loads(sys.argv[2])
 }
 print(json.dumps(body))
@@ -209,14 +209,14 @@ _llm_openai_api() {
 
     local body
     body=$(_llm_py "openai-body" -c "
-import json, sys
+import json, sys, os
 messages = []
 if sys.argv[2]:
     messages.append({'role': 'system', 'content': sys.argv[2]})
 messages.append({'role': 'user', 'content': sys.argv[1]})
 body = {
     'model': sys.argv[3],
-    'max_tokens': 4096,
+    'max_tokens': int(os.environ.get('JARVIS_MAX_OUTPUT_TOKENS', 0)) or 4096,
     'messages': messages
 }
 print(json.dumps(body))

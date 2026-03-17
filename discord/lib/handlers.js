@@ -61,7 +61,7 @@ import { recordError } from './error-tracker.js';
 // Extracted modules
 import { PAST_REF_PATTERN, searchRagForContext } from './rag-helper.js';
 import { saveSessionSummary, loadSessionSummary, saveCompactionSummary, compactSessionWithAI } from './session-summary.js';
-import { classifyBudget } from './context-budget.js';
+// classifyBudget 미사용 — 전역 opusplan 모드 (claude-runner.js에서 항상 Opus+thinking:adaptive)
 import { pendingQueue, enqueue, processQueue } from './queue-processor.js';
 import { MessageDebouncer } from './message-debouncer.js';
 import { ProcessorContext, createPreProcessorRegistry } from './pre-processor.js';
@@ -802,14 +802,6 @@ ${extracted}
         promptLen: userPrompt.length,
       });
 
-      // Budget based on original prompt (not inflated by summary/RAG injection)
-      // Preply queries always get at least medium — short prompts like "오늘 수업?" get large injection
-      let contextBudget = classifyBudget(originalPrompt, imageAttachments.length > 0);
-      if (contextBudget === 'small' && isPreplyQuery(originalPrompt)) {
-        contextBudget = 'medium';
-        log('info', 'Budget upgraded: small→medium (Preply query detected)', { threadId: thread.id });
-      }
-
       // AbortController replaces proc.kill()
       const abortController = new AbortController();
 
@@ -1078,7 +1070,10 @@ ${extracted}
     });
     await streamer.updatePhase('🔍 컨텍스트 검색 중...');
     userPrompt = await _preProcessorRegistry.run(userPrompt, preCtx);
-    await streamer.updatePhase('🧠 claude-sonnet-4-6 호출 중...');
+    const LITE_CHANNEL_ID = '1470559565258162312';
+    const contextBudget = effectiveChannelId === LITE_CHANNEL_ID ? 'small' : 'opusplan';
+    const modelLabel = contextBudget === 'small' ? 'claude-haiku' : 'opusplan';
+    await streamer.updatePhase(`🧠 ${modelLabel} 호출 중...`);
 
     // First attempt
     let runResult = await runClaude(sessionId, streamer);

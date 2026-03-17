@@ -709,13 +709,11 @@ export async function* createClaudeSession(prompt, {
     }
   }
 
-  // 6. Adaptive max-turns + model selection
-  // 개인 비서 용도 — CLI와 동일한 품질 보장. 무한루프 방지용 상한만 유지.
-  const BUDGET_TURNS = { small: 50, medium: 200, large: 200 };
-  const maxTurns = BUDGET_TURNS[contextBudget] ?? BUDGET_TURNS.medium;
-  const BUDGET_MODEL = { small: MODELS.small, medium: MODELS.medium, large: MODELS.large };
-  const model = BUDGET_MODEL[contextBudget] ?? BUDGET_MODEL.medium;
-  const BUDGET_EFFORT = { small: 'low', medium: 'medium', large: 'high' };
+  // 6. 모델 선택
+  // jarvis-lite(small) → Haiku (빠른 응답, 50턴)
+  // 그 외 → opusplan (계획 Opus, 실행 Sonnet, 200턴)
+  const maxTurns = contextBudget === 'small' ? 50 : 200;
+  const model = contextBudget === 'small' ? MODELS.small : 'opusplan';
 
   // 7. Load MCP server config (same servers, now as SDK mcpServers object)
   // ${ENV_VAR} 형식의 env var를 실제 값으로 치환 지원 (GITHUB_TOKEN 등)
@@ -753,18 +751,15 @@ export async function* createClaudeSession(prompt, {
     mcpServers,
     maxTurns,
     model,
-    effort: BUDGET_EFFORT[contextBudget] ?? 'medium',
     // inference_geo: 환경변수 설정 시에만 적용 (미설정 시 Anthropic 기본 라우팅)
     ...(process.env.INFERENCE_GEO ? { inference_geo: process.env.INFERENCE_GEO } : {}),
     includePartialMessages: true,
   };
 
-  // 1M 토큰 컨텍스트: contextBudget 'large' 세션에서 활성화
-  if (contextBudget === 'large') {
-    if (!queryOptions.betas) queryOptions.betas = [];
-    if (!queryOptions.betas.includes('context-1m-2025-08-07')) {
-      queryOptions.betas.push('context-1m-2025-08-07');
-    }
+  // 1M 토큰 컨텍스트 항상 활성화
+  if (!queryOptions.betas) queryOptions.betas = [];
+  if (!queryOptions.betas.includes('context-1m-2025-08-07')) {
+    queryOptions.betas.push('context-1m-2025-08-07');
   }
 
   // _promptVersionMap: per-threadId 버전 캐시 (글로벌 싱글턴은 다채널 동시실행 시 오염됨)

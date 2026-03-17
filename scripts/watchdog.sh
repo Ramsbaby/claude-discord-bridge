@@ -28,6 +28,7 @@ CRASH_DECAY_HOURS=6
 FATAL_ALERT_COOLDOWN_SEC=3600  # FATAL 알림 최소 1시간 간격
 CRASH_LOOP_WINDOW_SEC=1800     # 30분 내 재시작이 3회 이상이면 크래시 루프
 CRASH_LOOP_THRESHOLD=3
+HANDLER_ERROR_ALERT_COOLDOWN=1800  # 핸들러 에러율 알림 30분 쿨다운
 
 mkdir -p "$STATE_DIR" "$(dirname "$LOG_FILE")"
 
@@ -380,6 +381,44 @@ _cleanup_stale_semaphore_slots() {
     fi
 }
 
+# --- Handler error rate check ---
+# 최근 5분 JSONL에서 handleMessage error 비율이 50%+ && 3회+ 이면 1 반환
+# stdout: "errors total" 형태로 출력
+check_handler_error_rate() {
+    local jsonl="$BOT_HOME/logs/discord-bot.jsonl"
+    [[ -f "$jsonl" ]] || return 0
+    local result
+    result=$(tail -500 "$jsonl" | python3 <<'PYEOF'
+import json, sys
+from datetime import datetime, timezone, timedelta
+cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
+errors = total = 0
+for line in sys.stdin:
+    try:
+        d = json.loads(line)
+        ts = d.get('ts', '')
+        if not ts: continue
+        t = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+        if t < cutoff: continue
+        msg = d.get('msg', '')
+        if msg == 'handleMessage error': errors += 1
+        elif msg in ('Starting Claude session', 'Session summary pre-injected for resume safety'): total += 1
+    except: pass
+print(f"{errors} {total}")
+PYEOF
+)
+    local errors total
+    errors=$(echo "$result" | awk '{print $1}')
+    total=$(echo "$result" | awk '{print $2}')
+    if ! [[ "$errors" =~ ^[0-9]+$ ]]; then errors=0; fi
+    if ! [[ "$total" =~ ^[0-9]+$ ]]; then total=0; fi
+    if (( errors >= 3 && total > 0 && errors * 100 / total >= 50 )); then
+        echo "$errors $total"
+        return 1
+    fi
+    return 0
+}
+
 # --- Single monitoring pass ---
 run_one_check() {
     check_crash_decay
@@ -455,6 +494,24 @@ run_one_check() {
             # Only decrement crash counter if bot is truly healthy
             if [[ "$health_status" == "healthy" ]]; then
                 decrement_crash
+
+                # 핸들러 에러율 체크 — 프로세스는 살아있지만 기능적으로 망가진 경우 감지
+                local _err_info
+                if ! _err_info=$(check_handler_error_rate); then
+                    local _err_c _total_c _alert_last _now_ts _last_ts
+                    _err_c=$(echo "$_err_info" | awk '{print $1}')
+                    _total_c=$(echo "$_err_info" | awk '{print $2}')
+                    _alert_last="$STATE_DIR/handler-error-alert-last"
+                    _now_ts=$(date +%s)
+                    _last_ts=0
+                    if [[ -f "$_alert_last" ]]; then _last_ts=$(cat "$_alert_last"); fi
+                    if (( _now_ts - _last_ts >= HANDLER_ERROR_ALERT_COOLDOWN )); then
+                        send_alert "[Bot Watchdog] DEGRADED: handleMessage errors ${_err_c}/${_total_c} (최근 5분). 코드 버그 의심 — 수동 확인 필요"
+                        echo "$_now_ts" > "$_alert_last"
+                    fi
+                    health_status="degraded:handler_errors_${_err_c}_${_total_c}"
+                fi
+
                 if (( memory_mb >= MEMORY_CRITICAL_MB )); then
                     send_alert "[Bot Watchdog] CRITICAL: Discord bot memory=${memory_mb}MB (>=${MEMORY_CRITICAL_MB}MB). Restarting."
                     _bot_restart

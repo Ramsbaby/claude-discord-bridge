@@ -9,12 +9,9 @@ set -euo pipefail
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:${HOME}/.local/bin:${PATH}"
 export HOME="${HOME:-/Users/$(id -un)}"  # macOS default; Linux: /home/$(id -un)
 
-# Load API key from zshrc (cron uses /bin/bash, not zsh, so zshrc is not sourced)
-if [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
-  _key=$(grep -m1 'export ANTHROPIC_API_KEY=' "${HOME}/.zshrc" 2>/dev/null | sed 's/.*ANTHROPIC_API_KEY="\(.*\)"/\1/')
-  if [[ -n "$_key" ]]; then export ANTHROPIC_API_KEY="$_key"; fi
-  unset _key
-fi
+# Claude Max 구독 모드 전용 — API 키 불필요 (2026-03-17)
+# claude -p는 구독 인증으로 실행, ANTHROPIC_API_KEY가 있으면 API 크레딧을 소모하므로 명시적 unset
+unset ANTHROPIC_API_KEY 2>/dev/null || true
 
 # Prevent nested claude detection
 unset CLAUDECODE CLAUDE_CODE_ENTRYPOINT CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS
@@ -126,6 +123,13 @@ SCRIPT=$(echo "$TASK_CONFIG" | jq -r '.script // empty')
 SCRIPT_ARGS=$(echo "$TASK_CONFIG" | jq -r '.scriptArgs // "daily"')
 # output is a JSON array like ["discord","file"]
 OUTPUT_MODES=$(echo "$TASK_CONFIG" | jq -r '.output[]? // empty')
+
+# --- Strategy parameters (OpenJarvis 차용: 태스크별 전략 설정) ---
+# tasks.json에 "strategy": { "maxOutputTokens": 2000, "contextMode": "depends_only" } 형태로 설정
+export JARVIS_MAX_OUTPUT_TOKENS
+export JARVIS_CONTEXT_MODE
+JARVIS_MAX_OUTPUT_TOKENS=$(echo "$TASK_CONFIG" | jq -r '.strategy.maxOutputTokens // empty')
+JARVIS_CONTEXT_MODE=$(echo "$TASK_CONFIG" | jq -r '.strategy.contextMode // empty')
 
 # --- Market holiday guard (tasks with requiresMarket: true) ---
 if [[ "$REQUIRES_MARKET" == "true" ]]; then

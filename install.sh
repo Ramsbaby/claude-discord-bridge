@@ -84,12 +84,21 @@ check_common_deps() {
         error "Missing dependencies. Install them and re-run."
         exit 1
     fi
-    # claude CLI is optional (needed for cron tasks, not install)
+    # claude CLI — required for all bot functionality (every response uses claude -p)
     if command -v claude >/dev/null 2>&1; then
         info "Dependencies OK (node $(node -v), jq, claude CLI)"
     else
-        info "Dependencies OK (node $(node -v), jq)"
-        warn "claude CLI not found — install later: npm install -g @anthropic-ai/claude-code"
+        warn "claude CLI not found."
+        echo ""
+        echo "  ⚠️  claude CLI is REQUIRED for this bot to function."
+        echo "  Every Discord response and cron task calls 'claude -p'."
+        echo "  Without it, the bot starts but does nothing."
+        echo ""
+        echo "  Install: npm install -g @anthropic-ai/claude-code"
+        echo "  Then auth: claude  (requires Claude Max subscription)"
+        echo ""
+        error "Install claude CLI and authenticate before starting the bot."
+        exit 1
     fi
 }
 
