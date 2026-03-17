@@ -1225,6 +1225,14 @@
       "retry": {
         "max": 2
       }
+    },
+    {
+      "id": "cron-auditor",
+      "name": "크론 전체 점검",
+      "schedule": "30 5 * * *",
+      "timeout": 120,
+      "discordChannel": "jarvis-infra",
+      "prompt": "cron-auditor.md 지침에 따라 모든 Jarvis 크론 동작 상태를 점검하고 리포트를 Discord에 전송하라."
     }
   ]
 }
