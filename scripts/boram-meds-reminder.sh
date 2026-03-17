@@ -1,18 +1,11 @@
 #!/usr/bin/env bash
 # boram-meds-reminder.sh — 약 복용 알림 (보람님 전용)
 # Usage: boram-meds-reminder.sh [아침|점심|저녁]
-# 5일 한정: END_DATE 이후 자동 종료
 
 set -euo pipefail
 BOT_HOME="${BOT_HOME:-$HOME/.jarvis}"
 PERIOD="${1:-아침}"
-END_DATE="2026-03-21"
 WEBHOOK="https://discord.com/api/webhooks/1482899334940069953/luZX4DSYDvXvcZlIoyUEwyzqCXhdgoWSslHHM0LEmH_VW2JKHUT8Sjw_U9YQ8hAjcchr"
-
-TODAY=$(TZ=Asia/Seoul date +%Y-%m-%d 2>/dev/null || date +%Y-%m-%d)
-if [[ "$TODAY" > "$END_DATE" ]]; then
-  exit 0
-fi
 
 case "$PERIOD" in
   아침) MSG="☀️ 보람님, 아침 약 드실 시간이에요! 💊💕" ;;

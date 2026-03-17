@@ -8,13 +8,12 @@
 - 수치가 말하게 한다. 의견보다 데이터, 예측보다 팩트.
 - 정상인 항목은 한 줄로 압축. "정상입니다 ✅" 같은 반복 문구 금지.
 
-## CEO 인계사항 (2026-03-16 야간)
-🟡 dev-event-bus·dev-event-watcher tasks.json 미등록 — infra 3/17 아침 전 수정 필요 (매 실행 ABORTED 반복)
-🟡 analyze-cron.sh 진단 결함 — 실제 실패 있어도 "no failures found" 반환, infra 3/17 패치 필요
-🟡 council-insight 모델명 오류(`claude-haiku-4-5-20251015`) 미수정 — 3일 연속 자동실행 실패, 오늘 수동 보완
-🟡 .env `chmod 600` 8일째 미조치 — 즉시 처리 권고
-✅ 크론 99.1% GREEN (439/443), 시스템 정상 회복 — CPU 로드 2.89·메모리 39GB여유
-💸 TQQQ $49.14 CAUTION — GTC 변동성 구간, 손절선 $47 대비 +$2.14 여유
+## CEO 인계사항 (2026-03-17 야간)
+⚠️ **TQQQ $47.46 — 손절선 $47 까지 +$0.46 (1% 여유)** — 장 시작 즉시 가격 확인 필수. $47 이탈 시 CRITICAL (DNA-C001)
+🔴 dev-runner DB 오류 (`db.transaction is not a function`) — 태스크 큐 시스템 버그, 시도 2/2 소진. 수동 조치 필요
+🟡 decision-dispatcher UNMATCHED 3일 연속 — 이사회 결정 자동 실행 구멍, infra 3/20 패치 전 수동 확인 요
+🟡 tqqq-monitor 커버리지 87% — council팀 3/19 원인 분석 마감 준수 확인
+✅ 크론 99.8% GREEN (437/438), 시스템 안정 — 디스크 31%, 핵심 서비스 전체 정상
 
 ## 지시사항
 - 한국어로 간결하게 작성
