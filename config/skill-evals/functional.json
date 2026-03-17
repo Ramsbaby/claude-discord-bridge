@@ -1,0 +1,92 @@
+{
+  "skills": [
+    {
+      "id": "system-health",
+      "name": "시스템 건강 점검",
+      "mode": "result-check",
+      "result_dir": "results/system-health",
+      "max_age_hours": 48,
+      "expect_keywords": [
+        "Discord",
+        "크론",
+        "시스템"
+      ],
+      "min_length": 100
+    },
+    {
+      "id": "morning-standup",
+      "name": "모닝 스탠드업",
+      "mode": "result-check",
+      "result_dir": "results/morning-standup",
+      "max_age_hours": 36,
+      "expect_keywords": [
+        "브리핑"
+      ],
+      "min_length": 100
+    },
+    {
+      "id": "council-insight",
+      "name": "간부회의",
+      "mode": "result-check",
+      "result_dir": "results/council-insight",
+      "max_age_hours": 48,
+      "expect_keywords": [
+        "경영",
+        "점검"
+      ],
+      "min_length": 100
+    },
+    {
+      "id": "infra-daily",
+      "name": "인프라 데일리",
+      "mode": "result-check",
+      "result_dir": "results/infra-daily",
+      "max_age_hours": 36,
+      "expect_keywords": [
+        "인프라"
+      ],
+      "min_length": 50
+    },
+    {
+      "id": "deploy",
+      "name": "배포/업데이트",
+      "mode": "validate",
+      "required_sections": [
+        "배포 전 체크리스트",
+        "배포"
+      ],
+      "min_lines": 20
+    },
+    {
+      "id": "crisis",
+      "name": "긴급 대응",
+      "mode": "validate",
+      "required_sections": [
+        "상황 파악",
+        "복구"
+      ],
+      "min_lines": 20
+    },
+    {
+      "id": "tqqq",
+      "name": "TQQQ 모니터링",
+      "mode": "validate",
+      "required_sections": [
+        "TQQQ",
+        "모니터링"
+      ],
+      "min_lines": 10
+    },
+    {
+      "id": "doctor",
+      "name": "시스템 점검 스킬",
+      "mode": "validate",
+      "required_sections": [
+        "LaunchAgent",
+        "Discord",
+        "RAG"
+      ],
+      "min_lines": 30
+    }
+  ]
+}

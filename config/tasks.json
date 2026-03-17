@@ -1156,6 +1156,25 @@
       "disabled": true,
       "schedule": "0 23 * * *",
       "prompt": "disabled — crontab 잔재"
+    },
+    {
+      "id": "skill-eval",
+      "name": "스킬 자동 평가",
+      "schedule": "30 4 * * 0",
+      "timeout": 600,
+      "script": "scripts/skill-eval.sh",
+      "output": [
+        "discord",
+        "file"
+      ],
+      "discordChannel": "jarvis-ceo",
+      "retry": {
+        "max": 1,
+        "backoff": "exponential"
+      },
+      "priority": "weekly",
+      "resultRetention": 90,
+      "resultMaxChars": 2000
     }
   ]
 }
