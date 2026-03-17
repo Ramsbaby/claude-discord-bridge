@@ -215,7 +215,7 @@ action_run_e2e() {
 action_analyze_cron_failure() {
     # 크론 실패 원인 분석: 오늘 실패 로그를 추출하고 결과 저장
     local fail_log
-    fail_log=$(grep "$TODAY" "${BOT_HOME}/logs/cron.log" 2>/dev/null | grep "FAILED" | tail -10)
+    fail_log=$(grep "$TODAY" "${BOT_HOME}/logs/cron.log" 2>/dev/null | grep -E "FAILED|ABORTED|ERROR" | tail -10)
     if [[ -z "$fail_log" ]]; then
         echo "OK:no failures found"
         return 0
