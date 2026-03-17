@@ -30,11 +30,18 @@
 
 ## Quick Start
 
+**One-liner install** — clones the repo, installs dependencies, and guides you through `.env` setup:
+
+```bash
+git clone https://github.com/Ramsbaby/claude-discord-bridge ~/.jarvis && cd ~/.jarvis && bash install.sh
+```
+
+Or step by step:
+
 ```bash
 git clone https://github.com/Ramsbaby/claude-discord-bridge ~/.jarvis
 cd ~/.jarvis
-cp discord/.env.example discord/.env
-# edit discord/.env with your Discord token + Guild ID
+bash install.sh      # checks Node/Claude deps, copies .env.example, installs packages
 node discord/discord-bot.js
 ```
 
