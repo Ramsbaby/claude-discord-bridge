@@ -32,7 +32,7 @@
 > **Required before install:**
 > - **Claude Max subscription** ($100/mo) — the bot calls `claude -p` for every response and cron task. Without it, the bot starts but does nothing.
 > - **Claude Code CLI** — `npm install -g @anthropic-ai/claude-code` then `claude` to authenticate
-> - **Node.js 18+** and **Discord bot token** (from [discord.com/developers](https://discord.com/developers))
+> - **Node.js 20+** and **Discord bot token** (from [discord.com/developers](https://discord.com/developers))
 
 ---
 
