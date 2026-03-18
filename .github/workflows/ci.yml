@@ -78,6 +78,11 @@ jobs:
       - name: Install system deps (jq)
         run: sudo apt-get install -y jq
 
+      - name: Mock claude CLI (CI — binary presence check only)
+        run: |
+          sudo bash -c 'printf "#!/bin/bash\necho \"claude mock (CI)\"\n" > /usr/local/bin/claude && chmod +x /usr/local/bin/claude'
+          claude --version || claude  # verify mock works
+
       - name: Run install.sh (non-interactive, tier 2)
         run: echo "n" | bash install.sh --local --tier 2
         timeout-minutes: 5
