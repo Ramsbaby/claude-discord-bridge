@@ -84,7 +84,7 @@ check "RAG indexer exists" test -f "$BOT_HOME/bin/rag-index.mjs"
 check "ask-claude.sh exists" test -f "$BOT_HOME/bin/ask-claude.sh"
 check "discord-bot.js exists" test -f "$BOT_HOME/discord/discord-bot.js"
 check "tasks.json exists" test -f "$BOT_HOME/config/tasks.json"
-check "monitoring.json exists" test -f "$BOT_HOME/config/monitoring.json"
+ci_check "monitoring.json exists" test -f "$BOT_HOME/config/monitoring.json"
 
 # --- Dependency Tests ---
 echo ""
@@ -95,7 +95,9 @@ check "apache-arrow installed" test -d "$BOT_HOME/discord/node_modules/apache-ar
 check "discord-bot.js syntax valid" node --check "$BOT_HOME/discord/discord-bot.js"
 check "handlers.js syntax valid" node --check "$BOT_HOME/discord/lib/handlers.js"
 check "handlers.js no-undef (ESLint)" bash -c "
-  ESLINT=\$(command -v eslint 2>/dev/null || echo '')
+  ESLINT=\$(command -v eslint 2>/dev/null \
+    || ls '$BOT_HOME/discord/node_modules/.bin/eslint' 2>/dev/null \
+    || echo '')
   [ -z \"\$ESLINT\" ] && { echo 'eslint not found'; exit 1; }
   \"\$ESLINT\" --no-eslintrc \
     --rule '{\"no-undef\": \"error\"}' \
@@ -157,13 +159,13 @@ for task in weekly-kpi monthly-review security-scan rag-health career-weekly cos
   warn_check "$task context exists" test -f "$BOT_HOME/context/$task.md"
 done
 check "autonomy-levels.md exists" test -f "$BOT_HOME/config/autonomy-levels.md"
-check "company-dna.md SSoT" test -f "$BOT_HOME/config/company-dna.md"
+ci_check "company-dna.md SSoT" test -f "$BOT_HOME/config/company-dna.md"
 check "e2e-cron.sh executable" test -x "$BOT_HOME/scripts/e2e-cron.sh"
 
 # --- Channel Routing ---
 echo ""
 echo "▶ Channel Routing"
-check "monitoring.json has webhooks" bash -c "jq -e '.webhooks' '$BOT_HOME/config/monitoring.json' > /dev/null 2>&1"
+ci_check "monitoring.json has webhooks" bash -c "jq -e '.webhooks' '$BOT_HOME/config/monitoring.json' > /dev/null 2>&1"
 check "route-result.sh supports channel arg" bash -c "grep -q 'CHANNEL' '$BOT_HOME/bin/route-result.sh'"
 check "bot-cron.sh passes channel" bash -c "grep -q 'DISCORD_CHANNEL' '$BOT_HOME/bin/bot-cron.sh'"
 
