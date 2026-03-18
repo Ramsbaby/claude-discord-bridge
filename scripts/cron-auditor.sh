@@ -66,9 +66,9 @@ add_count() {   # add_count ok|issue
 
 # ── 1. tasks.json 태스크 ──────────────────────────────────────────────────────
 
-python3 -c "
+python3 - "$BOT_HOME/config/tasks.json" <<'PYEOF' 2>/dev/null > "$TASKS_TMP" || true
 import json, sys
-with open('$BOT_HOME/config/tasks.json') as f:
+with open(sys.argv[1]) as f:
     data = json.load(f)
 tasks = data.get('tasks', []) if isinstance(data, dict) else data
 for t in tasks:
@@ -77,7 +77,7 @@ for t in tasks:
         t.get('schedule') or '',
         str(t.get('enabled', True))
     ]))
-" 2>/dev/null > "$TASKS_TMP" || true
+PYEOF
 
 echo "## [tasks.json 태스크]"
 while IFS=$'\t' read -r tid sched enabled; do

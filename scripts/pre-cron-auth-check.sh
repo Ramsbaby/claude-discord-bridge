@@ -100,7 +100,32 @@ elif (( AUTH_EXIT != 0 )); then
 
 else
     log "인증 정상 (계정: $ACCOUNT_INFO)"
-    # 쿨다운 파일 있으면 삭제 (복구됨)
     rm -f "$COOLDOWN_FILE"
+
+    # 만료 임박 경고: 3시간 이내 만료 예정이면 선제 알림
+    EXPIRE_SOON=$(python3 -c "
+import json, time, sys
+cred = '${HOME}/.claude/.credentials.json'
+try:
+    d = json.load(open(cred))
+    for v in d.values():
+        if isinstance(v, dict) and 'expiresAt' in v:
+            exp_ms = v.get('expiresAt', 0)
+            remaining_min = (exp_ms/1000 - time.time()) / 60
+            if 0 < remaining_min < 180:
+                print(f'{int(remaining_min)}')
+                sys.exit(0)
+except Exception:
+    pass
+sys.exit(1)
+" 2>/dev/null || echo "")
+
+    if [[ -n "$EXPIRE_SOON" ]]; then
+        log "⚠️ 토큰 만료 임박: ${EXPIRE_SOON}분 후 (계정: $ACCOUNT_INFO)"
+        echo "$(date +%s)" > "$COOLDOWN_FILE"
+        send_ntfy "Jarvis 토큰 만료 임박" "⚠️ Claude 토큰 ${EXPIRE_SOON}분 후 만료. 계정: $ACCOUNT_INFO → 지금 claude login 필요" "high"
+        send_discord "⚠️ **[pre-cron-auth]** 토큰 **${EXPIRE_SOON}분 후 만료** 예정. 계정: \`$ACCOUNT_INFO\`\n지금 \`claude login\` 실행하지 않으면 오전 크론 401 발생합니다."
+    fi
+
     exit 0
 fi

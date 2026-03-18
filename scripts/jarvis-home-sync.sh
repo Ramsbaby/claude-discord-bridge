@@ -59,6 +59,7 @@ fi
 if [[ "$STASHED" -eq 1 ]]; then
   if ! git stash pop >>"$LOG" 2>&1; then
     alert "⚠️ jarvis-home-sync: stash pop 충돌. 확인 필요 (\`cd ~/.jarvis && git stash show\`)"
+    exit 1
   fi
 fi
 
