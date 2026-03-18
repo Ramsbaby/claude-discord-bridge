@@ -21,10 +21,6 @@
   <a href="README.ko.md">한국어</a> · <a href="ROADMAP.md">Roadmap</a> · <a href="discord/SETUP.md">Setup Guide</a> · <a href="docs/INDEX.md">Documentation</a>
 </p>
 
-<p align="center">
-  <img src="docs/demo.gif" alt="Jarvis demo" width="700">
-</p>
-
 ---
 
 ## Why $0? — The Core Differentiator
@@ -127,12 +123,17 @@ Twelve virtual teams each have a defined role and run on their own schedule. You
 | Team | What it does |
 |------|-------------|
 | **Council** (strategy) | Cross-team synthesis, daily priorities |
-| **Infra** | Server health, cost monitoring |
-| **Career** | Weekly growth reflection |
-| **Record** | Daily activity archiving |
+| **CEO Digest** | Board-level summary: OKR progress, key decisions |
+| **Infra** | Server health, cost monitoring, self-healing alerts |
+| **Career** | Weekly growth reflection, job market tracking |
+| **Record** | Daily activity archiving, decision audit log |
 | **Brand** | Content and positioning tracking |
 | **Academy** | Research and knowledge management |
-| **Trend** | Morning news and market briefings |
+| **Finance** | Market monitoring, portfolio tracking |
+| **Recon** | Competitive intelligence, OSS landscape scan |
+| **Security Scan** | Dependency audit, credential leak detection |
+| **Standup** | Morning briefing — calendar, tasks, market overview |
+| **Trend** | News digest and emerging signals |
 
 ### 3. Self-Healing Infrastructure (4 Layers)
 The bot recovers from crashes without waking you up:
@@ -160,9 +161,9 @@ The Nexus CIG (Context Intelligence Gateway) MCP server sits between Claude and 
 ## Quick Start
 
 > **Prerequisites**
-> - **Claude Max subscription** ($100/mo) — every response and cron task calls `claude -p`. Without it, the bot starts but does nothing useful.
+> - **Claude Max subscription** ($20–$100/mo depending on tier) — every response and cron task calls `claude -p`. Without it, the bot starts but does nothing useful.
 > - **Claude Code CLI** — `npm install -g @anthropic-ai/claude-code` then run `claude` to authenticate
-> - **Node.js 20+**, **jq**, and a **Discord bot token** from [discord.com/developers](https://discord.com/developers)
+> - **Node.js 22+**, **jq**, and a **Discord bot token** from [discord.com/developers](https://discord.com/developers)
 
 **Option A — Docker (simplest):**
 
