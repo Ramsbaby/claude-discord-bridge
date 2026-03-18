@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 jobs:
-  test:
+  lint:
     runs-on: ubuntu-latest
     name: Lint & Syntax
 
@@ -30,10 +30,10 @@ jobs:
       - name: Check required files
         run: |
           echo "Checking core files..."
-          test -f discord/discord-bot.js     && echo "✅ discord-bot.js"
+          test -f discord/discord-bot.js      && echo "✅ discord-bot.js"
           test -f discord/lib/claude-runner.js && echo "✅ claude-runner.js"
-          test -f install.sh                 && echo "✅ install.sh"
-          test -f discord/.env.example       && echo "✅ .env.example"
+          test -f install.sh                  && echo "✅ install.sh"
+          test -f discord/.env.example        && echo "✅ .env.example"
           echo "Core file check passed"
 
       - name: JS syntax check
@@ -60,3 +60,29 @@ jobs:
             python3 -m json.tool "$f" > /dev/null && echo "✅ $f" || true
           done
           echo "Config validation passed"
+
+  install-test:
+    runs-on: ubuntu-latest
+    name: Install & E2E
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: discord/package*.json
+
+      - name: Install system deps (jq)
+        run: sudo apt-get install -y jq
+
+      - name: Run install.sh (non-interactive, tier 2)
+        run: echo "n" | bash install.sh --local --tier 2
+        timeout-minutes: 5
+
+      - name: Run E2E test suite
+        run: bash scripts/e2e-test.sh
+        env:
+          GITHUB_ACTIONS: true
