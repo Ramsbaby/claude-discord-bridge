@@ -21,6 +21,10 @@
   <a href="README.ko.md">한국어</a> · <a href="ROADMAP.md">Roadmap</a> · <a href="discord/SETUP.md">Setup Guide</a> · <a href="docs/INDEX.md">Documentation</a>
 </p>
 
+<p align="center">
+  <img src="docs/demo.gif" alt="Jarvis demo — bot startup, cron execution, Discord chat, /status" width="820">
+</p>
+
 ---
 
 ## Why $0? — The Core Differentiator
