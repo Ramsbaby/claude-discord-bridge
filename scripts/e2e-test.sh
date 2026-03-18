@@ -40,7 +40,7 @@ echo ""
 
 # --- Process Tests ---
 echo "▶ Process Health"
-check "Discord bot running" pgrep -f "discord-bot.js"
+check "Discord bot running" bash -c 'pgrep -f "discord-bot.js|orchestrator.mjs" > /dev/null 2>&1'
 
 # --- File Structure Tests ---
 echo ""
