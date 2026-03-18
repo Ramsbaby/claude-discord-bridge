@@ -9,6 +9,7 @@ export BOT_HOME="${BOT_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 PASS=0
 FAIL=0
 SKIP=0
+WARN=0
 SEND_NTFY="${1:-}"
 
 green() { printf '\033[32m%s\033[0m\n' "$1"; }
@@ -30,6 +31,19 @@ check() {
 skip() {
   yellow "⏭️  SKIP: $1"
   ((SKIP++))
+}
+
+# warn_check: runtime-generated files (not present on first install, created by crons)
+warn_check() {
+  local name="$1"
+  shift
+  if "$@" >/dev/null 2>&1; then
+    green "✅ PASS: $name"
+    ((PASS++))
+  else
+    yellow "⚠️  WARN: $name — not yet generated (run crons once to create)"
+    ((WARN++))
+  fi
 }
 
 echo "═══════════════════════════════════════════"
@@ -121,7 +135,7 @@ check "rag-health cron exists" bash -c "crontab -l 2>/dev/null | grep -q 'rag-he
 echo ""
 echo "▶ Phase 3~5 Context Files"
 for task in weekly-kpi monthly-review security-scan rag-health career-weekly cost-monitor; do
-  check "$task context exists" test -f "$BOT_HOME/context/$task.md"
+  warn_check "$task context exists" test -f "$BOT_HOME/context/$task.md"
 done
 check "autonomy-levels.md exists" test -f "$BOT_HOME/config/autonomy-levels.md"
 check "company-dna.md SSoT" test -f "$BOT_HOME/config/company-dna.md"
@@ -144,7 +158,7 @@ check "ask-claude.sh has cross-team context" grep -q "Cross-team Context" "$BOT_
 check "ask-claude.sh has insight filter" grep -q "system-health|rate-limit-check" "$BOT_HOME/lib/insight-recorder.sh"
 check "gen-inventory.sh exists" test -x "$BOT_HOME/scripts/gen-inventory.sh"
 check "cron-catalog.md exists" test -f "$HOME/Jarvis-Vault/01-system/cron-catalog.md"
-check "council reads shared-inbox" grep -q "shared-inbox" "$BOT_HOME/context/council-insight.md"
+warn_check "council reads shared-inbox" grep -q "shared-inbox" "$BOT_HOME/context/council-insight.md"
 check "pending-tasks atomic write (renameSync)" grep -q "renameSync" "$BOT_HOME/discord/lib/handlers.js"
 check "apology cooldown implemented" grep -q "apologyCooldownFile" "$BOT_HOME/discord/discord-bot.js"
 check "active-session cleanup in finally" grep -q "active-session.*finally\|finally.*active-session\|activeProcesses.size === 0" "$BOT_HOME/discord/lib/handlers.js"
@@ -206,8 +220,11 @@ fi
 # --- Summary ---
 echo ""
 echo "═══════════════════════════════════════════"
-TOTAL=$((PASS + FAIL + SKIP))
-echo "  Results: $(green "$PASS passed"), $(red "$FAIL failed"), $(yellow "$SKIP skipped") / $TOTAL total"
+TOTAL=$((PASS + FAIL + SKIP + WARN))
+echo "  Results: $(green "$PASS passed"), $(red "$FAIL failed"), $(yellow "$WARN warned"), $(yellow "$SKIP skipped") / $TOTAL total"
+if [[ $WARN -gt 0 ]]; then
+  yellow "  ℹ️  Warnings = runtime files not yet generated. Run crons once to clear."
+fi
 echo "═══════════════════════════════════════════"
 
 exit $((FAIL > 0 ? 1 : 0))
