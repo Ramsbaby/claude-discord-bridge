@@ -637,5 +637,161 @@ export async function handleInteraction(interaction, deps) {
       await interaction.editReply({ embeds: [embed] });
       log('error', 'Team command failed', { team: teamName, error: errMsg.slice(0, 200) });
     }
+
+  // -------------------------------------------------------------------------
+  } else if (commandName === 'approve') {
+    // 오너 전용: doc-draft 승인 → 대상 문서에 적용
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    try {
+      const draftArg = interaction.options.getString('draft');
+      const draftsDir = join(BOT_HOME, 'rag', 'teams', 'reports');
+
+      const { readdirSync } = await import('node:fs');
+      let draftFiles;
+      try {
+        draftFiles = readdirSync(draftsDir).filter(f => f.startsWith('doc-draft-') && f.endsWith('.md'));
+      } catch {
+        draftFiles = [];
+      }
+
+      // 목록 표시 모드
+      if (!draftArg) {
+        if (draftFiles.length === 0) {
+          await interaction.editReply('📭 승인 대기 중인 doc-draft 파일이 없습니다.');
+          return;
+        }
+        const list = draftFiles.map((f, i) => `\`${i + 1}.\` ${f}`).join('\n');
+        const embed = new EmbedBuilder()
+          .setColor(0x5865f2)
+          .setTitle('📋 승인 대기 중인 Doc-Draft')
+          .setDescription(list + '\n\n> `/approve draft:<파일명>` 으로 적용')
+          .setTimestamp();
+        await interaction.editReply({ embeds: [embed] });
+        return;
+      }
+
+      // 특정 draft 적용 모드
+      const draftName = draftArg.endsWith('.md') ? draftArg : `${draftArg}.md`;
+      const draftPath = join(draftsDir, draftName);
+
+      if (!existsSync(draftPath)) {
+        // 번호로 선택한 경우
+        const idx = parseInt(draftArg, 10) - 1;
+        if (!isNaN(idx) && draftFiles[idx]) {
+          const selectedPath = join(draftsDir, draftFiles[idx]);
+          // 재귀 방지: 파일명으로 다시 처리하도록 안내
+          await interaction.editReply(`📎 \`/approve draft:${draftFiles[idx]}\` 로 다시 시도해 주세요.`);
+          return;
+        }
+        await interaction.editReply(`❌ 파일 없음: \`${draftName}\``);
+        return;
+      }
+
+      const draftContent = readFileSync(draftPath, 'utf-8');
+
+      // 프론트매터에서 target: 경로 추출
+      const targetMatch = draftContent.match(/^---[\s\S]*?target:\s*(.+?)[\s\S]*?---/m);
+      if (!targetMatch) {
+        await interaction.editReply(`❌ \`${draftName}\` 에 \`target:\` 프론트매터가 없습니다. 적용 경로를 알 수 없습니다.`);
+        return;
+      }
+
+      const targetRel = targetMatch[1].trim();
+      const targetPath = targetRel.startsWith('/') ? targetRel : join(BOT_HOME, targetRel);
+
+      // 프론트매터 제거 후 본문만 추출
+      const bodyContent = draftContent.replace(/^---[\s\S]*?---\n?/, '').trim();
+
+      // 대상 파일 쓰기
+      const { mkdirSync: mkdirSyncInner } = await import('node:fs');
+      const { dirname } = await import('node:path');
+      mkdirSyncInner(dirname(targetPath), { recursive: true });
+      writeFileSync(targetPath, bodyContent + '\n', 'utf-8');
+
+      // draft 파일은 .applied 확장으로 보존
+      const appliedPath = draftPath.replace(/\.md$/, '.applied.md');
+      const { renameSync } = await import('node:fs');
+      renameSync(draftPath, appliedPath);
+
+      log('info', '/approve applied doc-draft', { draft: draftName, target: targetPath, user: interaction.user.tag });
+
+      const embed = new EmbedBuilder()
+        .setColor(0x57f287)
+        .setTitle('✅ Doc-Draft 적용 완료')
+        .addFields(
+          { name: 'Draft', value: `\`${draftName}\``, inline: true },
+          { name: 'Target', value: `\`${targetRel}\``, inline: true },
+        )
+        .setFooter({ text: `적용자: ${interaction.user.tag}` })
+        .setTimestamp();
+      await interaction.editReply({ embeds: [embed] });
+
+    } catch (err) {
+      await interaction.editReply(`❌ approve 실패: ${err.message?.slice(0, 300)}`);
+      log('error', '/approve failed', { error: err.message?.slice(0, 200) });
+    }
+
+  // -------------------------------------------------------------------------
+  } else if (commandName === 'commitments') {
+    // 오너 전용: commitments.jsonl에서 open 항목 조회
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    try {
+      const commitFile = join(BOT_HOME, 'state', 'commitments.jsonl');
+      const now = Date.now();
+
+      if (!existsSync(commitFile)) {
+        await interaction.editReply('📭 `state/commitments.jsonl` 파일이 없습니다. 아직 기록된 약속이 없습니다.');
+        return;
+      }
+
+      const lines = readFileSync(commitFile, 'utf-8')
+        .split('\n')
+        .filter(l => l.trim());
+
+      const open = [];
+      for (const line of lines) {
+        try {
+          const item = JSON.parse(line);
+          if (item.status === 'open') open.push(item);
+        } catch { /* 깨진 라인 스킵 */ }
+      }
+
+      if (open.length === 0) {
+        const embed = new EmbedBuilder()
+          .setColor(0x57f287)
+          .setTitle('✅ 미이행 약속 없음')
+          .setDescription('모든 약속이 이행됐습니다.')
+          .setTimestamp();
+        await interaction.editReply({ embeds: [embed] });
+        return;
+      }
+
+      const OVERDUE_MS = 24 * 60 * 60 * 1000;
+      const lines2 = open.map(item => {
+        const createdAt = item.created_at ? new Date(item.created_at).getTime() : 0;
+        const age = now - createdAt;
+        const ageH = Math.floor(age / 3600_000);
+        const overdue = age > OVERDUE_MS;
+        const badge = overdue ? '🔴' : '🟡';
+        const timeStr = item.created_at ? `${ageH}h 전` : '시간 불명';
+        const text = item.text || item.commitment || item.content || JSON.stringify(item);
+        return `${badge} \`${timeStr}\` — ${text.slice(0, 120)}`;
+      });
+
+      const embed = new EmbedBuilder()
+        .setColor(open.some(i => {
+          const age = now - (i.created_at ? new Date(i.created_at).getTime() : now);
+          return age > OVERDUE_MS;
+        }) ? 0xed4245 : 0xfee75c)
+        .setTitle(`📋 미이행 약속 ${open.length}건`)
+        .setDescription(lines2.join('\n').slice(0, 2000))
+        .setTimestamp();
+      await interaction.editReply({ embeds: [embed] });
+
+      log('info', '/commitments queried', { open: open.length, user: interaction.user.tag });
+    } catch (err) {
+      await interaction.editReply(`❌ 조회 실패: ${err.message?.slice(0, 300)}`);
+      log('error', '/commitments failed', { error: err.message?.slice(0, 200) });
+    }
   }
 }

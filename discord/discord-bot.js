@@ -135,6 +135,15 @@ async function registerSlashCommands(clientId, guildId) {
             { name: '🔭 정보탐험대 (Recon)', value: 'recon' },
           )
       ),
+    new SlashCommandBuilder()
+      .setName('approve')
+      .setDescription('doc-draft 승인 → 실제 문서에 자동 적용 (오너 전용)')
+      .addStringOption(opt =>
+        opt.setName('draft').setDescription('적용할 draft 파일명 (미입력 시 목록 표시)').setRequired(false)
+      ),
+    new SlashCommandBuilder()
+      .setName('commitments')
+      .setDescription('미이행 약속 목록 조회 (오너 전용)'),
   ];
 
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
