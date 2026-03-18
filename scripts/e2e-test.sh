@@ -99,10 +99,10 @@ check "handlers.js no-undef (ESLint)" bash -c "
     || ls '$BOT_HOME/discord/node_modules/.bin/eslint' 2>/dev/null \
     || echo '')
   [ -z \"\$ESLINT\" ] && { echo 'eslint not found'; exit 1; }
-  \"\$ESLINT\" --no-eslintrc \
+  \"\$ESLINT\" --no-eslintrc --no-ignore \
     --rule '{\"no-undef\": \"error\"}' \
     --env es2022,node \
-    --parser-options '{\"sourceType\":\"script\"}' \
+    --parser-options '{\"ecmaVersion\":2022,\"sourceType\":\"module\"}' \
     '$BOT_HOME/discord/lib/handlers.js' 2>&1 | grep -q ' error ' && exit 1 || exit 0
 "
 
