@@ -720,6 +720,28 @@
       "model": "claude-haiku-4-5-20251001"
     },
     {
+      "id": "doc-sync-auditor",
+      "name": "문서-코드 정합성 감사",
+      "schedule": "0 23 * * *",
+      "timeout": 120,
+      "prompt": "오늘 변경된 코드/스크립트/설정 파일과 문서 파일을 비교해 정합성을 감사해라.\n\n1. 오늘 변경된 코드 파일 목록:\n   find ~/.jarvis/lib ~/.jarvis/bin ~/.jarvis/scripts ~/.jarvis/discord ~/.jarvis/config -not -path '*/node_modules/*' -not -path '*/logs/*' \\( -name '*.mjs' -o -name '*.js' -o -name '*.sh' -o -name '*.json' \\) -daystart -mtime -1 2>/dev/null\n\n2. 오늘 변경된 문서 파일 목록:\n   find ~/.jarvis/docs ~/.jarvis/context ~/.jarvis/adr -name '*.md' -daystart -mtime -1 2>/dev/null\n\n3. 코드 변경 파일 > 0 이고 docs 변경 파일 = 0이면 '⚠️ 문서 미업데이트 가능성' 경고.\n4. 변경 파일명 기반으로 연관 문서가 있는지 추론 (예: bot-cron.sh 수정 → fsm-guide.md 확인).\n5. 문제 없으면 Discord 전송 생략 (output 파일만). 문제 있으면 Discord 전송.\n6. 결과 보고서: ~/.jarvis/rag/teams/reports/doc-sync-$(date +%F).md 저장.",
+      "allowedTools": "Bash,Read,Write",
+      "output": [
+        "discord",
+        "file"
+      ],
+      "discordChannel": "jarvis-system",
+      "retry": {
+        "max": 1,
+        "backoff": "fixed"
+      },
+      "maxBudget": "0.30",
+      "priority": "daily",
+      "resultRetention": 14,
+      "resultMaxChars": 1000,
+      "model": "claude-haiku-4-5-20251001"
+    },
+    {
       "id": "board-meeting-am",
       "name": "Board Meeting (아침)",
       "schedule": "10 8 * * *",
@@ -1233,6 +1255,42 @@
       "timeout": 120,
       "discordChannel": "jarvis-infra",
       "prompt": "cron-auditor.md 지침에 따라 모든 Jarvis 크론 동작 상태를 점검하고 리포트를 Discord에 전송하라."
+    },
+    {
+      "id": "system-doctor",
+      "schedule": "0 6 * * *",
+      "enabled": true,
+      "timeout": 300,
+      "discordChannel": "jarvis-system",
+      "description": "Jarvis 자동 시스템 점검 (LaunchAgent, Discord봇, RAG, 크론, E2E, Glances, 디스크)",
+      "script": "/Users/ramsbaby/.jarvis/scripts/system-doctor.sh"
+    },
+    {
+      "id": "oss-recon",
+      "name": "OSS 경쟁자 주간 분석",
+      "schedule": "30 10 * * 1",
+      "enabled": true,
+      "timeout": 600,
+      "discordChannel": "jarvis-blog",
+      "script": "/Users/ramsbaby/.jarvis/scripts/oss-recon.sh"
+    },
+    {
+      "id": "oss-maintenance",
+      "name": "OSS 이슈/PR 일간 트리아지",
+      "schedule": "15 9 * * *",
+      "enabled": true,
+      "timeout": 300,
+      "discordChannel": "jarvis-blog",
+      "script": "/Users/ramsbaby/.jarvis/scripts/oss-maintenance.sh"
+    },
+    {
+      "id": "oss-promo",
+      "name": "OSS 주간 홍보 초안 생성",
+      "schedule": "0 17 * * 5",
+      "enabled": true,
+      "timeout": 600,
+      "discordChannel": "jarvis-blog",
+      "script": "/Users/ramsbaby/.jarvis/scripts/oss-promo.sh"
     }
   ]
 }

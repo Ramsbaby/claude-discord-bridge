@@ -1,0 +1,53 @@
+{
+  "repos": [
+    {
+      "owner": "Ramsbaby",
+      "name": "openclaw-self-healing",
+      "category": "ai-self-healing",
+      "description": "AI-powered self-healing system for OpenClaw Gateway — 4-tier autonomous recovery",
+      "competitors": [
+        "containrrr/watchtower",
+        "louislam/uptime-kuma"
+      ],
+      "searchTerms": ["self-healing AI", "auto recovery gateway", "autonomous healing system"]
+    },
+    {
+      "owner": "Ramsbaby",
+      "name": "openclaw-memorybox",
+      "category": "ai-agent-memory",
+      "description": "Zero-dependency memory maintenance CLI for OpenClaw agents",
+      "competitors": [
+        "mem0ai/mem0",
+        "letta-ai/letta"
+      ],
+      "searchTerms": ["AI agent memory management", "RAG memory CLI", "agent memory tool"]
+    },
+    {
+      "owner": "Ramsbaby",
+      "name": "claude-discord-bridge",
+      "category": "discord-ai-assistant",
+      "description": "Production-grade Discord AI assistant powered by Claude Max — zero API cost",
+      "competitors": [
+        "discord-bot-list/top-ai-bots",
+        "mayooear/gpt-4-discord-bot"
+      ],
+      "searchTerms": ["discord claude bot", "discord AI assistant no cost", "claude discord integration"]
+    },
+    {
+      "owner": "Ramsbaby",
+      "name": "openclaw-self-evolving",
+      "category": "self-evolving-ai",
+      "description": "AI agent that analyzes its own logs and proposes AGENTS.md improvements",
+      "competitors": [],
+      "searchTerms": ["self-evolving AI agent", "AGENTS.md automation", "AI self-improvement proposal"]
+    }
+  ],
+  "settings": {
+    "staleCommitDays": 7,
+    "maxIssuesPerRepo": 20,
+    "maxCompetitorsPerSearch": 5,
+    "discordChannel": "jarvis-blog",
+    "reportDir": "rag/oss-reports",
+    "promoChannels": ["jarvis-blog"]
+  }
+}
