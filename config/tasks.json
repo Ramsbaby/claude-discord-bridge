@@ -1183,6 +1183,124 @@
       "timeout": 600,
       "discordChannel": "jarvis-blog",
       "script": "~/.jarvis/scripts/oss-docs.sh"
+    },
+    {
+      "id": "stale-task-watcher",
+      "name": "Stale 태스크 감지 및 자동 전이",
+      "schedule": "*/30 * * * *",
+      "script": "~/.jarvis/scripts/stale-task-watcher.sh",
+      "timeout": 60,
+      "output": [
+        "file"
+      ],
+      "retry": {
+        "max": 1
+      }
+    },
+    {
+      "id": "doc-supervisor",
+      "name": "문서화 시스템 감독 (Doc Supervisor)",
+      "schedule": "0 5 * * *",
+      "timeout": 300,
+      "prompt": "문서화 시스템 감독관으로서 일일 점검을 수행해. 컨텍스트 파일의 점검 항목을 순서대로 실행하고, 결과를 테이블 형식으로 정리해. 이상 발견 시 상세 설명 포함. 보고서를 ~/.jarvis/rag/teams/reports/doc-supervisor-$(date +%F).md 에 저장해.",
+      "allowedTools": "Bash,Read,Write",
+      "output": [
+        "discord",
+        "file"
+      ],
+      "discordChannel": "jarvis-system",
+      "retry": {
+        "max": 2,
+        "backoff": "exponential"
+      },
+      "maxBudget": "1.00",
+      "priority": "daily",
+      "contextFile": "doc-supervisor.md",
+      "depends": [
+        "record-daily",
+        "council-insight"
+      ],
+      "resultRetention": 30,
+      "resultMaxChars": 1500,
+      "model": "claude-haiku-4-5-20251001"
+    },
+    {
+      "id": "board-meeting-pm",
+      "name": "Board Meeting (저녁)",
+      "schedule": "55 21 * * *",
+      "timeout": 660,
+      "script": "~/.jarvis/bin/parallel-board-meeting.sh",
+      "prompt": "",
+      "allowedTools": "Read,Bash,Write",
+      "output": [
+        "file"
+      ],
+      "discordChannel": "jarvis-ceo",
+      "retry": {
+        "max": 1,
+        "backoff": "fixed"
+      },
+      "maxBudget": "1.20",
+      "priority": "critical",
+      "depends": [],
+      "contextFile": null,
+      "resultRetention": 30,
+      "resultMaxChars": 2000,
+      "scriptArgs": "pm"
+    },
+    {
+      "id": "gen-system-overview",
+      "schedule": "5 4 * * *",
+      "enabled": true,
+      "timeout": 60,
+      "output": [
+        "file"
+      ],
+      "description": "시스템 개요 문서 자동 재생성 (SYSTEM-OVERVIEW.md)",
+      "script": "~/.jarvis/scripts/gen-system-overview.sh",
+      "name": "시스템 개요 자동 재생성"
+    },
+    {
+      "id": "bot-self-critique",
+      "name": "봇 자가 품질 점검",
+      "schedule": "45 2 * * *",
+      "timeout": 180,
+      "model": "claude-haiku-4-5-20251001",
+      "prompt": "오늘 자비스 봇의 응답 품질을 자가 점검한다.\n\n1. 최근 24시간 품질 분석 결과 확인:\nbash ~/.jarvis/scripts/bot-quality-analyzer.sh\n\n2. 최근 대화 로그 샘플 확인 (최근 10건):\njq -s 'sort_by(.ts) | reverse | .[:10]' ~/.jarvis/logs/discord-bot.jsonl 2>/dev/null | head -50\n\n분석 기준:\n- 응답 시간이 30초 이상인 건 몇 %인가?\n- 에러 응답 비율은?\n- 툴 호출 3회 이상인 단순 질문이 있는가? (불필요한 복잡도)\n- 불필요한 사과/아첨 패턴이 있는가? ('죄송해요', '도와드리겠습니다' 등)\n\n3. 개선이 필요한 문제가 발견된 경우, GitHub에 이슈를 등록한다:\n- mcp__github__create_issue 도구 사용\n- owner: Ramsbaby, repo: claude-discord-bridge\n- title 형식: '[bot-critique] {문제 요약} (날짜)'\n- body: 발견된 문제, 예상 원인, 개선 제안 포함\n- labels: ['bot-quality', 'auto-detected']\n- 문제가 없으면 이슈를 만들지 않는다.\n\n4. 자동 수정 가능한 단순 문제(설정값 오타, 단순 문자열 수정 등)는 PR을 생성한다:\n- mcp__github__create_branch로 브랜치 생성: 'bot-critique/YYYYMMDD-{issue-number}'\n- mcp__github__get_file_contents로 수정 대상 파일 현재 내용 확인\n- mcp__github__create_or_update_file로 수정 반영\n- mcp__github__create_pull_request로 PR 생성\n  - title: '[bot-critique] {수정 내용 요약}'\n  - body: 발견된 문제, 적용한 수정, 관련 이슈 번호 포함\n- 로직 변경·코드 구조 변경·삭제 작업은 PR 대신 이슈만 등록한다.\n\n출력 형식 (코드블록 없이):\n🤖 봇 자가 점검 — M/D\n\n품질 지표:\n- 총 응답: N건 · 에러: N건(N%)\n- 평균 응답시간: Ns\n- 30초 초과: N건\n\n개선 필요:\n- [발견된 문제점들 + GitHub 이슈/PR 번호]\n\n이상 없으면: 모든 지표 정상입니다. ✅",
+      "allowedTools": [
+        "Bash",
+        "mcp__github__create_issue",
+        "mcp__github__list_issues",
+        "mcp__github__get_issue",
+        "mcp__github__create_pull_request",
+        "mcp__github__create_branch",
+        "mcp__github__create_or_update_file",
+        "mcp__github__get_file_contents"
+      ],
+      "output": [
+        "discord"
+      ],
+      "discordChannel": "jarvis-system",
+      "depends": [
+        "bot-quality-check"
+      ],
+      "retry": {
+        "max": 1,
+        "backoff": "exponential"
+      },
+      "maxBudget": "0.15",
+      "priority": "normal",
+      "resultRetention": 7,
+      "resultMaxChars": 800
+    },
+    {
+      "id": "system-doctor",
+      "schedule": "0 6 * * *",
+      "enabled": true,
+      "timeout": 300,
+      "discordChannel": "jarvis-system",
+      "description": "Jarvis 자동 시스템 점검 (LaunchAgent, Discord봇, RAG, 크론, E2E, Glances, 디스크)",
+      "script": "/Users/ramsbaby/.jarvis/scripts/system-doctor.sh"
     }
   ]
 }
