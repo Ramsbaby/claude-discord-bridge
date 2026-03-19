@@ -6,6 +6,7 @@
 set -euo pipefail
 
 BOT_HOME="${BOT_HOME:-$HOME/.jarvis}"
+NODE="${NODE:-$(command -v node || command -v /opt/homebrew/bin/node)}"
 RAG_LOG="$BOT_HOME/logs/rag-index.log"
 MONITORING_CONFIG="$BOT_HOME/config/monitoring.json"
 COOLDOWN_FILE="$BOT_HOME/state/rag-quality-last-alert.txt"

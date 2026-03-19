@@ -139,11 +139,34 @@ if [[ -f "$RECOVERY_LEARNINGS_FILE" ]]; then
     PAST_LEARNINGS=$(tail -30 "$RECOVERY_LEARNINGS_FILE" 2>/dev/null || echo "없음")
 fi
 
-# ── Gotchas 로드 (알려진 실패 패턴 + 해결책) ────────────────────────────────────
+# ── Gotchas 로드 (알려진 실패 패턴 + 해결책, resolved 항목 제외) ─────────────────
 GOTCHAS_FILE="$BOT_HOME/state/gotchas.md"
 GOTCHAS_CONTENT="없음"
 if [[ -f "$GOTCHAS_FILE" ]]; then
-    GOTCHAS_CONTENT=$(cat "$GOTCHAS_FILE" 2>/dev/null || echo "없음")
+    # "수정 완료" 표시된 G-항목은 이미 해결됐으므로 복구 프롬프트에서 제외
+    # python3으로 섹션 파싱: "상태: ...수정 완료" 줄 포함된 블록은 skip
+    GOTCHAS_CONTENT=$(python3 - <<'PYEOF' 2>/dev/null || cat "$GOTCHAS_FILE" 2>/dev/null || echo "없음"
+import os, re
+bot_home = os.environ.get("BOT_HOME", os.path.expanduser("~/.jarvis"))
+path = os.path.join(bot_home, "state", "gotchas.md")
+with open(path, "r", encoding="utf-8") as f:
+    content = f.read()
+# 섹션 분리: ## G-NNN: ... 블록 단위
+# resolved 판단: 블록 내에 "수정 완료" 문자열 포함 여부
+header_pattern = re.compile(r'^(## G-\d+:)', re.MULTILINE)
+parts = header_pattern.split(content)
+# parts[0] = 파일 헤더, 이후 [heading, body] 쌍
+result = [parts[0]]
+i = 1
+while i + 1 < len(parts):
+    heading = parts[i]
+    body = parts[i+1]
+    if "수정 완료" not in body and "RESOLVED" not in body:
+        result.append(heading + body)
+    i += 2
+print("".join(result).strip() or "없음")
+PYEOF
+)
 fi
 
 HEAL_PROMPT="[Jarvis 봇 자동복구 태스크]

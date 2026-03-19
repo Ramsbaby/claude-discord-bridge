@@ -80,7 +80,7 @@ export function buildUserContextSection({ activeUserProfile, ownerName, ownerTit
       '미등록 사용자입니다. 일반 대화만 가능하며 개인 정보, 메모리, 도구 실행 등의 기능은 제공하지 않습니다.',
     ];
   }
-  if (activeUserProfile.type === 'owner') {
+  if (activeUserProfile.type === 'owner' || activeUserProfile.role === 'owner') {
     return [
       '--- Owner Context ---',
       `지금 대화 중인 사람은 ${ownerName}(${ownerTitle}님, GitHub: ${githubUsername})이다. 오너가 "나 누구야?" 등으로 물으면 프로필 기반으로 답한다.`,

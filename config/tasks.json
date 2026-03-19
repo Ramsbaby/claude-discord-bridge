@@ -33,7 +33,7 @@
     },
     {
       "id": "tqqq-monitor",
-      "name": "TQQQ 모니터링",
+      "name": "시장 모니터링",
       "requiresMarket": true,
       "schedule": "*/15 22-23 * * 1-5",
       "script": "~/.jarvis/scripts/tqqq-monitor.sh",
@@ -65,7 +65,6 @@
       "name": "일정 정합성 점검",
       "schedule": "0 4 * * 1",
       "timeout": 180,
-      "prompt": "ultrathink\n\n## 일정 정합성 자율 점검\n\n다음 절차로 Owner의 일정 설정이 실제 생활 패턴과 맞는지 점검하고, 어긋난 항목이 있으면 즉시 Discord로 개선 제안을 보내라.\n\n**1단계: 기준 로드**\n- `cat $BOT_HOME/config/user-schedule.json` 으로 출근/기상/귀가 시간 확인\n- 특히 `departure_time`(출근 시간)과 `briefing_deadline`(브리핑 수신 마감) 확인\n\n**2단계: 현재 설정 스캔**\n- `crontab -l` 로 morning-standup, news-briefing, pre-cron-auth-check 시간 확인\n- `cat ~/Library/LaunchAgents/com.jarvis.morning-standup.plist` 로 launchd 시간 확인\n- board-meeting-am 등 아침 시간대 태스크도 모두 목록화\n\n**3단계: 정합성 판단**\n브리핑 수신 마감(briefing_deadline) 이후에 실행되는 아침 태스크가 있으면 → 문제로 분류\n또한 다음도 체크:\n- 같은 태스크가 crontab + launchd 양쪽에 중복 설정된 경우\n- 불필요하게 이른 시간(wake_time 1시간 이전)에 실행되는 사용자 대면 태스크\n- 귀가 시간(return_time) 이후에 설정된 긴급/중요 알람\n\n**4단계: 결과 보고**\n- 문제 없으면: 짧게 '✅ 일정 정합성 점검 완료 — 이상 없음' 메시지만 Discord 전송\n- 문제 발견 시: '🕐 일정 조율 제안' 형식으로 각 문제와 구체적 수정 방안을 Discord에 전송\n  예: '모닝 스탠드업(07:30)이 출근 시간(06:30) 이후입니다 → 06:10 권장. 수정할까요?'\n\n**주의**: 직접 수정하지 말고 반드시 제안 메시지만 보낼 것. Owner가 승인한 후 수정.",
       "allowedTools": "Read,Bash",
       "output": [
         "discord",
@@ -82,7 +81,8 @@
       "contextFile": "schedule-coherence.md",
       "resultRetention": 4,
       "resultMaxChars": 800,
-      "model": "claude-haiku-4-5-20251001"
+      "model": "claude-haiku-4-5-20251001",
+      "prompt_file": "schedule-coherence.md"
     },
     {
       "id": "daily-summary",
@@ -117,7 +117,6 @@
       "name": "시스템 헬스체크",
       "schedule": "*/60 * * * *",
       "timeout": 300,
-      "prompt": "시스템 상태를 체크하고 결과를 마크다운 표로 보여줘.\n\n확인 항목:\n1) 디스크 사용량 (df -h | grep '/$')\n2) 메모리 (memory_pressure 2>/dev/null | grep 'System-wide memory free percentage' | awk '{print $NF}' 으로 실제 여유율 확인. 20% 미만 MEDIUM, 10% 미만 HIGH)\n3) CPU 로드 (uptime)\n4) 핵심 프로세스 생존 확인: discord-bot, orchestrator (pgrep -f)\n5) 크론 실패 감지: grep -cE 'ABORTED|FAILED' ~/.jarvis/logs/cron.log 로 전체 카운트, tail -200 ~/.jarvis/logs/cron.log | grep -E 'ABORTED|FAILED' 로 최근 실패 목록\n\n판단 기준:\n- 최근 1시간 내 ABORTED/FAILED가 3건 이상이면 ⚠️ 크론 장애 경고\n- discord-bot 또는 orchestrator 프로세스 없으면 🔴 경고\n- 디스크 90% 이상이면 🔴 경고\n- 모두 정상이면 ✅ OK 한 줄로 마무리\n\n필수: 끝에 bash ~/.jarvis/scripts/health-check.sh 를 실행하여 health.json 갱신",
       "allowedTools": "Bash",
       "output": [
         "file"
@@ -136,7 +135,8 @@
       "event_trigger": "system.alert",
       "event_trigger_debounce_s": 300,
       "event_trigger_note": "event-watcher 구현 완료 — emit-event.sh system.alert 으로 트리거",
-      "discordChannel": "jarvis-system"
+      "discordChannel": "jarvis-system",
+      "prompt_file": "system-health.md"
     },
     {
       "id": "github-monitor",
@@ -366,7 +366,6 @@
       "name": "주간 KPI 리포트",
       "schedule": "30 8 * * 1",
       "timeout": 300,
-      "prompt": "ultrathink\n\n이번 주 Jarvis 시스템 KPI 집계: 1) grep 'SUCCESS\\|FAILED' ~/.jarvis/logs/cron.log | tail -500 으로 태스크별 성공/실패율 집계 (성공률 90% 미달 태스크 명시) 2) tail -1 ~/.jarvis/logs/rag-index.log 으로 RAG 통계 3) wc -l < ~/.jarvis/logs/discord-bot.jsonl 으로 Discord 응답 건수 4) ls ~/.jarvis/results/ 으로 결과 디렉토리 수 5) tail -1 ~/.jarvis/results/cost-monitor/$(ls -t ~/.jarvis/results/cost-monitor/ 2>/dev/null | head -1) 2>/dev/null 으로 비용 현황. 개선 제안 1~2개 포함. 1800자 이내 한국어.\n\n분석 완료 후 결과를 ~/.jarvis/rag/teams/reports/weekly-kpi-$(date +%Y-W%V).md 에 마크다운으로 저장해줘.",
       "allowedTools": "Bash,Read,Write",
       "output": [
         "discord",
@@ -383,7 +382,8 @@
       "contextFile": "weekly-kpi.md",
       "resultRetention": 30,
       "resultMaxChars": 2000,
-      "model": "claude-sonnet-4-6"
+      "model": "claude-sonnet-4-6",
+      "prompt_file": "weekly-kpi.md"
     },
     {
       "id": "connections-weekly-insight",
@@ -1095,11 +1095,11 @@
       "bypassRag": true
     },
     {
-      "id": "boram-daily-schedule",
-      "name": "보람 수업 일정 브리핑",
+      "id": "personal-schedule-daily",
+      "name": "개인 일정 브리핑",
       "schedule": "30 7 * * *",
       "timeout": 60,
-      "prompt": "오늘 보람님의 Preply 수업 일정과 수입을 조회해서 전송해줘.\n\n실행 방법:\nbash ~/.jarvis/scripts/preply-today.sh $(date +%F)\n\n응답은 JSON이다. scheduledLessons 배열에서 startAt(시간), student(학생명), amount(금액)을 추출하고, totalsByCurrency.USD로 총수입을 표시한다.\n\n출력 형식 (코드블록 없이 일반 텍스트로):\n오늘(M/D 요일) 수업 브리핑 📅✨\n총 N개 수업 · 총 수입 $XXX.XX USD 💰\n\n- 🕐 HH:MM · 학생이름 · $XX.XX\n- 🕐 HH:MM · 학생이름 · $XX.XX\n...\n\nscheduledCount가 0이면: 오늘은 수업이 없어요! 😊\ncancelledCount가 0보다 크면 취소 건수도 표시.",
+      "prompt": "오늘의 Preply 수업 일정과 수입을 조회해서 전송해줘.\n\n실행 방법:\nbash ~/.jarvis/scripts/preply-today.sh $(date +%F)\n\n응답은 JSON이다. scheduledLessons 배열에서 startAt(시간), student(학생명), amount(금액)을 추출하고, totalsByCurrency.USD로 총수입을 표시한다.\n\n출력 형식 (코드블록 없이 일반 텍스트로):\n오늘(M/D 요일) 수업 브리핑 📅✨\n총 N개 수업 · 총 수입 $XXX.XX USD 💰\n\n- 🕐 HH:MM · 학생이름 · $XX.XX\n- 🕐 HH:MM · 학생이름 · $XX.XX\n...\n\nscheduledCount가 0이면: 오늘은 수업이 없어요! 😊\ncancelledCount가 0보다 크면 취소 건수도 표시.",
       "allowedTools": "Bash",
       "output": [
         "discord"
@@ -1114,7 +1114,7 @@
       "depends": [],
       "resultRetention": 7,
       "resultMaxChars": 1000,
-      "description": "매일 07:30 KST 보람님 Preply 수업 일정을 #jarvis-boram 채널로 자동 전송.",
+      "description": "매일 07:30 KST Preply 수업 일정을 #jarvis-boram 채널로 자동 전송.",
       "model": "claude-haiku-4-5-20251001"
     },
     {
@@ -1123,7 +1123,6 @@
       "schedule": "45 2 * * *",
       "timeout": 180,
       "model": "claude-haiku-4-5-20251001",
-      "prompt": "오늘 자비스 봇의 응답 품질을 자가 점검한다.\n\n1. 최근 24시간 품질 분석 결과 확인:\nbash ~/.jarvis/scripts/bot-quality-analyzer.sh\n\n2. 최근 대화 로그 샘플 확인 (최근 10건):\njq -s 'sort_by(.ts) | reverse | .[:10]' ~/.jarvis/logs/discord-bot.jsonl 2>/dev/null | head -50\n\n분석 기준:\n- 응답 시간이 30초 이상인 건 몇 %인가?\n- 에러 응답 비율은?\n- 툴 호출 3회 이상인 단순 질문이 있는가? (불필요한 복잡도)\n- 불필요한 사과/아첨 패턴이 있는가? ('죄송해요', '도와드리겠습니다' 등)\n\n3. 개선이 필요한 문제가 발견된 경우, GitHub에 이슈를 등록한다:\n- mcp__github__create_issue 도구 사용\n- owner: Ramsbaby, repo: claude-discord-bridge\n- title 형식: '[bot-critique] {문제 요약} (날짜)'\n- body: 발견된 문제, 예상 원인, 개선 제안 포함\n- labels: ['bot-quality', 'auto-detected']\n- 문제가 없으면 이슈를 만들지 않는다.\n\n4. 자동 수정 가능한 단순 문제(설정값 오타, 단순 문자열 수정 등)는 PR을 생성한다:\n- mcp__github__create_branch로 브랜치 생성: 'bot-critique/YYYYMMDD-{issue-number}'\n- mcp__github__get_file_contents로 수정 대상 파일 현재 내용 확인\n- mcp__github__create_or_update_file로 수정 반영\n- mcp__github__create_pull_request로 PR 생성\n  - title: '[bot-critique] {수정 내용 요약}'\n  - body: 발견된 문제, 적용한 수정, 관련 이슈 번호 포함\n- 로직 변경·코드 구조 변경·삭제 작업은 PR 대신 이슈만 등록한다.\n\n출력 형식 (코드블록 없이):\n🤖 봇 자가 점검 — M/D\n\n품질 지표:\n- 총 응답: N건 · 에러: N건(N%)\n- 평균 응답시간: Ns\n- 30초 초과: N건\n\n개선 필요:\n- [발견된 문제점들 + GitHub 이슈/PR 번호]\n\n이상 없으면: 모든 지표 정상입니다. ✅",
       "allowedTools": [
         "Bash",
         "mcp__github__create_issue",
@@ -1148,7 +1147,8 @@
       "maxBudget": "0.15",
       "priority": "normal",
       "resultRetention": 7,
-      "resultMaxChars": 800
+      "resultMaxChars": 800,
+      "prompt_file": "bot-self-critique.md"
     },
     {
       "id": "memory-expire",
@@ -1156,13 +1156,13 @@
       "schedule": "0 3 * * 1",
       "timeout": 60,
       "model": "claude-haiku-4-5-20251001",
-      "prompt": "사용자 메모리 만료 정리를 실행한다.\n\nbash 실행:\nnode -e \"\nconst fs = require('fs');\nconst stateDir = process.env.HOME + '/.jarvis/state/users';\nif (!fs.existsSync(stateDir)) process.exit(0);\nconst now = Date.now();\nconst EXPIRE_MS = 90 * 24 * 60 * 60 * 1000;\nlet archived = 0;\nfs.readdirSync(stateDir).filter(f => f.endsWith('.json')).forEach(file => {\n  const path = stateDir + '/' + file;\n  const data = JSON.parse(fs.readFileSync(path, 'utf-8'));\n  if (!data.facts) return;\n  const keep = [], expire = [];\n  data.facts.forEach(f => {\n    const ts = f.addedAt ? new Date(f.addedAt).getTime() : 0;\n    (ts && (now - ts) > EXPIRE_MS ? expire : keep).push(f);\n  });\n  if (expire.length > 0) {\n    data.facts = keep;\n    data.archived_facts = [...(data.archived_facts || []), ...expire];\n    fs.writeFileSync(path, JSON.stringify(data, null, 2));\n    archived += expire.length;\n  }\n});\nconsole.log('archived:' + archived);\n\"\n\n결과를 '기억 만료 아카이브 완료: N건' 형식으로 출력.",
       "allowedTools": "Bash",
       "output": [],
       "maxBudget": "0.05",
       "priority": "normal",
       "resultRetention": 7,
-      "resultMaxChars": 200
+      "resultMaxChars": 200,
+      "prompt_file": "memory-expire.md"
     },
     {
       "id": "vault-sync",
@@ -1385,12 +1385,11 @@
       "event_trigger_debounce_s": 300,
       "event_trigger_note": "post-commit hook에서 git.committed emit 시 실행",
       "timeout": 120,
-      "prompt": "git commit 이후 private 레포 동기화를 실행하고 Discord에 보고하세요.\n\nbash ~/.jarvis/scripts/deploy-private.sh 2>&1 | tail -20\n\ngit -C ~/.jarvis log -1 --oneline 2>/dev/null || echo \"unknown\"\n\nDiscord jarvis-system 채널:\n- 성공: \"✅ private 레포 동기화 완료 ([커밋 메시지])\"\n- 실패: \"❌ private 레포 동기화 실패 — 수동 확인: ~/.jarvis/logs/deploy-private.log\"",
+      "prompt": "git commit 이후 private 레포 동기화를 실행하세요.\n\n1. deploy-private.sh가 이미 실행 중이면 건너뜀:\npgrep -f deploy-private.sh > /dev/null 2>&1 && echo \"SKIP: 이미 실행 중\" && exit 0\n\n2. 동기화 실행:\nbash ~/.jarvis/scripts/deploy-private.sh 2>&1 | tail -10\n\n3. 결과 출력 (한 줄):\n- 성공: \"완료\"\n- 실패: \"실패: [에러 메시지]\"\n\n주의: Discord 메시지 전송 금지. 파일 경로, 커밋 해시 출력 금지.",
       "allowedTools": "Bash",
       "output": [
-        "discord"
+        "file"
       ],
-      "discordChannel": "jarvis-system",
       "maxBudget": "0.10",
       "priority": "event",
       "depends": [],
@@ -1398,6 +1397,21 @@
       "resultMaxChars": 300,
       "model": "claude-haiku-4-5-20251001",
       "allowEmptyResult": false
+    },
+    {
+      "id": "gen-gotchas",
+      "name": "Gotchas 자동 승격",
+      "schedule": "0 3 * * 1",
+      "timeout": 60,
+      "script": "$BOT_HOME/scripts/gen-gotchas.sh",
+      "output": [
+        "file"
+      ],
+      "allowEmptyResult": true,
+      "resultRetention": 7,
+      "resultMaxChars": 200,
+      "disabled": false,
+      "note": "recovery-learnings.md에서 3회↑ 반복 패턴을 gotchas.md에 자동 승격. 매주 월요일 03:00 KST."
     }
   ]
 }

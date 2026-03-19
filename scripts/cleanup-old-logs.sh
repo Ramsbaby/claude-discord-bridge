@@ -13,6 +13,12 @@ if [ ! -d "$LOG_DIR" ]; then
   exit 0
 fi
 
+# 경로 안전 검증: BOT_HOME/logs 하위가 아니면 중단
+if [[ "$LOG_DIR" != "$BOT_HOME/logs"* ]]; then
+  echo "❌ 안전 검증 실패: LOG_DIR=$LOG_DIR (BOT_HOME/logs 하위 아님)" >&2
+  exit 1
+fi
+
 before=$(du -sh "$LOG_DIR" | awk '{print $1}')
 
 # 30일 이상 된 .log 파일 gzip 압축 (이미 압축된 것 제외)

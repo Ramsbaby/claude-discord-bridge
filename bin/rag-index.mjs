@@ -300,12 +300,18 @@ async function main() {
     for (const dir of ['01-system', '03-teams', '04-owner', '05-career', '06-knowledge']) {
       await collectVaultMd(join(vaultBase, dir));
     }
-    // 02-daily/insights: 최근 7일
-    await collectVaultMd(join(vaultBase, '02-daily', 'insights'), { maxAgeDays: 7 });
-    // 02-daily/kpi: 최근 30일
-    await collectVaultMd(join(vaultBase, '02-daily', 'kpi'), { maxAgeDays: 30 });
-    // 02-daily/standup: 최근 7일
-    await collectVaultMd(join(vaultBase, '02-daily', 'standup'), { maxAgeDays: 7 });
+    // 02-daily: 하위 디렉토리 자동 탐색 — 새 디렉토리 추가 시 자동 인덱싱
+    // maxAgeDays 기본 7일, 디렉토리별 예외는 dailyAgeOverrides에 추가
+    const dailyAgeOverrides = { kpi: 30 };
+    const dailyDefaultAge = 7;
+    try {
+      const dailyDirs = await readdir(join(vaultBase, '02-daily'), { withFileTypes: true });
+      for (const d of dailyDirs) {
+        if (!d.isDirectory() || d.name.startsWith('.')) continue;
+        const maxAgeDays = dailyAgeOverrides[d.name] ?? dailyDefaultAge;
+        await collectVaultMd(join(vaultBase, '02-daily', d.name), { maxAgeDays });
+      }
+    } catch { /* 02-daily may not exist */ }
   } catch { /* vault may not exist */ }
 
   // 5c. 사용자 커스텀 메모리 (선택적 외부 경로)

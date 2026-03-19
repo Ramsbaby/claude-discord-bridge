@@ -1,7 +1,7 @@
 # Jarvis 시스템 개요
 
 > 🤖 **자동 생성 문서** — 직접 편집 금지
-> Generated: 2026-03-19 13:03:08 | Commit: `99f79c3` (`main`)
+> Generated: 2026-03-19 18:06:48 | Commit: `21830b7` (`main`)
 > 업데이트: `scripts/gen-system-overview.sh` (매일 04:05 + git commit 시)
 
 ---
@@ -81,12 +81,12 @@ crontab → jarvis-cron.sh → tasks.json 파싱
 
 **현재 등록된 태스크:**
 
-> ✅ 활성 **64개** / 비활성 0개
+> ✅ 활성 **69개** / 비활성 0개
 
 | 태스크 ID | 스케줄 | 채널 | 설명 |
 |-----------|--------|------|------|
 | `session-sync` | `*/15 * * * *` | - | 최근 30분 내 대화 활동 감지 시 context-bus 즉시 갱신 |
-| `tqqq-monitor` | `*/15 22-23 * * 1-5` | jarvis-market | TQQQ 모니터링 |
+| `tqqq-monitor` | `*/15 22-23 * * 1-5` | jarvis-market | 시장 모니터링 |
 | `rate-limit-check` | `*/30 * * * *` | - | Rate Limit 체크 |
 | `update-usage-cache` | `*/30 * * * *` | - | /usage 명령 stale 방지 — 30분마다 ~/.claude/usage-cache.jso |
 | `stale-task-watcher` | `*/30 * * * *` | - | Stale 태스크 감지 및 자동 전이 |
@@ -105,6 +105,7 @@ crontab → jarvis-cron.sh → tasks.json 파싱
 | `dev-event-watcher` | `0 23 * * *` | - |  |
 | `rag-health` | `0 3 * * *` | jarvis-system | RAG 건강 체크 |
 | `memory-expire` | `0 3 * * 1` | - | 기억 만료 아카이브 |
+| `gen-gotchas` | `0 3 * * 1` | - | Gotchas 자동 승격 |
 | `schedule-coherence` | `0 4 * * 1` | jarvis | 일정 정합성 점검 |
 | `doc-supervisor` | `0 5 * * *` | jarvis-system | 문서화 시스템 감독 (Doc Supervisor) |
 | `weekly-code-review` | `0 5 * * 0` | jarvis-system | 주간 LLM 코드 리뷰 |
@@ -131,7 +132,7 @@ crontab → jarvis-cron.sh → tasks.json 파싱
 | `memory-sync` | `30 4 * * 1` | jarvis-system | 메모리 자동 동기화 |
 | `cron-auditor` | `30 5 * * *` | jarvis-infra | 크론 전체 점검 |
 | `vault-auto-link` | `30 6 * * *` | jarvis | Vault 자동 링크 생성 |
-| `boram-daily-schedule` | `30 7 * * *` | jarvis-boram | 매일 07:30 KST 보람님 Preply 수업 일정을 #jarvis-boram 채널로 자동  |
+| `personal-schedule-daily` | `30 7 * * *` | jarvis-boram | 매일 07:30 KST Preply 수업 일정을 #jarvis-boram 채널로 자동 전송. |
 | `agent-batch-commit` | `30 8 * * *` | - | 에이전트 산출물 일괄 커밋 |
 | `weekly-kpi` | `30 8 * * 1` | jarvis-ceo | 주간 KPI 리포트 |
 | `bot-self-critique` | `45 2 * * *` | jarvis-system | 봇 자가 품질 점검 |
@@ -149,6 +150,10 @@ crontab → jarvis-cron.sh → tasks.json 파싱
 | `github-pr-handler` | `(event/manual)` | jarvis-dev | github.pr_opened 이벤트 발생 시 PR 요약 및 Discord 알림 전송. |
 | `discord-mention-handler` | `(event/manual)` | jarvis-alerts | discord.mention 이벤트 발생 시 즉시 Discord 알림 채널에 응답. |
 | `cost-alert-handler` | `(event/manual)` | jarvis-alerts | system.cost_alert 이벤트 발생 시 비용 초과 경보를 Discord로 즉시 전송. |
+| `bot-crash-classifier` | `(event/manual)` | jarvis-system | 봇 크래시 원인 분류 및 Discord 알림 |
+| `env-restore-notifier` | `(event/manual)` | jarvis-system | .env 소멸 감지 알림 |
+| `log-cleanup` | `(event/manual)` | jarvis-system | 디스크 임계치 초과 시 로그 자동 정리 |
+| `private-sync` | `(event/manual)` | - | 커밋 후 private 레포 동기화 |
 
 ### 3.3 AI 두뇌 (`bin/ask-claude.sh`)
 
@@ -194,7 +199,7 @@ LanceDB (rag/lancedb/)
 
 Claude Code와 자비스 시스템을 연결하는 MCP 도구 허브.
 
-> ✅ **21개 MCP 도구** (4개 게이트웨이)
+> ✅ **16개 MCP 도구** (4개 게이트웨이)
 
 | 게이트웨이 | 도구명 | 용도 |
 |-----------|--------|------|
@@ -214,11 +219,6 @@ Claude Code와 자비스 시스템을 연결하는 MCP 도구 허브.
 | `extras` | `nexus_stats` | Nexus 도구 사용 통계 (자기진단) |
 | `health` | `health` | 시스템 전체 상태 단일 조회 |
 | `rag` | `rag_search` | Obsidian 장기기억 하이브리드 검색 (BM25+Vector) |
-| `workgroup` | `wg_me` | - |
-| `workgroup` | `wg_feed` | - |
-| `workgroup` | `wg_get_post` | - |
-| `workgroup` | `wg_comment` | - |
-| `workgroup` | `wg_create_post` | - |
 
 **보안 모델:**
 
@@ -391,15 +391,15 @@ Circuit Breaker로 반복 타임아웃 자동 차단
 | 파일 | 줄 수 | 역할 |
 |------|-------|------|
 | `discord/discord-bot.js` | 702 | Discord 봇 메인 |
-| `lib/mcp-nexus.mjs` | 157 | Nexus MCP 오케스트레이터 |
+| `lib/mcp-nexus.mjs` | 156 | Nexus MCP 오케스트레이터 |
 | `lib/nexus/exec-gateway.mjs` | 385 | exec 게이트웨이 + Circuit Breaker |
 | `lib/nexus/extras-gateway.mjs` | 390 | extras 게이트웨이 (discord/cron/stats) |
 | `lib/nexus/rag-gateway.mjs` | 90 | RAG 게이트웨이 |
 | `lib/nexus/health-gateway.mjs` | 103 | 헬스 게이트웨이 |
 | `lib/rag-engine.mjs` | 694 | RAG 하이브리드 검색 엔진 |
-| `bin/ask-claude.sh` | 244 | claude -p 래퍼 (크론 진입점) |
-| `bin/jarvis-cron.sh` | 351 | 크론 실행 엔진 |
-| `config/tasks.json` | 1317 | 크론 태스크 설정 |
+| `bin/ask-claude.sh` | 268 | claude -p 래퍼 (크론 진입점) |
+| `bin/jarvis-cron.sh` | 369 | 크론 실행 엔진 |
+| `config/tasks.json` | 1416 | 크론 태스크 설정 |
 | `discord/personas.json` | 13 | 채널 페르소나 설정 |
 | `scripts/system-doctor.sh` | 285 | 자동 시스템 점검 (매일 06:00) |
 | `scripts/gen-system-overview.sh` | 495 | 이 문서 생성 스크립트 |
@@ -434,31 +434,32 @@ Circuit Breaker로 반복 타임아웃 자동 차단
 | ai.openclaw.glances | 🟢 실행중 | 764 |
 | ai.jarvis.board-agent | 🔴 중지 | - |
 | ai.jarvis.webhook-listener | 🟢 실행중 | 7140 |
-| ai.jarvis.discord-bot | 🟢 실행중 | 90482 |
+| ai.jarvis.discord-bot | 🟢 실행중 | 87388 |
 | ai.jarvis.board-monitor | 🔴 중지 | - |
 | ai.jarvis.session-summarizer | 🔴 중지 | - |
 | ai.jarvis.commitment-check | 🔴 중지 | - |
 | ai.jarvis.daily-restart | 🔴 중지 | - |
-| ai.jarvis.rag-watcher | 🟢 실행중 | 68521 |
+| ai.jarvis.board-catchup | 🔴 중지 | - |
+| ai.jarvis.rag-watcher | 🟢 실행중 | 54169 |
 | ai.jarvis.event-watcher | 🟢 실행중 | 89744 |
 | ai.jarvis.boot-auth-check | 🔴 중지 | - |
 
-> 마지막 확인: 2026-03-19 13:03:08
+> 마지막 확인: 2026-03-19 18:06:48
 
 ---
 
 ## 11. 최근 변경
 
+- `21830b7` fix(anti-pattern): 전 코드베이스 [[ ]] && cmd → if/fi 일괄 교체
+- `871b72c` fix(board-monitor): set-e 안티패턴 제거 — cleanup 함수 [[]] && → if/fi
+- `590e4eb` fix: bypassRag 태스크 3개 contextFile 복구
+- `162faa1` fix(auto-deploy): staged 변경 있을 때 git merge 거부 방지
+- `4ee28c9` fix: 이전 세션 버그 수정 통합 커밋
 - `99f79c3` chore: tasks.json + cron-auditor.md private 레포 동기화
 - `b50406a` feat: 감사팀·인프라팀 → dev-runner 파이프라인 연결
 - `491f021` fix(resilience): 팀 전수검사 기반 잔존 취약점 3건 수정
 - `9f0fbba` feat(persona): strengthen JARVIS identity across all Discord channels
 - `e9f1a02` fix(bot-heal): macOS sed \n 버그 → python3으로 streaming.js 멀티라인 교체
-- `bf331d8` feat(owner): preferences.md 신규 생성 — Stable 시스템 프롬프트 자동 주입
-- `7a5fc6c` docs: fix stale numbers, remove personal tasks.json, cut v1.0.0 changelog
-- `6b29188` feat(repo): context/owner/ 정식 git 추적 — private 운영레포 구조 완성
-- `6d051fb` fix(export-public): trap에서 stash 사용해 브랜치 전환 실패 방지
-- `21a1d47` feat(repo): private 운영레포 구조 확립 + public export 자동화
 
 ---
 

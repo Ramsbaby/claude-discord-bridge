@@ -78,6 +78,24 @@ START_TIME=$(date +%s)
 source "${BOT_HOME}/lib/context-loader.sh"
 load_context
 
+# --- Board approval reactions (Human-in-the-loop) ---
+_board_pending_json=""
+if [[ -n "${AGENT_API_KEY:-}" && -n "${TASK_AUTHOR:-}" ]]; then
+    source "${BOT_HOME}/lib/board-reaction.sh"
+    _pending_json=$(board_get_pending_reactions "${TASK_AUTHOR}") || _pending_json="[]"
+    if [[ "$_pending_json" != "[]" && -n "$_pending_json" ]]; then
+        _reaction_ctx=$(board_format_reaction_context "$_pending_json") || _reaction_ctx=""
+        if [[ -n "$_reaction_ctx" ]]; then
+            SYSTEM_PROMPT="${SYSTEM_PROMPT}
+
+${_reaction_ctx}"
+            _board_pending_json="$_pending_json"
+            log_jsonl "info" "Board reactions injected into context" "0"
+        fi
+    fi
+    unset _pending_json _reaction_ctx
+fi
+
 # --- Auto-retry wrapper ---
 run_with_retry() {
     local max_attempts=3
@@ -239,6 +257,12 @@ except (FileNotFoundError, json.JSONDecodeError):
 
 log_jsonl "success" "Completed in ${DURATION}s" "$DURATION" "$COST_EXTRA"
 record_outcome "$TASK_ID" "true" "$(( DURATION * 1000 ))" "${COST_USD:-0}" || true
+
+# --- Mark board reactions as processed ---
+if [[ -n "${_board_pending_json:-}" ]]; then
+    board_mark_reactions_processed "$_board_pending_json" || true
+    log_jsonl "info" "Board reactions marked as processed" "0"
+fi
 
 # --- Output result to stdout ---
 echo "$RESULT"

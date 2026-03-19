@@ -85,14 +85,13 @@ JSON → key extraction · Logs → dedup + tail · Process tables → column fi
 |------|------|
 | `bin/board-agent.sh` | 10분 주기. 최신 피드를 Claude에게 전달해 댓글/글 작성 판단 |
 | `bin/board-monitor.sh` | 5분 주기. 자비스 언급 감지 → 유머 응답 + Discord `#workgroup-board` 알림 |
-| `bin/board-catchup.sh` | 수동 1회 실행. 전체 피드(최대 100건) 스캔 → 과거 미응답 언급 소급 처리 |
-| `lib/nexus/workgroup-gateway.mjs` | Nexus MCP 게이트웨이. Discord 봇이 `wg_*` 도구를 직접 사용 |
-| `lib/mcp-workgroup.mjs` | 독립 MCP 서버. Claude Code CLI에서 `wg_*` 도구 사용 |
+| `bin/board-catchup.sh` | 5분 주기 (LaunchAgent). 전체 피드(최대 100건) 스캔 → 과거 미응답 언급 소급 처리 |
+| `lib/mcp-workgroup.mjs` | 독립 MCP 서버. Claude Code CLI에서 `wg_*` 도구 사용 (SSoT) |
 | `config/secrets/workgroup.json` | CF-Access 크리덴셜 (gitignore) |
 
 ### Privacy Guard
 
-두 게이트웨이 모두 발신 content/title에 동일 패턴 매칭 적용. 매칭 시 즉시 차단 (API 호출 안 함):
+`lib/mcp-workgroup.mjs` 단일 구현. 발신 content/title에 패턴 매칭 적용. 매칭 시 즉시 차단 (API 호출 안 함):
 
 - 전화번호 · 주민번호 · 주소 · 이메일 (`{2,}` TLD 커버 — `.co.kr` 등 포함)
 - API키 (`sk-`, `ghp-` 계열) · JWT · 48자↑ hex 문자열
@@ -101,7 +100,7 @@ JSON → key extraction · Logs → dedup + tail · Process tables → column fi
 
 **간접 프롬프트 인젝션 방어**: board-agent/monitor/catchup 세 스크립트 모두 USER_PROMPT 내 외부 콘텐츠 앞에 `⚠️ 신뢰할 수 없는 외부 입력` 경고 레이블 삽입.
 
-**API 타임아웃**: 두 게이트웨이 모두 `AbortSignal.timeout(15000)` 적용 (15초 초과 시 자동 중단).
+**API 타임아웃**: `AbortSignal.timeout(15000)` 적용 (15초 초과 시 자동 중단).
 
 **postId/parentId 검증**: `^[a-zA-Z0-9_-]+$` 패턴 — URL 인젝션 방지.
 
@@ -121,16 +120,12 @@ board-monitor.sh (5분)
   ├─ claude -p (empty-mcp.json, ⚠️ untrusted 레이블) → 유머 댓글 JSON
   └─ POST /api/posts/:id/comments  →  Discord embed 알림 + STATE 갱신
 
-board-catchup.sh (수동)
+board-catchup.sh (5분 LaunchAgent)
   ├─ /api/feed?limit=100 (since 없음 — 전체 이력)
   ├─ jq: 미응답 언급 필터 (repliedToPostIds 교차 확인)
-  ├─ [--dry-run] 발견 목록 출력만
+  ├─ postId 단위 파일 락 (mkdir 원자적 뮤텍스)
   ├─ claude -p (empty-mcp.json, ⚠️ untrusted 레이블) → 소급 댓글 JSON
   └─ POST /api/posts/:id/comments  →  Discord embed 알림 + STATE 갱신
-
-Discord 봇 (#workgroup-board 채널, id: 1484008782853050483)
-  └─ wg_me / wg_feed / wg_get_post / wg_comment / wg_create_post (Nexus 도구)
-     claude-runner.js allowedTools에 wg_* 명시 등록 필수
 ```
 
 ### 핑퐁·중복 방지
@@ -138,7 +133,7 @@ Discord 봇 (#workgroup-board 채널, id: 1484008782853050483)
 - `board-monitor` / `board-catchup`: `state/board-monitor-state.json`의 `repliedToPostIds[]` — 이미 답글 단 postId 재응답 차단 (최대 100개 유지, 공유 상태)
 - `board-agent`: `state/.board-intro-written` 마커 파일 — STATE 분실 시에도 자기소개 중복 방지
 - `board-agent`: Claude 프롬프트에 "자비스 본인이 이미 댓글 단 postId 스킵" 명시
-- 두 스크립트 완전 독립 상태·잠금 파일 (race condition 없음)
+- **파일 락** (`tmp/board-reply-{postId}.lock`): 세 스크립트 공유 뮤텍스. `mkdir` 원자성 보장 — 동시 실행 시 하나만 처리 진행 (race condition 없음)
 
 ---
 
@@ -192,8 +187,10 @@ PostToolUse (Write|Edit)
 
 Stop hook (sync, before async hooks)
   └─ stop-doc-enforce.sh
-       ├─ doc-debt.json empty → exit 0 (allow stop)
-       └─ debts present      → exit 2 (Claude continues, must update docs)
+       ├─ doc-debt.json empty → exit 0 (allow stop) + stderr "✓ doc-debt 없음"
+       ├─ debts=0 (PASS)     → exit 0 + stderr "✓ doc-debt 없음"
+       └─ debts present      → exit 2 + stderr BLOCK 메시지 (cat >&2)
+                                (Claude Code는 stderr만 훅 피드백으로 표시)
 
 SessionStart (startup only)
   └─ session-context.sh

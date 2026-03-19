@@ -51,13 +51,26 @@ done
 cleanup_deploy() {
   set +e
   echo "▶ 민감 파일 복원 중..."
+  local restore_fail=0
   for f in "${PRIVATE_FILES[@]}"; do
     if [[ -e "$SAFE_BACKUP_DIR/$f" && ! -e "$BOT_HOME/$f" ]]; then
       mkdir -p "$(dirname "$BOT_HOME/$f")" 2>/dev/null
-      cp -r "$SAFE_BACKUP_DIR/$f" "$BOT_HOME/$f" && echo "  ♻️  복원: $f" || echo "  ❌ 복원 실패: $f"
+      if cp -r "$SAFE_BACKUP_DIR/$f" "$BOT_HOME/$f"; then
+        echo "  ♻️  복원: $f"
+      else
+        echo "  ❌ 복원 실패: $f" >&2
+        restore_fail=$((restore_fail + 1))
+      fi
     fi
   done
-  rm -rf "$SAFE_BACKUP_DIR" 2>/dev/null
+  # 복원 실패가 있으면 백업 보존 (재시도 가능하도록)
+  if [[ $restore_fail -gt 0 ]]; then
+    echo "⚠️ 복원 실패 ${restore_fail}건 — 백업 보존: $SAFE_BACKUP_DIR" >&2
+    # 영구 위치에 추가 보존
+    cp -r "$SAFE_BACKUP_DIR" "$BOT_HOME/config/.deploy-backup-$(date +%s)" 2>/dev/null || true
+  else
+    rm -rf "$SAFE_BACKUP_DIR" 2>/dev/null
+  fi
   # 임시 브랜치 정리 (이미 삭제됐을 수 있음)
   git branch -D "$TEMP_BRANCH" 2>/dev/null || true
   set -e

@@ -23,6 +23,12 @@ TEMP_BRANCH="public-export-$(date +%s)"
 echo "▶ 임시 브랜치 생성: $TEMP_BRANCH"
 git checkout -b "$TEMP_BRANCH"
 
+# 브랜치 전환 확인 — 임시 브랜치가 아니면 git rm 절대 금지
+if [[ "$(git branch --show-current)" != "$TEMP_BRANCH" ]]; then
+  echo "❌ 브랜치 전환 실패 — 임시 브랜치 아님. 중단." >&2
+  exit 1
+fi
+
 # EXIT trap: 어떤 경우에도 원래 브랜치 복귀 + 임시 브랜치 정리
 trap '
   echo "▶ 원래 브랜치로 복귀: '"$CURRENT_BRANCH"'"
@@ -76,10 +82,13 @@ fi
 
 # ── 2. 개인 context 파일 제거 ────────────────────────────────────────────────
 echo "▶ 개인 context 파일 제거..."
+# 2중 브랜치 검증 — git rm 직전 재확인
+[[ "$(git branch --show-current)" == "$TEMP_BRANCH" ]] || { echo "❌ 브랜치 불일치 — git rm 중단" >&2; exit 1; }
 git rm -rf "context/owner/" 2>/dev/null && echo "  context/owner/ 제거" || echo "  — context/owner/ 없음"
 
 # ── 3. secrets 디렉토리 제거 ─────────────────────────────────────────────────
 echo "▶ config/secrets/ 제거..."
+[[ "$(git branch --show-current)" == "$TEMP_BRANCH" ]] || { echo "❌ 브랜치 불일치 — git rm 중단" >&2; exit 1; }
 git rm -rf "config/secrets/" 2>/dev/null && echo "  config/secrets/ 제거" || echo "  — config/secrets/ 없음"
 
 # ── 4. 변경사항 스테이징 및 커밋 ─────────────────────────────────────────────

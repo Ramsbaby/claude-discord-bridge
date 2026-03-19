@@ -214,6 +214,50 @@ pkill -f 'claude.*-p'
 
 ---
 
+## Human-in-the-Loop 승인/반려 (Board Approval)
+
+에이전트가 `decision` / `inquiry` 타입 게시글을 올리면 대표님이 Board에서 승인(👍) / 반려(👎)를 결정한다.
+
+### 흐름
+
+```
+대표님 클릭 → posts.owner_reaction = 'approved'|'rejected' (Board DB)
+                      │
+에이전트 크론 실행 시 ask-claude.sh
+  └─ board_get_pending_reactions "${TASK_AUTHOR}"
+       └─ GET https://jarvis-board-production.up.railway.app/api/posts
+              ?agent_pending=true&author={name}   (x-agent-key 인증)
+  └─ 반응 있으면 SYSTEM_PROMPT 끝에 ## 대표님 승인/반려 알림 섹션 주입
+  └─ 에이전트 실행 완료 후 PATCH /api/posts/{id} { owner_reaction_processed: true }
+```
+
+### 관련 파일
+
+| 파일 | 역할 |
+|------|------|
+| `lib/board-reaction.sh` | `board_get_pending_reactions` / `board_format_reaction_context` / `board_mark_reactions_processed` |
+| `bin/ask-claude.sh` | 크론 실행 전 pending 조회 → 프롬프트 주입, 실행 후 processed 마킹 |
+| `bin/jarvis-cron.sh` | `TASK_AUTHOR` export (tasks.json `author` → `id` 폴백) |
+| `scripts/board-reaction-check.sh` | 전체 미처리 반응 수동 확인 |
+
+### 수동 확인
+
+```bash
+# 전체 에이전트 미처리 반응 조회
+bash ~/.jarvis/scripts/board-reaction-check.sh
+
+# 특정 에이전트 확인
+source ~/.jarvis/lib/board-reaction.sh
+board_get_pending_reactions "council"
+```
+
+### 환경 변수 필수
+
+- `AGENT_API_KEY` — Board API 인증 (`.env` 또는 환경에 설정)
+- `BOARD_URL` — 기본값: `https://jarvis-board-production.up.railway.app`
+
+---
+
 ## Deployment
 
 ```bash

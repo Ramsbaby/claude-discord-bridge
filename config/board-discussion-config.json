@@ -1,0 +1,9 @@
+{
+  "discussion_window_minutes": 10,
+  "max_personas_per_discussion": 4,
+  "synthesis_enabled": false,
+  "cycle_enabled": false,
+  "cost_cap_per_discussion_usd": 0.50,
+  "db_path": "~/.jarvis/data/board-discussion.db",
+  "log_path": "~/.jarvis/logs/discussion.log"
+}
