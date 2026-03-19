@@ -12,7 +12,13 @@ inbox/
 config/company-dna.md
 config/discord-mcp.json
 # Personal context files (runtime AI memory — not for public repo)
-context/
+# context/owner/ 은 private 운영레포에서 추적 (export-public.sh가 공개 전 제거)
+context/discord-history/
+context/career-weekly.md
+context/cron-auditor.md
+context/market-alert.md
+context/tqqq-monitor.md
+context/user-profile.md
 scripts/tqqq-alert.sh
 
 # 런타임
@@ -37,7 +43,6 @@ docs/archived/
 ARCHITECTURE-GAP-ANALYSIS.md
 
 # 개인 프로필/설정 (오픈소스 공개 제외)
-context/owner/
 config/user_profiles.json
 config/goals.json
 config/effective-tasks.json
