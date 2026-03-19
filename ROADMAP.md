@@ -1,10 +1,10 @@
 # Jarvis Roadmap
 
-> Updated: 2026-03-06 | Architecture: [ADR Index](adr/ADR-INDEX.md)
+> Updated: 2026-03-19 | Architecture: [ADR Index](adr/ADR-INDEX.md)
 
 ## Vision
 
-**AI Company-in-a-Box**: A self-hosted AI operations system that turns a Claude Max subscription into a 24/7 personal company with 8 AI teams, cron orchestration, and knowledge management — at $0 extra cost.
+**AI Company-in-a-Box**: A self-hosted AI operations system that turns a Claude Max subscription into a 24/7 personal company with 12 AI teams, 63 cron tasks, and knowledge management — at $0 extra cost.
 
 ---
 
@@ -14,8 +14,8 @@
 - [x] Discord bot with streaming, multi-turn sessions, thread management
 - [x] `claude -p` headless CLI wrapper (`ask-claude.sh`)
 - [x] LanceDB hybrid RAG (vector + BM25, ~2000 chunks)
-- [x] 29 cron tasks with retry, timeout, rate limiting
-- [x] 8 AI teams (Council, Career, Record, Brand, Academy, Infra, Trend)
+- [x] 29 cron tasks with retry, timeout, rate limiting (now 63)
+- [x] 8 AI teams (Council, Career, Record, Brand, Academy, Infra, Trend) (now 12)
 - [x] Company DNA, context-bus, shared-inbox inter-team communication
 - [x] ntfy push notifications, Discord webhook routing (5 channels)
 - [x] E2E test suite (50 checks)
@@ -51,13 +51,17 @@
 
 ---
 
-## Planned
+## Completed
 
-### Phase 5: Intelligence & Autonomy
-- [ ] Decision dispatcher with team accountability scoring
-- [ ] Board meeting automation (daily/weekly CEO briefings)
+### Phase 5: Intelligence & Autonomy (2026-03)
+- [x] Decision dispatcher with team accountability scoring (`bin/decision-dispatcher.sh`)
+- [x] Board meeting automation — daily CEO briefings + parallel execution (`bin/board-meeting.sh`, `bin/parallel-board-meeting.sh`)
 - [ ] Feedback loop: task output quality → automatic prompt refinement
 - [ ] Event-driven triggers (file change → task, not just cron)
+
+---
+
+## Planned
 
 ### Phase 6: Community & Ecosystem
 - [ ] Plugin marketplace (community-contributed task packs)

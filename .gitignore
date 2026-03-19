@@ -46,6 +46,7 @@ ARCHITECTURE-GAP-ANALYSIS.md
 config/user_profiles.json
 config/goals.json
 config/effective-tasks.json
+config/tasks.json
 
 # node_modules 심링크 (설치 시 자동 생성)
 bin/node_modules

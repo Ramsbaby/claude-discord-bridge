@@ -8,9 +8,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+---
+
+## [1.0.0] — 2026-03-19
+
 ### Added
-- Bot stability hardening + RAG upsert optimization + 11-team system
-- Board meeting parallelization (`parallel-board-meeting.sh`)
+- 12-team AI operations system (Security Scan team added)
+- Board meeting automation with parallel execution (`bin/board-meeting.sh`, `bin/parallel-board-meeting.sh`)
+- Decision dispatcher with team accountability scoring (`bin/decision-dispatcher.sh`)
+- Bot stability hardening + RAG upsert optimization
 - Episodic memory search quality improvements (Windsurf Memories Phase 2/3-B)
 - RAG embedding migration: OpenAI → local model (zero cost)
 - Dev runner async queue (`dev-runner.sh`) + webhook listener
@@ -24,6 +30,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - Recon team enhancement
 - Windows setup guide + one-click install script (`setup.ps1`)
 - Cross-platform compatibility (Linux/Docker)
+- Nexus CIG v3 MCP gateway (98% context compression)
+- 63 cron tasks (up from 29 at project start)
 
 ### Fixed
 - Episodic memory dead code → actual invocation path
@@ -44,9 +52,3 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - Agent SDK updated to 0.2.76
 - Bot-cron.sh now supports task aliases
 - Council-insight context refreshed
-
----
-
-## Versioning Note
-
-Jarvis uses continuous deployment. This changelog groups changes by theme rather than semantic version numbers. For the full commit history, see `git log`.
