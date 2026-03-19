@@ -77,12 +77,14 @@ auto_deploy() {
     if echo "$action" | grep -q "봇 재시작 권장"; then
         log "Auto-deploy: 봇 재시작 필요 변경 감지 — git pull + smoke test 시작"
 
-        # git pull
-        if git -C "$BOT_HOME" pull --ff-only origin main >> "$LOG" 2>&1; then
-            log "Auto-deploy: git pull 성공"
+        # git fetch + merge (diverged 브랜치도 처리 — --ff-only는 diverge 시 crash)
+        git -C "$BOT_HOME" fetch origin >> "$LOG" 2>&1 || true
+        if git -C "$BOT_HOME" merge origin/main --no-edit >> "$LOG" 2>&1; then
+            log "Auto-deploy: git merge 성공"
         else
-            log "Auto-deploy: git pull 실패 (충돌?), 배포 중단"
-            send_embed "🚨 Auto-deploy 실패" "git pull 실패 — 수동 확인 필요" 15158332 || true
+            log "Auto-deploy: git merge 실패 (충돌?), 배포 중단"
+            git -C "$BOT_HOME" merge --abort >> "$LOG" 2>&1 || true
+            send_embed "🚨 Auto-deploy 실패" "git merge 실패 — 충돌 수동 확인 필요" 15158332 || true
             return 1
         fi
 
@@ -92,16 +94,21 @@ auto_deploy() {
             send_embed "🚀 자동 배포 완료" "smoke test 통과 · 봇 재시작 성공" 3066993 || true
         else
             log "Auto-deploy: smoke test 실패, git 롤백"
+            # 롤백 전 gitignore 비추적 운영 파일 백업 (git reset이 복원 못하므로)
+            local _ts; _ts=$(date +%s)
+            cp "$BOT_HOME/config/tasks.json" "$BOT_HOME/config/tasks.json.pre-rollback-${_ts}" 2>/dev/null || true
             git -C "$BOT_HOME" reset --hard HEAD~1 >> "$LOG" 2>&1 || true
             send_embed "🚨 자동 배포 실패" "smoke test 실패 — 이전 버전으로 롤백됨" 15158332 || true
             return 1
         fi
     else
-        # 봇 재시작 불필요한 변경 (scripts/, bin/ 등) → git pull만
-        if git -C "$BOT_HOME" pull --ff-only origin main >> "$LOG" 2>&1; then
-            log "Auto-deploy: git pull 완료 (재시작 불필요)"
+        # 봇 재시작 불필요한 변경 (scripts/, bin/ 등) → fetch + merge
+        git -C "$BOT_HOME" fetch origin >> "$LOG" 2>&1 || true
+        if git -C "$BOT_HOME" merge origin/main --no-edit >> "$LOG" 2>&1; then
+            log "Auto-deploy: git merge 완료 (재시작 불필요)"
         else
-            log "Auto-deploy: git pull 실패"
+            git -C "$BOT_HOME" merge --abort >> "$LOG" 2>&1 || true
+            log "Auto-deploy: git merge 실패 — 충돌 수동 확인 필요"
         fi
     fi
 }

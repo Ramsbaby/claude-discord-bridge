@@ -532,6 +532,11 @@ run_one_check() {
             increment_crash
             crash_count=$(get_crash_count)
 
+            # [ON-DEMAND HOOK] bot.crashed 이벤트 발행 → bot-crash-classifier 태스크 트리거 (debounce 300s)
+            "$BOT_HOME/scripts/emit-event.sh" "bot.crashed" \
+                "{\"status\":\"${bot_status}\",\"crash_count\":${crash_count}}" \
+                >> "$LOG_FILE" 2>&1 || true
+
             if (( crash_count >= MAX_RETRIES )); then
                 local fatal_last now_ts last_ts
                 fatal_last="$STATE_DIR/fatal-alert-last"

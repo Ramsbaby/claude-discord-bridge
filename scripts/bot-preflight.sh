@@ -132,7 +132,13 @@ if [[ ! -f "$ENV_FILE" ]]; then
         log "WARN: .env 없음 — 백업에서 자동 복원: $ENV_BACKUP"
         cp "$ENV_BACKUP" "$ENV_FILE"
         log "✅ .env 백업 복원 완료 ($(wc -l < "$ENV_FILE")줄)"
+        # [ON-DEMAND HOOK] .env 복원 필요했음 — 경고 이벤트
+        "$BOT_HOME/scripts/emit-event.sh" "env.missing" \
+            '{"severity":"restored","source":"preflight"}' >> "$LOG_FILE" 2>&1 || true
     else
+        # [ON-DEMAND HOOK] .env 없음 + 백업도 없음 — 심각 이벤트
+        "$BOT_HOME/scripts/emit-event.sh" "env.missing" \
+            '{"severity":"critical","source":"preflight"}' >> "$LOG_FILE" 2>&1 || true
         fail_and_heal ".env 없음 — 백업도 없음. 수동 복구 필요: $ENV_FILE"
     fi
 fi

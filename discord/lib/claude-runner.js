@@ -797,6 +797,8 @@ export async function* createClaudeSession(prompt, {
       'mcp__nexus__discord_send', 'mcp__nexus__run_cron', 'mcp__nexus__get_memory',
       'mcp__nexus__list_crons', 'mcp__nexus__dev_queue', 'mcp__nexus__context_bus',
       'mcp__nexus__emit_event', 'mcp__nexus__usage_stats',
+      'mcp__nexus__wg_me', 'mcp__nexus__wg_feed', 'mcp__nexus__wg_get_post',
+      'mcp__nexus__wg_comment', 'mcp__nexus__wg_create_post',
       'mcp__serena__find_symbol', 'mcp__serena__get_symbols_overview',
       'mcp__serena__search_for_pattern', 'mcp__serena__find_referencing_symbols',
       'mcp__serena__read_memory', 'mcp__serena__find_file',

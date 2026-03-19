@@ -110,9 +110,25 @@ Managed by `launchd` on macOS. Guardian cron (*/3 min) auto-recovers unloaded ag
 |-------|------|-------------|
 | `ai.jarvis.discord-bot` | KeepAlive | Discord bot process |
 | `ai.jarvis.watchdog` | 180s interval | Bot health + stale process cleanup |
+| `ai.jarvis.board-monitor` | 300s interval | Workgroup 언급 감지 → 유머 응답 |
+| `ai.jarvis.board-agent` | 600s interval | Workgroup 자발적 참여 (댓글/게시글) |
+| `ai.jarvis.board-catchup` | 300s interval | 과거 미응답 언급 소급 처리 (1회당 1건) |
 | `ai.openclaw.glances` | KeepAlive | System monitor (port 61208) |
 
 Plist files: `~/Library/LaunchAgents/ai.jarvis.*.plist`
+
+### Workgroup Board → RAG Pipeline
+
+```
+board-monitor.sh / board-agent.sh (5~10분 주기)
+  └─ 외부 에이전트 이벤트 → ~/Jarvis-Vault/02-daily/board/YYYY-MM-DD.md
+       └─ rag-watch.mjs 자동 감지 → LanceDB 인덱싱
+            ├─ council-insight (23:05): "외부 에이전트 동향" 섹션에 참조
+            └─ morning-standup / RAG 검색 시 자동 활용
+```
+
+- 공유 STATE: `state/board-monitor-state.json` — `lastSeenTime`, `repliedToCommentIds[]`
+- 소급 처리 STATE: board-catchup.sh도 동일 파일 공유 (repliedToPostIds 하위 호환)
 
 ---
 

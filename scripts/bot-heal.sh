@@ -139,10 +139,20 @@ if [[ -f "$RECOVERY_LEARNINGS_FILE" ]]; then
     PAST_LEARNINGS=$(tail -30 "$RECOVERY_LEARNINGS_FILE" 2>/dev/null || echo "없음")
 fi
 
+# ── Gotchas 로드 (알려진 실패 패턴 + 해결책) ────────────────────────────────────
+GOTCHAS_FILE="$BOT_HOME/state/gotchas.md"
+GOTCHAS_CONTENT="없음"
+if [[ -f "$GOTCHAS_FILE" ]]; then
+    GOTCHAS_CONTENT=$(cat "$GOTCHAS_FILE" 2>/dev/null || echo "없음")
+fi
+
 HEAL_PROMPT="[Jarvis 봇 자동복구 태스크]
 
 Discord 봇이 시작 실패했습니다. 원인을 분석하고 파일을 수정해주세요.
 수정이 완료되면 봇은 launchd가 자동으로 재시작합니다 — 재시작 명령은 실행하지 마세요.
+
+## ⚠️ 알려진 실패 패턴 (Gotchas) — 반드시 먼저 확인하라
+${GOTCHAS_CONTENT}
 
 ## 실패 원인
 ${ERROR_REASON}
@@ -162,11 +172,12 @@ ${PAST_LEARNINGS}
 (위 이력에서 같은 원인이 반복된다면 근본 원인을 찾아 영구 수정하라)
 
 ## 수행 지시
-1. 위 정보를 바탕으로 실패 원인을 정확히 파악하라
-2. 문제가 있는 파일을 Read로 확인하라
-3. 문제를 수정하라 (Edit 또는 Bash 사용)
-4. JSON 파일 수정 시 반드시 유효성 확인: node -e \"JSON.parse(require('fs').readFileSync('<파일>','utf8'))\"
-5. 수정 완료 후 마지막 줄에 반드시 출력: 복구완료: <수정한 파일명과 내용 한 줄 요약>
+1. 실패 원인을 위 Gotchas 패턴과 먼저 대조하라 — 일치하면 해당 해결책을 즉시 적용
+2. 일치하는 Gotcha가 없으면 에러 로그를 분석해 원인을 파악하라
+3. 문제가 있는 파일을 Read로 확인하라
+4. 문제를 수정하라 (Edit 또는 Bash 사용)
+5. JSON 파일 수정 시 반드시 유효성 확인: node -e \"JSON.parse(require('fs').readFileSync('<파일>','utf8'))\"
+6. 수정 완료 후 마지막 줄에 반드시 출력: 복구완료: <수정한 파일명과 내용 한 줄 요약>
 
 중요: 봇 재시작 명령(launchctl, deploy-with-smoke.sh 등) 실행 금지 — launchd가 자동 처리"
 

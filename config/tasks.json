@@ -639,7 +639,6 @@
       "name": "인프라팀 일일 점검 (Infra)",
       "schedule": "0 9 * * *",
       "timeout": 240,
-      "prompt": "ultrathink\n\n자비스 컴퍼니 인프라팀 일일 점검:\n1) ls ~/.jarvis/rag/teams/shared-inbox/ 으로 infra팀 수신 메시지 확인\n2) launchctl list | grep -E 'jarvis|openclaw' 으로 LaunchAgent 상태 (ai.jarvis.discord-bot, ai.jarvis.watchdog PID 필수)\n3) df -h / 으로 디스크 현황 (90% 초과 시 HIGH)\n4) memory_pressure 2>/dev/null | grep 'System-wide memory free percentage' 으로 실제 메모리 여유율 확인 (20% 미만 MEDIUM, 10% 미만 HIGH — vm_stat free pages 방식은 macOS inactive 페이지를 무시해 오탐 발생하므로 사용 금지)\n5) tail -50 ~/.jarvis/logs/cron.log | grep -c 'FAILED' 으로 최근 크론 실패 수\n모두 정상이면 '✅ 인프라: 정상'. 이상 있으면 항목별 경고 및 council shared-inbox에 알림 작성.\n보고서를 ~/.jarvis/rag/teams/reports/infra-$(date +%F).md 에 저장. 이상 항목 발견 시에만 ~/.jarvis/scripts/alert.sh 로 Discord #jarvis-ceo 경고 전송. 모두 정상이면 Discord 전송 없음.\n\n## Loop 연결 (이벤트 발행)\n보고서 저장 완료 후, 이상 발견 시 아래 기준으로 이벤트 발행:\n- event-bus.sh 존재 여부 먼저 확인: [[ -f ~/.jarvis/lib/event-bus.sh ]] || exit 0\n- 디스크 90% 초과: source ~/.jarvis/lib/event-bus.sh && emit_event 'disk.threshold_exceeded' '{\"pct\":\"'$DISK_PCT'\"}'\n- 최근 크론 FAILED 3건 초과: source ~/.jarvis/lib/event-bus.sh && emit_event 'task.failed' '{\"count\":\"3+\"}'\n- LaunchAgent(discord-bot/watchdog) PID 없음: source ~/.jarvis/lib/event-bus.sh && emit_event 'system.alert' '{\"service\":\"discord-bot\"}'\n이상 없으면 이벤트 발행 없음.",
       "allowedTools": "Bash,Write",
       "output": [
         "file"
@@ -655,7 +654,8 @@
       "contextFile": "infra-daily.md",
       "resultRetention": 7,
       "resultMaxChars": 1000,
-      "model": "claude-sonnet-4-6"
+      "model": "claude-sonnet-4-6",
+      "prompt_file": "infra-daily.md"
     },
     {
       "id": "calendar-alert",
@@ -724,7 +724,6 @@
       "name": "문서-코드 정합성 감사 + 자동 적용",
       "schedule": "20 23 * * *",
       "timeout": 300,
-      "prompt": "문서-코드 정합성 감사 및 자동 적용을 수행해라.\n\n## STEP 1: pending-doc-updates.json 확인\n```\ncat ~/.jarvis/state/pending-doc-updates.json 2>/dev/null || echo 'NO_PENDING'\n```\n파일이 없거나 'NO_PENDING'이면 STEP 2로 이동.\n있으면 updates_needed 배열에서 status가 'pending'인 항목만 추출. 이 목록이 처리 대상.\n\n## STEP 2: 오늘 변경된 파일 직접 확인 (fallback — STEP 1에서 pending 없을 때만)\n- 오늘 변경 코드: find ~/.jarvis/lib ~/.jarvis/bin ~/.jarvis/scripts ~/.jarvis/discord ~/.jarvis/config -not -path '*/node_modules/*' -not -path '*/logs/*' \\( -name '*.mjs' -o -name '*.js' -o -name '*.sh' -o -name '*.json' \\) -daystart -mtime -1 2>/dev/null\n- 오늘 변경 문서: find ~/.jarvis/docs ~/.jarvis/context -name '*.md' -daystart -mtime -1 2>/dev/null\n- doc-map.json (config/doc-map.json) patterns 배열 순회: match_glob이 변경된 코드 파일과 매칭되면 docs 배열의 문서가 업데이트 대상\n\n## STEP 3: 처리 대상 문서별 수정 (각 문서 독립적으로 처리)\n\n각 문서에 대해 순서대로:\n1. 문서 Read: cat {full_doc_path}\n2. doc-map.json에서 이 문서를 포함하는 patterns 찾기 → reason 필드로 어떤 내용 변경인지 파악\n3. 해당 코드 파일(match_glob 기준) Read\n4. 어떤 섹션을 어떻게 바꿔야 하는지 분석\n5. 백업 먼저: mkdir -p ~/.jarvis/state/doc-backups/ && cp {full_doc_path} ~/.jarvis/state/doc-backups/$(date +%Y%m%d)-$(basename {doc_path}).bak\n6. 원본 문서의 해당 섹션만 수정 Write\n\n각 문서 처리 후 결과를 JSONL로 기록:\n```\necho '{\"doc\":\"{doc_path}\",\"status\":\"ok\",\"changed_section\":\"...\"}' >> ~/.jarvis/state/doc-sync-results-$(date +%F).jsonl\n```\n실패 시: echo '{\"doc\":\"{doc_path}\",\"status\":\"failed\",\"reason\":\"...\"}' >> ~/.jarvis/state/doc-sync-results-$(date +%F).jsonl\n**오류가 나도 다음 문서 계속 처리.**\n\n## STEP 4: commitments.jsonl 점검\n```\ncat ~/.jarvis/state/commitments.jsonl 2>/dev/null | grep '\"status\":\"open\"' | head -10\n```\n24시간 이상 open인 항목이 있으면 목록에 포함.\n\n## STEP 5: pending-doc-updates.json 정리\nresults JSONL 파일에서 실패(status=failed) 항목 확인:\n```\ngrep '\"status\":\"failed\"' ~/.jarvis/state/doc-sync-results-$(date +%F).jsonl 2>/dev/null\n```\n- **실패 0건**: rm -f ~/.jarvis/state/pending-doc-updates.json\n- **실패 있음**: pending-doc-updates.json의 updates_needed 배열에서 성공한 항목 제거 후 재저장\n  (python3 -c로 JSON 파싱: 성공한 doc_path 목록과 대조해 status=failed인 것만 남김)\n\n## STEP 6: 결과 보고\n- 보고서: ~/.jarvis/rag/teams/reports/doc-sync-$(date +%F).md 저장\n- 형식 예시:\n  | 문서 | 상태 | 변경 내용 | 트리거 코드 |\n  |------|------|----------|------------|\n  | docs/fsm-guide.md | ✅ 적용 | FSM 전이 섹션 갱신 | lib/task-fsm.mjs |\n- 수정 1건 이상이면 Discord 전송. 이상 없으면 파일만 저장.",
       "allowedTools": "Bash,Read,Write",
       "output": [
         "discord",
@@ -739,7 +738,8 @@
       "priority": "daily",
       "resultRetention": 14,
       "resultMaxChars": 1500,
-      "model": "claude-sonnet-4-6"
+      "model": "claude-sonnet-4-6",
+      "prompt_file": "doc-sync-auditor.md"
     },
     {
       "id": "board-meeting-am",
@@ -1313,6 +1313,91 @@
       "timeout": 600,
       "discordChannel": "jarvis-blog",
       "script": "/Users/ramsbaby/.jarvis/scripts/oss-docs.sh"
+    },
+    {
+      "id": "bot-crash-classifier",
+      "name": "봇 크래시 원인 분류 및 Discord 알림",
+      "event_trigger": "bot.crashed",
+      "event_trigger_debounce_s": 300,
+      "event_trigger_note": "watchdog.sh에서 bot.crashed emit 시 즉시 실행",
+      "timeout": 120,
+      "prompt": "Discord 봇이 크래시했습니다. 즉각 원인을 분류하고 Discord에 알림을 보내세요.\n\n에러 로그를 확인하고 (tail ~/.jarvis/logs/discord-bot.err.log), 크래시 패턴을 분류하세요:\n- SyntaxError: 코드 문법 오류\n- ENOENT + env: env 파일 소멸\n- ActionRowBuilder: ESM/CJS 충돌\n- Cannot find module: node_modules 손상\n\nDiscord jarvis-system 채널에 전송:\n🔴 봇 크래시 감지 / 분류: [패턴] / 에러: [1줄] / 자동복구: [heal-in-progress 여부]",
+      "allowedTools": "Bash",
+      "output": [
+        "discord"
+      ],
+      "discordChannel": "jarvis-system",
+      "maxBudget": "0.20",
+      "priority": "event",
+      "depends": [],
+      "resultRetention": 7,
+      "resultMaxChars": 500,
+      "model": "claude-haiku-4-5-20251001",
+      "allowEmptyResult": false
+    },
+    {
+      "id": "env-restore-notifier",
+      "name": ".env 소멸 감지 알림",
+      "event_trigger": "env.missing",
+      "event_trigger_debounce_s": 1800,
+      "event_trigger_note": "bot-preflight.sh에서 env 없음 감지 시 emit",
+      "timeout": 60,
+      "prompt": "Discord 봇의 env 파일이 소멸됐거나 복원됐습니다. 현재 상태를 확인:\nbash: ls -la ~/.jarvis/discord/.env && echo EXISTS || echo MISSING\n\nDiscord jarvis-system 채널 알림:\n- 파일 있으면: \"✅ .env 자동 복원 완료 (preflight 백업에서 복구)\"\n- 파일 없으면: \"🔴 .env 소멸 + 백업 없음 — 수동 개입 필요\"",
+      "allowedTools": "Bash",
+      "output": [
+        "discord"
+      ],
+      "discordChannel": "jarvis-system",
+      "maxBudget": "0.10",
+      "priority": "event",
+      "depends": [],
+      "resultRetention": 7,
+      "resultMaxChars": 300,
+      "model": "claude-haiku-4-5-20251001",
+      "allowEmptyResult": false
+    },
+    {
+      "id": "log-cleanup",
+      "name": "디스크 임계치 초과 시 로그 자동 정리",
+      "event_trigger": "disk.threshold_exceeded",
+      "event_trigger_debounce_s": 3600,
+      "event_trigger_note": "disk-alert.sh에서 90% 초과 감지 시 emit",
+      "timeout": 120,
+      "prompt": "디스크 사용률이 임계치를 초과했습니다. 로그를 정리하여 공간을 확보하세요.\n\n1. df -h / 로 현재 상태 확인\n2. find ~/.jarvis/logs -name \"*.gz\" -mtime +14 -delete\n3. find ~/.jarvis/results/system-health -mtime +7 -name \"*.md\" -delete 2>/dev/null || true\n4. bash ~/.jarvis/scripts/log-rotate.sh 2>/dev/null || true\n5. df -h / 로 정리 후 상태 확인\n\nDiscord jarvis-system 채널에 정리 전후 사용률 알림. 예: \"🧹 로그 정리 완료: 91% → 87%\"",
+      "allowedTools": "Bash",
+      "output": [
+        "discord",
+        "file"
+      ],
+      "discordChannel": "jarvis-system",
+      "maxBudget": "0.30",
+      "priority": "event",
+      "depends": [],
+      "resultRetention": 14,
+      "resultMaxChars": 500,
+      "model": "claude-haiku-4-5-20251001",
+      "allowEmptyResult": false
+    },
+    {
+      "id": "private-sync",
+      "name": "커밋 후 private 레포 동기화",
+      "event_trigger": "git.committed",
+      "event_trigger_debounce_s": 300,
+      "event_trigger_note": "post-commit hook에서 git.committed emit 시 실행",
+      "timeout": 120,
+      "prompt": "git commit 이후 private 레포 동기화를 실행하고 Discord에 보고하세요.\n\nbash ~/.jarvis/scripts/deploy-private.sh 2>&1 | tail -20\n\ngit -C ~/.jarvis log -1 --oneline 2>/dev/null || echo \"unknown\"\n\nDiscord jarvis-system 채널:\n- 성공: \"✅ private 레포 동기화 완료 ([커밋 메시지])\"\n- 실패: \"❌ private 레포 동기화 실패 — 수동 확인: ~/.jarvis/logs/deploy-private.log\"",
+      "allowedTools": "Bash",
+      "output": [
+        "discord"
+      ],
+      "discordChannel": "jarvis-system",
+      "maxBudget": "0.10",
+      "priority": "event",
+      "depends": [],
+      "resultRetention": 7,
+      "resultMaxChars": 300,
+      "model": "claude-haiku-4-5-20251001",
+      "allowEmptyResult": false
     }
   ]
 }

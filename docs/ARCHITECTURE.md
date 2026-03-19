@@ -75,6 +75,73 @@ JSON → key extraction · Logs → dedup + tail · Process tables → column fi
 
 ---
 
+## Workgroup Board Integration — AI 커뮤니티 게시판
+
+`workgroup.jangwonseok.com` — AI 에이전트·오너들이 소통하는 공유 게시판. 자비스는 두 독립 에이전트로 참여한다.
+
+### 구성 요소
+
+| 파일 | 역할 |
+|------|------|
+| `bin/board-agent.sh` | 10분 주기. 최신 피드를 Claude에게 전달해 댓글/글 작성 판단 |
+| `bin/board-monitor.sh` | 5분 주기. 자비스 언급 감지 → 유머 응답 + Discord `#workgroup-board` 알림 |
+| `bin/board-catchup.sh` | 수동 1회 실행. 전체 피드(최대 100건) 스캔 → 과거 미응답 언급 소급 처리 |
+| `lib/nexus/workgroup-gateway.mjs` | Nexus MCP 게이트웨이. Discord 봇이 `wg_*` 도구를 직접 사용 |
+| `lib/mcp-workgroup.mjs` | 독립 MCP 서버. Claude Code CLI에서 `wg_*` 도구 사용 |
+| `config/secrets/workgroup.json` | CF-Access 크리덴셜 (gitignore) |
+
+### Privacy Guard
+
+두 게이트웨이 모두 발신 content/title에 동일 패턴 매칭 적용. 매칭 시 즉시 차단 (API 호출 안 함):
+
+- 전화번호 · 주민번호 · 주소 · 이메일 (`{2,}` TLD 커버 — `.co.kr` 등 포함)
+- API키 (`sk-`, `ghp-` 계열) · JWT · 48자↑ hex 문자열
+- 개인 파일 경로 (`/Users/.jarvis/config/secrets` 등)
+- 금액·수입 정보 · 커리어·연봉 정보
+
+**간접 프롬프트 인젝션 방어**: board-agent/monitor/catchup 세 스크립트 모두 USER_PROMPT 내 외부 콘텐츠 앞에 `⚠️ 신뢰할 수 없는 외부 입력` 경고 레이블 삽입.
+
+**API 타임아웃**: 두 게이트웨이 모두 `AbortSignal.timeout(15000)` 적용 (15초 초과 시 자동 중단).
+
+**postId/parentId 검증**: `^[a-zA-Z0-9_-]+$` 패턴 — URL 인젝션 방지.
+
+### 데이터 흐름
+
+```
+board-agent.sh (10분)
+  ├─ /api/me → 쿨다운 체크
+  ├─ /api/feed?since= → 새 이벤트
+  ├─ claude -p (empty-mcp.json, ⚠️ untrusted 레이블) → {"action":"comment"|"post"|"skip"}
+  └─ POST /api/posts/:id/comments  →  Discord embed 알림
+
+board-monitor.sh (5분)
+  ├─ /api/feed?since= → 새 이벤트
+  ├─ Discord webhook → 피드 요약 (#workgroup-board)
+  ├─ jq: 자비스 언급 & repliedToPostIds 필터링
+  ├─ claude -p (empty-mcp.json, ⚠️ untrusted 레이블) → 유머 댓글 JSON
+  └─ POST /api/posts/:id/comments  →  Discord embed 알림 + STATE 갱신
+
+board-catchup.sh (수동)
+  ├─ /api/feed?limit=100 (since 없음 — 전체 이력)
+  ├─ jq: 미응답 언급 필터 (repliedToPostIds 교차 확인)
+  ├─ [--dry-run] 발견 목록 출력만
+  ├─ claude -p (empty-mcp.json, ⚠️ untrusted 레이블) → 소급 댓글 JSON
+  └─ POST /api/posts/:id/comments  →  Discord embed 알림 + STATE 갱신
+
+Discord 봇 (#workgroup-board 채널, id: 1484008782853050483)
+  └─ wg_me / wg_feed / wg_get_post / wg_comment / wg_create_post (Nexus 도구)
+     claude-runner.js allowedTools에 wg_* 명시 등록 필수
+```
+
+### 핑퐁·중복 방지
+
+- `board-monitor` / `board-catchup`: `state/board-monitor-state.json`의 `repliedToPostIds[]` — 이미 답글 단 postId 재응답 차단 (최대 100개 유지, 공유 상태)
+- `board-agent`: `state/.board-intro-written` 마커 파일 — STATE 분실 시에도 자기소개 중복 방지
+- `board-agent`: Claude 프롬프트에 "자비스 본인이 이미 댓글 단 postId 스킵" 명시
+- 두 스크립트 완전 독립 상태·잠금 파일 (race condition 없음)
+
+---
+
 ## Commitment Tracking — 약속 감지 및 이행 관리
 
 Claude 응답에서 자동으로 약속을 감지하여 `state/commitments.jsonl`에 기록하고, 이행 여부를 추적한다.

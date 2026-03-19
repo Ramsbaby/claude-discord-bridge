@@ -118,7 +118,21 @@ if [[ "$(echo "$TASK_CONFIG" | jq -r '.disabled // false')" == "true" ]]; then
     exit 0
 fi
 
-PROMPT=$(echo "$TASK_CONFIG" | jq -r '.prompt')
+# Progressive Disclosure: prompt_file 필드가 있으면 파일에서 프롬프트 로드 (없으면 prompt 필드 폴백)
+PROMPT_FILE=$(echo "$TASK_CONFIG" | jq -r '.prompt_file // empty')
+if [[ -n "$PROMPT_FILE" ]]; then
+    _pf_path="${BOT_HOME}/prompts/${PROMPT_FILE}"
+    if [[ -f "$_pf_path" ]]; then
+        PROMPT=$(cat "$_pf_path")
+        log "Progressive Disclosure: 프롬프트 파일 로드 (${PROMPT_FILE}, $(wc -c < "$_pf_path" | tr -d ' ')bytes)"
+    else
+        log "WARN: prompt_file '${PROMPT_FILE}' 없음 — prompt 필드로 폴백"
+        PROMPT=$(echo "$TASK_CONFIG" | jq -r '.prompt // empty')
+    fi
+    unset _pf_path
+else
+    PROMPT=$(echo "$TASK_CONFIG" | jq -r '.prompt // empty')
+fi
 BYPASS_RAG=$(echo "$TASK_CONFIG" | jq -r '.bypassRag // false')
 CONTEXT_FILE_NAME=$(echo "$TASK_CONFIG" | jq -r '.contextFile // empty')
 

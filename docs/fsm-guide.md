@@ -273,6 +273,7 @@ for t in tasks:
 
 depends에 걸린 태스크가 실패하면 다운스트림 태스크도 25h 동안 DEFERRED 된다.
 예: council-insight 실패 → morning-standup, daily-summary, ceo-daily-digest DEFERRED
+참고: board-monitor/agent/catchup은 LaunchAgent 직접 실행 방식이라 FSM 의존성 체계 외부에 있음
 
 대응:
 1. council-insight 원인 파악 및 수정

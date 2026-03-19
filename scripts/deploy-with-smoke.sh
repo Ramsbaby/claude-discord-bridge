@@ -67,13 +67,24 @@ fi
 # 4. JSON 유효성
 echo ""
 echo "▶ JSON 유효성..."
-for f in "$BOT_HOME/discord/personas.json" "$BOT_HOME/config/tasks.json" "$BOT_HOME/config/effective-tasks.json"; do
+# 주의: tasks.json은 gitignore 비추적 운영 데이터 — git 롤백으로 복원 불가하므로 배포 차단 기준에서 제외
+for f in "$BOT_HOME/discord/personas.json" "$BOT_HOME/config/effective-tasks.json"; do
     if node -e "JSON.parse(require('fs').readFileSync('$f','utf8'))" 2>/dev/null; then
         ok "JSON 유효: ${f##*/}"
     else
         fail "JSON 파싱 실패: ${f##*/}"
     fi
 done
+# tasks.json은 경고만 (없거나 손상돼도 배포는 진행)
+if [[ -f "$BOT_HOME/config/tasks.json" ]]; then
+    if node -e "JSON.parse(require('fs').readFileSync('$BOT_HOME/config/tasks.json','utf8'))" 2>/dev/null; then
+        ok "JSON 유효: tasks.json"
+    else
+        echo "  ⚠ WARN: tasks.json JSON 파싱 실패 (배포는 계속)"
+    fi
+else
+    echo "  ⚠ WARN: tasks.json 없음 — gitignore 비추적 파일, 별도 복구 필요 (배포는 계속)"
+fi
 
 # 5. .env 필수키 검사
 echo ""
