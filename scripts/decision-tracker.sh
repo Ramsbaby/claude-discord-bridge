@@ -19,7 +19,7 @@ AUTONOMY_STATE="${BOT_HOME}/state/autonomy-rate.json"
 
 DRY_RUN=false
 for arg in "$@"; do
-    [[ "$arg" == "--dry-run" ]] && DRY_RUN=true
+    if [[ "$arg" == "--dry-run" ]]; then DRY_RUN=true; fi
 done
 
 # ── 1. board-meeting 결과 파싱 → decisions/YYYY-MM-DD.jsonl 갱신 ─────────────

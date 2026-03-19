@@ -156,7 +156,7 @@ STATUS_FILE="$HOME/Jarvis-Vault/01-system/STATUS.md"
 log "Generating STATUS.md..."
 
 IS_MACOS=false
-[[ "$(uname -s 2>/dev/null)" == "Darwin" ]] && IS_MACOS=true
+if [[ "$(uname -s 2>/dev/null)" == "Darwin" ]]; then IS_MACOS=true; fi
 PROCS=$(${IS_MACOS} && launchctl list | grep jarvis | awk '{print "- " $3 ": " ($1 == "-" ? "⚪ 미실행" : "🟢 PID " $1) " (exit " $2 ")"}' || echo "N/A (non-macOS)")
 RAG_LAST=$(tail -1 "$BOT_HOME/logs/rag-index.log" 2>/dev/null || echo "로그 없음")
 DISK=$(df -h / | tail -1 | awk '{print $5 " 사용 (" $3 "/" $2 ")"}')

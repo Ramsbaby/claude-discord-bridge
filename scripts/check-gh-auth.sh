@@ -23,9 +23,11 @@ if echo "$AUTH_STATUS" | grep -q "not logged in\|no credentials"; then
   MSG="🔴 gh auth 미인증 상태 — github-monitor 장애 발생 가능"
   log "ERROR: $MSG"
   # Discord 알림 (webhook 있을 때만)
-  [[ -n "$WEBHOOK_URL" ]] && curl -s -X POST "$WEBHOOK_URL" \
-    -H "Content-Type: application/json" \
-    -d "{\"content\":\"$MSG\"}" >/dev/null
+  if [[ -n "$WEBHOOK_URL" ]]; then
+    curl -s -X POST "$WEBHOOK_URL" \
+      -H "Content-Type: application/json" \
+      -d "{\"content\":\"$MSG\"}" >/dev/null
+  fi
   exit 1
 fi
 

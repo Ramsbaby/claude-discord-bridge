@@ -51,7 +51,7 @@ fi
 CRON_SUCCESS=$(printf '%d' "${CRON_SUCCESS:-0}" 2>/dev/null || echo 0)
 CRON_FAIL=$(printf '%d' "${CRON_FAIL:-0}" 2>/dev/null || echo 0)
 CRON_TOTAL=$(( CRON_SUCCESS + CRON_FAIL ))
-CRON_RATE=$( [[ "$CRON_TOTAL" -gt 0 ]] && echo $(( CRON_SUCCESS * 100 / CRON_TOTAL )) || echo "N/A" )
+if [[ "$CRON_TOTAL" -gt 0 ]]; then CRON_RATE=$(( CRON_SUCCESS * 100 / CRON_TOTAL )); else CRON_RATE="N/A"; fi
 
 DISK_PCT=$(df -h / 2>/dev/null | tail -1 | awk '{print $5}' || echo "?")
 LOAD=$(uptime 2>/dev/null | sed 's/.*load averages: //' || echo "?")
@@ -60,7 +60,7 @@ LAUNCHD=$($IS_MACOS && launchctl list 2>/dev/null | grep -E 'jarvis' | awk '{pri
 read_latest() {
     local dir="$1" max_chars="${2:-500}"
     local f; f=$(ls -t "${dir}/"*.md 2>/dev/null | head -1)
-    [[ -n "$f" ]] && head -c "$max_chars" "$f" 2>/dev/null || echo "데이터 없음"
+    if [[ -n "$f" ]]; then head -c "$max_chars" "$f" 2>/dev/null; else echo "데이터 없음"; fi
 }
 
 HEALTH_SNAP=$(read_latest "${BOT_HOME}/results/system-health" 200)

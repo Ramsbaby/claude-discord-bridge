@@ -334,7 +334,7 @@ if [[ -d "$OWNER_INSIGHTS_SRC" ]]; then
         [[ -f "$owner_file" ]] || continue
         filename="$(basename "$owner_file")"
         # profile.md는 _owner-profile.md 로 저장 (Obsidian에서 상단 노출)
-        [[ "$filename" == "profile.md" ]] && dest_name="_owner-profile.md" || dest_name="$filename"
+        if [[ "$filename" == "profile.md" ]]; then dest_name="_owner-profile.md"; else dest_name="$filename"; fi
         dest="$OWNER_INSIGHTS_DEST/$dest_name"
         if [[ ! -f "$dest" ]] || [[ "$owner_file" -nt "$dest" ]]; then
             cp "$owner_file" "$dest"

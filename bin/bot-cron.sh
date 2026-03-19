@@ -66,7 +66,7 @@ _SENTINEL_FILE=""
 _FSM_RUNNING=false   # FSM running 전이 성공 여부 추적
 _cleanup() {
     local rc=$?
-    [[ -n "$_SENTINEL_FILE" ]] && rmdir "$_SENTINEL_FILE" 2>/dev/null || true
+    if [[ -n "$_SENTINEL_FILE" ]]; then rmdir "$_SENTINEL_FILE" 2>/dev/null || true; fi
     if [[ "$_TASK_DONE" == "false" ]]; then
         log "ABORTED (unexpected exit: $rc — signal or set -e trigger)"
         # FSM: 비정상 종료 시 running → failed 전이 (FSM이 running 상태였을 때만)
@@ -161,6 +161,10 @@ TASK_MAX_RETRIES=$(echo "$TASK_CONFIG" | jq -r '.retry.max // .maxRetries // 3')
 RESULT_RETENTION=$(echo "$TASK_CONFIG" | jq -r '.resultRetention // 7')
 RESULT_MAX_CHARS=$(echo "$TASK_CONFIG" | jq -r '.resultMaxChars // 2000')
 MODEL=$(echo "$TASK_CONFIG" | jq -r '.model // empty')
+# TASK_AUTHOR: tasks.json의 "author" 필드, 없으면 task id를 그대로 사용
+# ask-claude.sh의 board-reaction 주입에 사용됨
+export TASK_AUTHOR
+TASK_AUTHOR=$(echo "$TASK_CONFIG" | jq -r '.author // .id // empty')
 DISCORD_CHANNEL=$(echo "$TASK_CONFIG" | jq -r '.discordChannel // empty')
 REQUIRES_MARKET=$(echo "$TASK_CONFIG" | jq -r '.requiresMarket // false')
 ALLOW_EMPTY_RESULT=$(echo "$TASK_CONFIG" | jq -r '.allowEmptyResult // false')
@@ -309,7 +313,7 @@ fi
 "$BOT_HOME/bin/lounge-announce.sh" "$TASK_ID" "--done" 2>/dev/null || true
 log "SUCCESS"
 # circuit breaker: 성공 시 초기화
-[[ -f "$_CB_FILE" ]] && rm -f "$_CB_FILE" 2>/dev/null || true
+if [[ -f "$_CB_FILE" ]]; then rm -f "$_CB_FILE" 2>/dev/null || true; fi
 # FSM: running → done 전이
 _fsm_transition "$TASK_ID" "done"
 _FSM_RUNNING=false
