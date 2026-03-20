@@ -46,7 +46,7 @@ async function transcribeVoiceMessage(att) {
   }
 }
 import { EmbedBuilder } from 'discord.js';
-import { log, sendNtfy } from './claude-runner.js';
+import { log, sendNtfy, sanitizeUnicode } from './claude-runner.js';
 import { StreamingMessage } from './session.js';
 import {
   createClaudeSession,
@@ -525,6 +525,9 @@ async function _processBatch(messages, { sessions, rateTracker, semaphore, activ
   const _overrideKey = messages[messages.length - 1].id;
   const _override = _promptOverrides.get(_overrideKey);
   if (_override) { _promptOverrides.delete(_overrideKey); batchContent = _override; }
+
+  // Lone surrogate 살균 — Anthropic API 400 "invalid high surrogate" 방지
+  batchContent = sanitizeUnicode(batchContent);
 
   if (messages.length > 1) {
     log('info', 'Batch flushed', {

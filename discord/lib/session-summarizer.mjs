@@ -12,6 +12,22 @@ import { readFileSync, writeFileSync, readdirSync, mkdirSync, existsSync, statSy
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
+/** Lone surrogate 제거 — JSON 직렬화 시 invalid high/low surrogate 방지 */
+function sanitizeUnicode(str) {
+  if (typeof str !== 'string') return str;
+  return str.replace(/[\uD800-\uDFFF]/g, (match, offset, string) => {
+    const code = match.charCodeAt(0);
+    if (code >= 0xD800 && code <= 0xDBFF) {
+      const next = string.charCodeAt(offset + 1);
+      if (next >= 0xDC00 && next <= 0xDFFF) return match;
+      return '';
+    }
+    const prev = offset > 0 ? string.charCodeAt(offset - 1) : NaN;
+    if (prev >= 0xD800 && prev <= 0xDBFF) return match;
+    return '';
+  });
+}
+
 const BOT_HOME = process.env.BOT_HOME || join(homedir(), '.jarvis');
 const SESSION_SUMMARY_DIR = join(BOT_HOME, 'state', 'session-summaries');
 const USERS_DIR = join(BOT_HOME, 'state', 'users');
@@ -166,7 +182,7 @@ function addFactDirect(userId, factText) {
   const normalize = (f) => (typeof f === 'string' ? f : f?.text ?? '');
   const exists = data.facts.some(f => normalize(f) === factText);
   if (!exists) {
-    data.facts.push({ text: factText, addedAt: new Date().toISOString() });
+    data.facts.push({ text: sanitizeUnicode(factText), addedAt: new Date().toISOString() });
     data.updatedAt = new Date().toISOString();
     mkdirSync(USERS_DIR, { recursive: true });
     writeFileSync(fpath, JSON.stringify(data, null, 2));

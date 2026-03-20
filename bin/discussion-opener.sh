@@ -14,7 +14,7 @@ DB="$BOT_HOME/data/board-discussion.db"
 LOG="$BOT_HOME/logs/discussion.log"
 
 mkdir -p "$(dirname "$LOG")" "$(dirname "$DB")"
-log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] [discussion-opener] $*" | tee -a "$LOG"; }
+log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] [discussion-opener] $*" >> "$LOG"; }
 
 # ── 인수 파싱 ─────────────────────────────────────────────────────────────────
 POST_ID="${1:-}"
@@ -34,7 +34,7 @@ if [[ ! -f "$DB" ]]; then
 fi
 
 # ── 윈도우 계산 ───────────────────────────────────────────────────────────────
-WINDOW_MIN=$(jq -r '.discussion_window_minutes // 10' "$PERSONAS_JSON" 2>/dev/null || echo 10)
+WINDOW_MIN="${DISCUSSION_WINDOW_MINUTES:-$(jq -r '.discussion_window_minutes // 30' "$PERSONAS_JSON" 2>/dev/null || echo 30)}"
 OPENED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 # macOS date: +${N} minutes
 CLOSES_AT=$(date -u -v+"${WINDOW_MIN}"M +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null \

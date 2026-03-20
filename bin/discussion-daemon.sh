@@ -23,7 +23,7 @@ LOCK_DIR="$BOT_HOME/tmp/discussion-daemon.lock"
 MAX_CONCURRENT=2
 
 mkdir -p "$(dirname "$LOG")" "$BOT_HOME/tmp"
-log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] [discussion-daemon] $*" | tee -a "$LOG"; }
+log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] [discussion-daemon] $*" >> "$LOG"; }
 
 # 로그 5MB 초과 시 최근 1000줄만 유지
 if [[ -f "$LOG" ]] && (( $(wc -c < "$LOG") > 5242880 )); then
@@ -46,6 +46,45 @@ trap 'rm -rf "$LOCK_DIR"' EXIT
 if [[ ! -f "$DB" ]]; then
   log "discussion DB 없음 — 건너뜀 (init-discussion-db.sh 먼저 실행 필요)"
   exit 0
+fi
+
+# ── jarvis-board API 자동 동기화 ──────────────────────────────────────────────
+# open/in-progress 포스트가 discussion DB에 없으면 자동 등록
+if [[ -n "${BOARD_URL:-}" && -n "${AGENT_API_KEY:-}" ]]; then
+  SYNC_RESP=$(curl -sf --max-time 10 \
+    -H "x-agent-key: $AGENT_API_KEY" \
+    "${BOARD_URL}/api/posts" 2>/dev/null || echo "[]")
+  WINDOW_MIN=$(jq -r '.discussion_window_minutes // 30' "$PERSONAS_JSON" 2>/dev/null || echo 30)
+  OPENER="$BOT_HOME/bin/discussion-opener.sh"
+
+  # 신규 open/in-progress 포스트 → discussion DB 등록
+  while IFS=$'\t' read -r s_pid s_type s_title; do
+    if [[ -z "$s_pid" ]]; then continue; fi
+    ALREADY=$(sqlite3 "$DB" "SELECT COUNT(*) FROM discussions WHERE id='${s_pid//\'/\'\'}';" 2>/dev/null || echo 0)
+    if [[ "$ALREADY" == "0" ]]; then
+      log "신규 포스트 감지 — 토론 등록: $s_pid ($s_type)"
+      if [[ -x "$OPENER" ]]; then
+        DISCUSSION_WINDOW_MINUTES="$WINDOW_MIN" bash "$OPENER" "$s_pid" "$s_type" "$s_title" "" >> "$LOG" 2>&1 || true
+      fi
+    fi
+  done < <(echo "$SYNC_RESP" | jq -r \
+    '.[] | select(.status=="open" or .status=="in-progress") | [.id, .type, .title] | @tsv' \
+    2>/dev/null || true)
+
+  # resolved된 포스트 → discussion DB에서 expired 처리 (Claude 재호출 방지)
+  RESOLVED_IDS=$(echo "$SYNC_RESP" | jq -r \
+    '[.[] | select(.status=="resolved") | .id] | @sh' 2>/dev/null || echo "")
+  if [[ -n "$RESOLVED_IDS" ]]; then
+    while IFS= read -r r_pid; do
+      r_pid="${r_pid//\'/}"
+      if [[ -z "$r_pid" ]]; then continue; fi
+      UPDATED=$(sqlite3 "$DB" \
+        "UPDATE discussions SET status='expired' WHERE id='${r_pid//\'/\'\'}' AND status='open'; SELECT changes();" 2>/dev/null || echo 0)
+      if [[ "$UPDATED" == "1" ]]; then
+        log "보드 resolved → DB expired: $r_pid"
+      fi
+    done < <(echo "$RESOLVED_IDS" | tr ' ' '\n' | tr -d "'")
+  fi
 fi
 
 # ── 현재 시각 (ISO8601 UTC) ───────────────────────────────────────────────────
@@ -115,9 +154,10 @@ wait_slot() {
 for ROW in "${OPEN_POSTS[@]}"; do
   IFS='|' read -r POST_ID POST_TYPE OPENED_AT <<< "$ROW"
 
-  # opened_at 을 epoch 으로 변환 (macOS 호환)
-  OPENED_EPOCH=$(date -j -f "%Y-%m-%dT%H:%M:%SZ" "$OPENED_AT" +%s 2>/dev/null \
-    || date -d "$OPENED_AT" +%s 2>/dev/null || echo 0)
+  # opened_at을 epoch으로 변환 (UTC 강제, macOS/Linux 호환)
+  # TZ=UTC 없이 -j로 파싱하면 UTC 문자열을 로컬(KST)로 해석해 32400초 오차 발생
+  OPENED_EPOCH=$(TZ=UTC date -j -f "%Y-%m-%dT%H:%M:%SZ" "$OPENED_AT" +%s 2>/dev/null \
+    || TZ=UTC date -d "$OPENED_AT" +%s 2>/dev/null || echo 0)
   NOW_EPOCH=$(date +%s)
   ELAPSED=$(( NOW_EPOCH - OPENED_EPOCH ))
 
@@ -130,10 +170,10 @@ for ROW in "${OPEN_POSTS[@]}"; do
       continue
     fi
 
-    # 이미 댓글 달았는지 확인
+    # 이미 성공적으로 댓글 달았는지 확인 (failed는 재시도 허용)
     DONE=$(sqlite3 "$DB" \
       "SELECT count(*) FROM discussion_comments
-       WHERE discussion_id='${POST_ID//\'/\'\'}' AND persona_id='${PID_VAL//\'/\'\'}';")
+       WHERE discussion_id='${POST_ID//\'/\'\'}' AND persona_id='${PID_VAL//\'/\'\'}' AND status='posted';")
     if [[ "$DONE" != "0" ]]; then
       continue
     fi

@@ -1,14 +1,17 @@
 {
   "id": "system-health",
   "name": "System Health Check",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Periodic system health check — disk, memory, CPU, key processes, cron failures",
-  "schedule": "*/30 * * * *",
-  "model": "claude-haiku-4-5",
-  "prompt": "시스템 상태를 체크하고 결과를 마크다운 표로 보여줘.\n\n확인 항목:\n1) 디스크 사용량 (df -h | grep '/$')\n2) 메모리 (vm_stat | grep 'Pages free')\n3) CPU 로드 (uptime)\n4) 핵심 프로세스 생존 확인: discord-bot, orchestrator (pgrep -f)\n5) 크론 실패 감지: grep -cE 'ABORTED|FAILED' ~/.jarvis/logs/cron.log 로 전체 카운트, tail -200 ~/.jarvis/logs/cron.log | grep -E 'ABORTED|FAILED' 로 최근 실패 목록\n\n판단 기준:\n- 최근 1시간 내 ABORTED/FAILED가 3건 이상이면 ⚠️ 크론 장애 경고\n- discord-bot 또는 orchestrator 프로세스 없으면 🔴 경고\n- 디스크 90% 이상이면 🔴 경고\n- 모두 정상이면 ✅ OK 한 줄로 마무리",
+  "schedule": "*/60 * * * *",
+  "model": "claude-haiku-4-5-20251001",
+  "prompt_file": "system-health.md",
+  "prompt": "시스템 헬스체크: 디스크/메모리/CPU/프로세스/크론 실패 확인 후 이상 시 경고 출력",
+  "resultMaxChars": 500,
   "allowedTools": "Bash",
   "output": ["file"],
-  "timeout": 120,
+  "discordChannel": "jarvis-system",
+  "timeout": 300,
   "retry": {
     "max": 1,
     "backoff": "exponential"

@@ -17,7 +17,7 @@ BOARD_URL="${BOARD_URL:-https://jarvis-board-production.up.railway.app}"
 RESP_TMP="$BOT_HOME/tmp/synthesizer-resp-$$.json"
 
 mkdir -p "$(dirname "$LOG")" "$BOT_HOME/tmp"
-log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] [synthesizer] $*" | tee -a "$LOG"; }
+log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] [synthesizer] $*" >> "$LOG"; }
 
 trap 'rm -f "$RESP_TMP"' EXIT
 
@@ -72,12 +72,27 @@ POST_TITLE=$(jq -r '.title // "제목 없음"' "$RESP_TMP")
 POST_TYPE=$(jq -r '.type // "discussion"' "$RESP_TMP")
 POST_CONTENT=$(jq -r '.content // ""' "$RESP_TMP" | head -c 1500)
 
-# DB에서 실제 게시된 댓글 내용 가져오기
-COMMENTS_TEXT=$(sqlite3 "$DB" \
+# ── 댓글 수집: local DB(페르소나) + board API(대표·직접 에이전트) 병합 ─────────
+DB_COMMENTS=$(sqlite3 "$DB" \
   "SELECT persona_name || ': ' || content
    FROM discussion_comments
    WHERE discussion_id='${POST_ID}' AND status='posted'
    ORDER BY created_at;" 2>/dev/null || echo "")
+
+# board API에서 직접 포스팅된 댓글 (대표 + 직접 에이전트, is_visitor=1 or is_visitor=0)
+API_COMMENTS=$(jq -r \
+  '[.comments[] | select(.is_resolution != 1) | "[\(.author_display)]: \(.content[:400])"] | join("\n")' \
+  "$RESP_TMP" 2>/dev/null || echo "")
+
+# 병합 (중복 방지: 페르소나 댓글은 DB 우선, 나머지는 API에서 보충)
+if [[ -n "$DB_COMMENTS" && -n "$API_COMMENTS" ]]; then
+  COMMENTS_TEXT="${DB_COMMENTS}
+${API_COMMENTS}"
+elif [[ -n "$DB_COMMENTS" ]]; then
+  COMMENTS_TEXT="$DB_COMMENTS"
+else
+  COMMENTS_TEXT="$API_COMMENTS"
+fi
 
 if [[ -z "$COMMENTS_TEXT" ]]; then
   log "댓글 없음 — 합성 건너뜀 (post:${POST_ID})"
@@ -122,7 +137,7 @@ COMMENT_BODY=$(jq -n \
   --arg content "$RESOLUTION" \
   --arg author "$SYNTH_ID" \
   --arg author_display "$AUTHOR_DISPLAY" \
-  '{"content": $content, "author": $author, "author_display": $author_display}')
+  '{"content": $content, "author": $author, "author_display": $author_display, "is_resolution": true}')
 
 HTTP_CODE=$(curl -s -o "$RESP_TMP" -w "%{http_code}" \
   -X POST \
@@ -143,6 +158,18 @@ if [[ "$HTTP_CODE" == "200" || "$HTTP_CODE" == "201" ]]; then
      UPDATE discussions SET status='resolved', resolution='$(safe "$RESOLUTION")' WHERE id='$(safe "$POST_ID")';"
 
   log "이사회 결의 게시 완료 — board_comment:${BOARD_COMMENT_ID} post:${POST_ID}"
+
+  # 결론 → 실제 행동 파이프라인 트리거
+  DISPATCHER="${BOT_HOME}/scripts/board-action-dispatcher.sh"
+  if [[ -x "$DISPATCHER" ]]; then
+    log "행동 디스패처 실행 — post:${POST_ID}"
+    (
+      BOT_HOME="$BOT_HOME" \
+      BOARD_URL="${BOARD_URL:-https://jarvis-board-production.up.railway.app}" \
+      AGENT_API_KEY="${AGENT_API_KEY:-}" \
+      bash "$DISPATCHER" "$POST_ID" >> "$LOG" 2>&1
+    ) &
+  fi
 else
   log "이사회 댓글 실패 (HTTP ${HTTP_CODE})"
 fi

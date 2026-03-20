@@ -142,7 +142,7 @@
       "id": "github-monitor",
       "name": "GitHub 알림 모니터",
       "schedule": "0 * * * *",
-      "timeout": 120,
+      "timeout": 180,
       "prompt": "GitHub 알림 확인: gh api notifications --jq '.[] | .subject.title' 실행 후 새 알림 요약. 없으면 'GitHub: 알림 없음'.",
       "allowedTools": "Bash",
       "output": [
@@ -274,7 +274,7 @@
       "id": "memory-cleanup",
       "name": "메모리 정리",
       "schedule": "0 2 * * *",
-      "timeout": 120,
+      "timeout": 180,
       "prompt": "~/.jarvis/results/ 각 서브디렉토리에서 7일 이상 된 파일 삭제. ~/.jarvis/state/sessions.json에서 7일 이상 된 세션 항목 제거. ~/.jarvis/state/events/ 에서 7일 이상 된 .json 파일 삭제 (처리되지 않은 stale 이벤트 정리). ~/.jarvis/state/active-tasks/ 에서 1시간 이상 된 sentinel 파일 삭제 (비정상 종료 잔여 파일 정리). 정리된 파일 수 요약.",
       "allowedTools": "Bash",
       "output": [
@@ -343,7 +343,7 @@
       "id": "token-sync",
       "name": "토큰 동기화",
       "schedule": "0 1 * * *",
-      "timeout": 120,
+      "timeout": 180,
       "prompt": "python3 ~/openclaw/scripts/claude-token-sync.py 실행해서 Claude Max 토큰 동기화. 성공/실패 결과 한 줄로.",
       "allowedTools": "Bash",
       "output": [
@@ -464,7 +464,7 @@
       "id": "rag-health",
       "name": "RAG 건강 체크",
       "schedule": "0 3 * * *",
-      "timeout": 120,
+      "timeout": 180,
       "prompt": "RAG 시스템 점검: 1) tail -3 ~/.jarvis/logs/rag-index.log — 최근 인덱싱 상태 확인 (에러 여부, chunk 수 증가 추세) 2) du -sh ~/.jarvis/rag/lancedb/ 2>/dev/null — LanceDB 크기 3) wc -l ~/.jarvis/rag/index-state.json — 추적 파일 수. 에러 있으면 경고, 정상이면 'RAG: 정상 (XXXX chunks)'.",
       "allowedTools": "Bash,Read",
       "output": [
@@ -487,7 +487,7 @@
       "id": "cost-monitor",
       "name": "비용 모니터링",
       "schedule": "0 9 * * 0",
-      "timeout": 120,
+      "timeout": 180,
       "prompt": "Jarvis 시스템 비용 현황 집계: 1) RAG 임베딩: tail -7 ~/.jarvis/logs/rag-index.log | grep -oE '[0-9]+ new' | awk '{s+=$1}END{printf \"%.4f\", s*3*500/1000000*0.02}' (달러 추정) 2) 이번 달 크론 실행 횟수: grep -c 'SUCCESS' ~/.jarvis/logs/cron.log 3) OpenAI 비용 추정 합산. 월 $10 초과 예상 시 '⚠️ 비용 경고' 출력. 간결하게 한국어로.",
       "allowedTools": "Bash",
       "output": [
@@ -1098,7 +1098,7 @@
       "id": "personal-schedule-daily",
       "name": "개인 일정 브리핑",
       "schedule": "30 7 * * *",
-      "timeout": 60,
+      "timeout": 180,
       "prompt": "오늘의 Preply 수업 일정과 수입을 조회해서 전송해줘.\n\n실행 방법:\nbash ~/.jarvis/scripts/preply-today.sh $(date +%F)\n\n응답은 JSON이다. scheduledLessons 배열에서 startAt(시간), student(학생명), amount(금액)을 추출하고, totalsByCurrency.USD로 총수입을 표시한다.\n\n출력 형식 (코드블록 없이 일반 텍스트로):\n오늘(M/D 요일) 수업 브리핑 📅✨\n총 N개 수업 · 총 수입 $XXX.XX USD 💰\n\n- 🕐 HH:MM · 학생이름 · $XX.XX\n- 🕐 HH:MM · 학생이름 · $XX.XX\n...\n\nscheduledCount가 0이면: 오늘은 수업이 없어요! 😊\ncancelledCount가 0보다 크면 취소 건수도 표시.",
       "allowedTools": "Bash",
       "output": [
@@ -1154,7 +1154,7 @@
       "id": "memory-expire",
       "name": "기억 만료 아카이브",
       "schedule": "0 3 * * 1",
-      "timeout": 60,
+      "timeout": 180,
       "model": "claude-haiku-4-5-20251001",
       "allowedTools": "Bash",
       "output": [],
@@ -1320,7 +1320,7 @@
       "event_trigger": "bot.crashed",
       "event_trigger_debounce_s": 300,
       "event_trigger_note": "watchdog.sh에서 bot.crashed emit 시 즉시 실행",
-      "timeout": 120,
+      "timeout": 180,
       "prompt": "Discord 봇이 크래시했습니다. 즉각 원인을 분류하고 Discord에 알림을 보내세요.\n\n에러 로그를 확인하고 (tail ~/.jarvis/logs/discord-bot.err.log), 크래시 패턴을 분류하세요:\n- SyntaxError: 코드 문법 오류\n- ENOENT + env: env 파일 소멸\n- ActionRowBuilder: ESM/CJS 충돌\n- Cannot find module: node_modules 손상\n\nDiscord jarvis-system 채널에 전송:\n🔴 봇 크래시 감지 / 분류: [패턴] / 에러: [1줄] / 자동복구: [heal-in-progress 여부]",
       "allowedTools": "Bash",
       "output": [
@@ -1341,7 +1341,7 @@
       "event_trigger": "env.missing",
       "event_trigger_debounce_s": 1800,
       "event_trigger_note": "bot-preflight.sh에서 env 없음 감지 시 emit",
-      "timeout": 60,
+      "timeout": 120,
       "prompt": "Discord 봇의 env 파일이 소멸됐거나 복원됐습니다. 현재 상태를 확인:\nbash: ls -la ~/.jarvis/discord/.env && echo EXISTS || echo MISSING\n\nDiscord jarvis-system 채널 알림:\n- 파일 있으면: \"✅ .env 자동 복원 완료 (preflight 백업에서 복구)\"\n- 파일 없으면: \"🔴 .env 소멸 + 백업 없음 — 수동 개입 필요\"",
       "allowedTools": "Bash",
       "output": [
@@ -1362,7 +1362,7 @@
       "event_trigger": "disk.threshold_exceeded",
       "event_trigger_debounce_s": 3600,
       "event_trigger_note": "disk-alert.sh에서 90% 초과 감지 시 emit",
-      "timeout": 120,
+      "timeout": 240,
       "prompt": "디스크 사용률이 임계치를 초과했습니다. 로그를 정리하여 공간을 확보하세요.\n\n1. df -h / 로 현재 상태 확인\n2. find ~/.jarvis/logs -name \"*.gz\" -mtime +14 -delete\n3. find ~/.jarvis/results/system-health -mtime +7 -name \"*.md\" -delete 2>/dev/null || true\n4. bash ~/.jarvis/scripts/log-rotate.sh 2>/dev/null || true\n5. df -h / 로 정리 후 상태 확인\n\nDiscord jarvis-system 채널에 정리 전후 사용률 알림. 예: \"🧹 로그 정리 완료: 91% → 87%\"",
       "allowedTools": "Bash",
       "output": [
@@ -1384,7 +1384,7 @@
       "event_trigger": "git.committed",
       "event_trigger_debounce_s": 300,
       "event_trigger_note": "post-commit hook에서 git.committed emit 시 실행",
-      "timeout": 120,
+      "timeout": 180,
       "prompt": "git commit 이후 private 레포 동기화를 실행하세요.\n\n1. deploy-private.sh가 이미 실행 중이면 건너뜀:\npgrep -f deploy-private.sh > /dev/null 2>&1 && echo \"SKIP: 이미 실행 중\" && exit 0\n\n2. 동기화 실행:\nbash ~/.jarvis/scripts/deploy-private.sh 2>&1 | tail -10\n\n3. 결과 출력 (한 줄):\n- 성공: \"완료\"\n- 실패: \"실패: [에러 메시지]\"\n\n주의: Discord 메시지 전송 금지. 파일 경로, 커밋 해시 출력 금지.",
       "allowedTools": "Bash",
       "output": [
@@ -1412,6 +1412,42 @@
       "resultMaxChars": 200,
       "disabled": false,
       "note": "recovery-learnings.md에서 3회↑ 반복 패턴을 gotchas.md에 자동 승격. 매주 월요일 03:00 KST."
+    },
+    {
+      "id": "board-conclude",
+      "name": "보드 토론 자동 결론",
+      "schedule": "*/5 * * * *",
+      "script": "~/.jarvis/scripts/board-conclude.sh",
+      "timeout": 300,
+      "output": [
+        "discord",
+        "file"
+      ],
+      "discordChannel": "workgroup-board",
+      "allowEmptyResult": true,
+      "resultRetention": 7,
+      "resultMaxChars": 1000,
+      "priority": "system",
+      "depends": [],
+      "note": "30분 만료된 open/in-progress 토론을 Claude로 요약해 결론 댓글 포스팅 + resolved 처리"
+    },
+    {
+      "id": "board-topic-proposer",
+      "name": "보드 토론 주제 자동 제안",
+      "schedule": "0 * * * *",
+      "script": "~/.jarvis/scripts/board-topic-proposer.sh",
+      "timeout": 120,
+      "output": [
+        "discord",
+        "file"
+      ],
+      "discordChannel": "workgroup-board",
+      "allowEmptyResult": true,
+      "resultRetention": 7,
+      "resultMaxChars": 500,
+      "priority": "normal",
+      "depends": [],
+      "note": "매시간 Jarvis 컨텍스트 기반 토론 주제 1개 board에 자동 게시 + discussion 윈도우 등록"
     }
   ]
 }

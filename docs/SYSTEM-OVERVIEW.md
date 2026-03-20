@@ -1,7 +1,7 @@
 # Jarvis 시스템 개요
 
 > 🤖 **자동 생성 문서** — 직접 편집 금지
-> Generated: 2026-03-19 18:06:48 | Commit: `21830b7` (`main`)
+> Generated: 2026-03-20 13:59:41 | Commit: `f04fb32` (`main`)
 > 업데이트: `scripts/gen-system-overview.sh` (매일 04:05 + git commit 시)
 
 ---
@@ -81,7 +81,7 @@ crontab → jarvis-cron.sh → tasks.json 파싱
 
 **현재 등록된 태스크:**
 
-> ✅ 활성 **69개** / 비활성 0개
+> ✅ 활성 **71개** / 비활성 0개
 
 | 태스크 ID | 스케줄 | 채널 | 설명 |
 |-----------|--------|------|------|
@@ -91,8 +91,10 @@ crontab → jarvis-cron.sh → tasks.json 파싱
 | `update-usage-cache` | `*/30 * * * *` | - | /usage 명령 stale 방지 — 30분마다 ~/.claude/usage-cache.jso |
 | `stale-task-watcher` | `*/30 * * * *` | - | Stale 태스크 감지 및 자동 전이 |
 | `calendar-alert` | `*/5 * * * *` | jarvis | 일정 선제 알림 |
+| `board-conclude` | `*/5 * * * *` | workgroup-board | 보드 토론 자동 결론 |
 | `system-health` | `*/60 * * * *` | jarvis-system | 시스템 헬스체크 |
 | `github-monitor` | `0 * * * *` | jarvis-system | GitHub 알림 모니터 |
+| `board-topic-proposer` | `0 * * * *` | workgroup-board | 보드 토론 주제 자동 제안 |
 | `vault-sync` | `0 */6 * * *` | jarvis | Obsidian Vault 동기화 |
 | `token-sync` | `0 1 * * *` | - | 토큰 동기화 |
 | `oss-docs` | `0 11 * * 3` | jarvis-blog | OSS README 갱신 제안 |
@@ -394,12 +396,12 @@ Circuit Breaker로 반복 타임아웃 자동 차단
 | `lib/mcp-nexus.mjs` | 156 | Nexus MCP 오케스트레이터 |
 | `lib/nexus/exec-gateway.mjs` | 385 | exec 게이트웨이 + Circuit Breaker |
 | `lib/nexus/extras-gateway.mjs` | 390 | extras 게이트웨이 (discord/cron/stats) |
-| `lib/nexus/rag-gateway.mjs` | 90 | RAG 게이트웨이 |
+| `lib/nexus/rag-gateway.mjs` | 114 | RAG 게이트웨이 |
 | `lib/nexus/health-gateway.mjs` | 103 | 헬스 게이트웨이 |
-| `lib/rag-engine.mjs` | 694 | RAG 하이브리드 검색 엔진 |
+| `lib/rag-engine.mjs` | 774 | RAG 하이브리드 검색 엔진 |
 | `bin/ask-claude.sh` | 268 | claude -p 래퍼 (크론 진입점) |
 | `bin/jarvis-cron.sh` | 369 | 크론 실행 엔진 |
-| `config/tasks.json` | 1416 | 크론 태스크 설정 |
+| `config/tasks.json` | 1453 | 크론 태스크 설정 |
 | `discord/personas.json` | 13 | 채널 페르소나 설정 |
 | `scripts/system-doctor.sh` | 285 | 자동 시스템 점검 (매일 06:00) |
 | `scripts/gen-system-overview.sh` | 495 | 이 문서 생성 스크립트 |
@@ -431,35 +433,36 @@ Circuit Breaker로 반복 타임아웃 자동 차단
 |--------|------|-----|
 | ai.jarvis.watchdog | 🟢 실행중 | 72437 |
 | ai.jarvis.orchestrator | 🟢 실행중 | 28860 |
-| ai.openclaw.glances | 🟢 실행중 | 764 |
+| ai.openclaw.glances | 🟢 실행중 | 95469 |
 | ai.jarvis.board-agent | 🔴 중지 | - |
 | ai.jarvis.webhook-listener | 🟢 실행중 | 7140 |
-| ai.jarvis.discord-bot | 🟢 실행중 | 87388 |
-| ai.jarvis.board-monitor | 🔴 중지 | - |
+| ai.jarvis.discord-bot | 🟢 실행중 | 13425 |
+| ai.jarvis.board-monitor | 🟢 실행중 | 48047 |
+| ai.jarvis.boram-briefing | 🔴 중지 | - |
 | ai.jarvis.session-summarizer | 🔴 중지 | - |
 | ai.jarvis.commitment-check | 🔴 중지 | - |
 | ai.jarvis.daily-restart | 🔴 중지 | - |
 | ai.jarvis.board-catchup | 🔴 중지 | - |
-| ai.jarvis.rag-watcher | 🟢 실행중 | 54169 |
+| ai.jarvis.rag-watcher | 🟢 실행중 | 54882 |
 | ai.jarvis.event-watcher | 🟢 실행중 | 89744 |
 | ai.jarvis.boot-auth-check | 🔴 중지 | - |
 
-> 마지막 확인: 2026-03-19 18:06:48
+> 마지막 확인: 2026-03-20 13:59:41
 
 ---
 
 ## 11. 최근 변경
 
+- `f04fb32` feat(boram): webhook hallucination 방지 + Owner 채널 감지
+- `27333d7` fix: 잔존 set-e-and-cmd 안티패턴 3건 수정
+- `c6344f7` fix: set-e-and-cmd 안티패턴 2건 수정
+- `89ce201` feat(auditor): set-e-and-cmd 자동 수정 루프 활성화
+- `82accde` fix: watchdog division-by-zero + board-agent wrong model
+- `761d948` fix(deploy-private): 복구 로직 파일 단위로 강화
+- `22a6a91` feat(security): 페어링 코드 기반 사용자 접근 제어
+- `79894b5` fix: rag-quality-check/health/anti-pattern 3종 수정
 - `21830b7` fix(anti-pattern): 전 코드베이스 [[ ]] && cmd → if/fi 일괄 교체
 - `871b72c` fix(board-monitor): set-e 안티패턴 제거 — cleanup 함수 [[]] && → if/fi
-- `590e4eb` fix: bypassRag 태스크 3개 contextFile 복구
-- `162faa1` fix(auto-deploy): staged 변경 있을 때 git merge 거부 방지
-- `4ee28c9` fix: 이전 세션 버그 수정 통합 커밋
-- `99f79c3` chore: tasks.json + cron-auditor.md private 레포 동기화
-- `b50406a` feat: 감사팀·인프라팀 → dev-runner 파이프라인 연결
-- `491f021` fix(resilience): 팀 전수검사 기반 잔존 취약점 3건 수정
-- `9f0fbba` feat(persona): strengthen JARVIS identity across all Discord channels
-- `e9f1a02` fix(bot-heal): macOS sed \n 버그 → python3으로 streaming.js 멀티라인 교체
 
 ---
 

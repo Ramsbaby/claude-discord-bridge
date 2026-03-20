@@ -21,7 +21,7 @@ BOARD_URL="${BOARD_URL:-https://jarvis-board-production.up.railway.app}"
 RESP_TMP="$BOT_HOME/tmp/persona-commenter-resp-$$.json"
 
 mkdir -p "$(dirname "$LOG")" "$BOT_HOME/tmp"
-log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] [persona-commenter] $*" | tee -a "$LOG"; }
+log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] [persona-commenter] $*" >> "$LOG"; }
 
 trap 'rm -f "$RESP_TMP"' EXIT
 
@@ -58,10 +58,11 @@ PERSONA_SYSTEM=$(echo "$PERSONA" | jq -r '.system_prompt')
 PERSONA_POST_TYPES=$(echo "$PERSONA" | jq -r '[.post_types[]? ] | join(",")' 2>/dev/null || echo "")
 PERSONA_KEYWORDS=$(echo "$PERSONA" | jq -r '[.route_keywords[]?] | join(",")' 2>/dev/null || echo "")
 AVOID_TYPES=$(echo "$PERSONA" | jq -r '[.avoid_post_types[]?] | join(",")' 2>/dev/null || echo "")
+AVOID_KEYWORDS=$(echo "$PERSONA" | jq -r '[.avoid_keywords[]?] | join(",")' 2>/dev/null || echo "")
 
-# ── 중복 체크 (DB) ────────────────────────────────────────────────────────────
+# ── 중복 체크 (DB) — posted 상태만 체크 (failed는 재시도 허용) ─────────────────
 EXISTING=$(sqlite3 "$DB" \
-  "SELECT count(*) FROM discussion_comments WHERE discussion_id='${POST_ID//\'/\'\'}' AND persona_id='${PERSONA_ID//\'/\'\'}';")
+  "SELECT count(*) FROM discussion_comments WHERE discussion_id='${POST_ID//\'/\'\'}' AND persona_id='${PERSONA_ID//\'/\'\'}' AND status='posted';")
 if [[ "$EXISTING" != "0" ]]; then
   log "${PERSONA_NAME} 이미 댓글 달음 — post:${POST_ID}"
   exit 0
@@ -90,6 +91,18 @@ if [[ -n "$AVOID_TYPES" ]]; then
   for atype in "${AVOID_ARR[@]}"; do
     if [[ "$POST_TYPE" == "$atype" ]]; then
       log "${PERSONA_NAME} — 회피 타입(${POST_TYPE}), 건너뜀"
+      exit 0
+    fi
+  done
+fi
+
+# avoid_keywords 체크
+if [[ -n "$AVOID_KEYWORDS" ]]; then
+  FULL_TEXT_AK="${POST_TITLE} ${POST_CONTENT}"
+  IFS=',' read -ra AKW_ARR <<< "$AVOID_KEYWORDS"
+  for akw in "${AKW_ARR[@]}"; do
+    if echo "$FULL_TEXT_AK" | grep -qi "$akw" 2>/dev/null; then
+      log "${PERSONA_NAME} — 회피 키워드(${akw}) 감지, 건너뜀"
       exit 0
     fi
   done
@@ -143,14 +156,19 @@ ${EXISTING_COMMENTS}
 ---
 위 게시글에 대한 당신의 의견을 작성해주세요.
 - 당신의 전문 영역에서 핵심 포인트를 짚어주세요.
-- 다른 팀원의 댓글이 있다면 그에 대한 보완 의견도 환영합니다.
-- 실제로 자비스 컴퍼니 팀 회의에서 말하듯 자연스럽고 구체적으로 작성하세요.
-- 반드시 최소 100자 이상 작성하세요."
+- 앞 댓글이 있다면 요약하거나 반복하지 말고, 당신만의 새로운 관점을 추가하세요.
+- 실제로 자비스 컴퍼니 팀 회의에서 말하듯 자연스럽게 작성하세요."
 
 log "${PERSONA_NAME} 댓글 생성 중 — post:${POST_ID} (${POST_TYPE})"
 
-COMMENT_CONTENT=$(echo "$USER_PROMPT" | \
-  claude -p "$PERSONA_SYSTEM" --output-format text 2>/dev/null || echo "")
+MCP_CONFIG="${BOT_HOME}/config/empty-mcp.json"
+COMMENT_CONTENT=$(ANTHROPIC_API_KEY="" CLAUDECODE="" \
+  claude -p "$PERSONA_SYSTEM" --output-format text \
+    --permission-mode bypassPermissions \
+    --strict-mcp-config \
+    --mcp-config "$MCP_CONFIG" \
+    --allowedTools "" \
+    <<< "$USER_PROMPT" 2>/dev/null || echo "")
 
 if [[ -z "$COMMENT_CONTENT" || ${#COMMENT_CONTENT} -lt 20 ]]; then
   log "${PERSONA_NAME} 댓글 생성 실패 또는 너무 짧음"

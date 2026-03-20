@@ -27,12 +27,12 @@ All cron tasks are defined in `config/tasks.json` and executed by `bin/bot-cron.
 | `council-insight` | 23:05 | Cross-team oversight |
 | `finance-monitor` | 08:00 Mon-Fri | Financial monitoring |
 | `ceo-daily-digest` | 22:00 daily | CEO daily digest summary |
-| `boram-daily-schedule` | 07:30 daily | Preply/일정 브리핑 |
+| `personal-schedule-daily` | 07:30 daily | Preply/일정 브리핑 |
 | `bot-self-critique` | 02:45 daily | Bot response self-evaluation |
 | `system-doctor` | 06:00 daily | System diagnostics |
 | `career-extractor` | 00:30 daily | Career data extraction |
 | `oss-maintenance` | 09:15 daily | OSS repo maintenance |
-| `boram-daily-schedule` | 07:30 | Preply lesson briefing |
+| `personal-schedule-daily` | 07:30 | Preply lesson briefing |
 
 ### Weekly / Monthly
 
