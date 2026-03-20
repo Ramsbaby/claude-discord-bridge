@@ -412,7 +412,7 @@ PYEOF
     total=$(echo "$result" | awk '{print $2}')
     if ! [[ "$errors" =~ ^[0-9]+$ ]]; then errors=0; fi
     if ! [[ "$total" =~ ^[0-9]+$ ]]; then total=0; fi
-    if (( errors >= 3 && total > 0 && errors * 100 / total >= 50 )); then
+    if (( errors >= 3 )) && (( total > 0 )) && (( errors * 100 / total >= 50 )); then
         echo "$errors $total"
         return 1
     fi

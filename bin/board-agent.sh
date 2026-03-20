@@ -496,9 +496,16 @@ case "$ACTION" in
     if [[ "$HTTP_RESPONSE" == "200" ]] || [[ "$HTTP_RESPONSE" == "201" ]]; then
       POST_ID=$(jq -r '.id // "?"' $RESP_TMP)
       log "글 작성 완료 (id:$POST_ID): $TITLE"
-      FIELDS=$(jq -n --arg pid "$POST_ID" --arg title "$TITLE" \
-        '[{"name":"게시글 ID","value":$pid,"inline":true},{"name":"제목","value":$title,"inline":false}]')
-      discord_embed "📝 게시판 글 작성 완료" "[게시판 바로가기](https://workgroup.jangwonseok.com)" 10181046 "$FIELDS" "✍️ 자비스 직접 작성"
+      # ── jarvisPostIds에 등록 (벤치마킹 파이프라인용) ──────────────────────────
+      if [[ -f "$SHARED_STATE" && "$POST_ID" != "?" ]]; then
+        jq --arg pid "$POST_ID" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg title "$TITLE" \
+          '.jarvisPostIds = ((.jarvisPostIds // {}) + {($pid): {"createdAt": $ts, "title": $title, "lastChecked": "", "seenCommentIds": []}})' \
+          "$SHARED_STATE" > "${SHARED_STATE}.tmp" && mv "${SHARED_STATE}.tmp" "$SHARED_STATE" 2>/dev/null || true
+      fi
+      POST_URL="https://workgroup.jangwonseok.com/posts/${POST_ID}"
+      FIELDS=$(jq -n --arg title "$TITLE" --arg url "$POST_URL" \
+        '[{"name":"📝 게시글 제목","value":$title,"inline":false},{"name":"🔗 링크","value":$url,"inline":false}]')
+      discord_embed "📝 게시판 글 작성 완료" "[게시글 바로가기](${POST_URL})" 10181046 "$FIELDS" "✍️ 자비스 직접 작성"
     else
       log "글 작성 실패 (HTTP $HTTP_RESPONSE): $(cat $RESP_TMP)"
     fi
@@ -512,3 +519,110 @@ case "$ACTION" in
     log "알 수 없는 액션: $ACTION"
     ;;
 esac
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ── 벤치마킹 파이프라인 — 자비스 게시글의 타인 댓글 수집 & 인사이트 추출 ──────────
+# ══════════════════════════════════════════════════════════════════════════════
+JARVIS_POST_IDS=$(jq -r '(.jarvisPostIds // {}) | keys[]' "$SHARED_STATE" 2>/dev/null || true)
+
+if [[ -z "$JARVIS_POST_IDS" ]]; then
+  log "[benchmark] 자비스 게시글 없음. 파이프라인 건너뜀."
+else
+  INSIGHTS_DIR="$BOT_HOME/context/insights"
+  mkdir -p "$INSIGHTS_DIR"
+  INSIGHTS_FILE="$INSIGHTS_DIR/board-insights.md"
+  if [[ ! -f "$INSIGHTS_FILE" ]]; then printf "# 워크그룹 게시판 벤치마킹 인사이트\n\n> board-agent.sh 자동 수집 — 자비스 게시글에 달린 유용한 커뮤니티 답변\n\n" > "$INSIGHTS_FILE"; fi
+
+  for JPOST_ID in $JARVIS_POST_IDS; do
+    POST_META=$(jq -r --arg pid "$JPOST_ID" '.jarvisPostIds[$pid] // {}' "$SHARED_STATE" 2>/dev/null)
+    SEEN_IDS=$(echo "$POST_META" | jq -c '.seenCommentIds // []')
+    POST_TITLE=$(echo "$POST_META" | jq -r '.title // "?"')
+
+    # 게시글 상세 조회
+    POST_DETAIL=$(api_get "/api/posts/${JPOST_ID}" 2>/dev/null || echo '{}')
+    COMMENT_COUNT=$(echo "$POST_DETAIL" | jq '(.comments // []) | length')
+    if [[ "$COMMENT_COUNT" -eq 0 ]]; then continue; fi
+
+    # 타인(비자비스) 댓글 중 아직 안 본 것만 추출
+    NEW_COMMENTS=$(echo "$POST_DETAIL" | jq -c \
+      --argjson seen "$SEEN_IDS" '
+      (.comments // [])[] |
+      select(
+        ((.agent.name // "" | ascii_downcase) | test("자비스|jarvis") | not) and
+        ((.user.name // "" | ascii_downcase) | test("자비스|jarvis") | not) and
+        ((.id // "") as $cid | ($seen | index($cid)) == null)
+      ) |
+      {id: .id, author: (.agent.displayName // .user.displayName // .user.name // "?"), content: ((.content // "") | .[0:400])}
+    ' 2>/dev/null | head -5)
+
+    if [[ -z "$NEW_COMMENTS" ]]; then continue; fi
+
+    NEW_COMMENT_COUNT=$(echo "$NEW_COMMENTS" | grep -c '"id"' 2>/dev/null || echo 0)
+    log "[benchmark] 게시글 $JPOST_ID 에 새 댓글 ${NEW_COMMENT_COUNT}개 발견."
+
+    # Claude에게 인사이트 판단 요청
+    BENCH_PROMPT="자비스의 게시글에 커뮤니티 구성원들이 답변했습니다.
+유용한 기술 인사이트, 벤치마킹 아이디어, 실용적 해법이 있으면 추출해주세요.
+
+게시글 제목: ${POST_TITLE}
+
+새 댓글 목록:
+$(echo "$NEW_COMMENTS" | jq -r '"- [\(.author)]: \(.content)"' 2>/dev/null)
+
+아래 JSON 형식으로만 답하세요:
+{\"hasInsight\": true/false, \"summary\": \"요약 (없으면 빈 문자열)\", \"applicability\": \"자비스 시스템에 적용 가능한 부분 (없으면 빈 문자열)\"}"
+
+    BENCH_RESP=$(echo "$BENCH_PROMPT" | claude -p \
+      --model claude-haiku-3-5 \
+      --max-turns 1 \
+      --output-format text \
+      2>/dev/null | python3 -c "
+import sys, json, re
+t = sys.stdin.read()
+for m in re.finditer(r'\{.+\}', t, re.DOTALL):
+    try:
+        d = json.loads(m.group())
+        if 'hasInsight' in d:
+            print(json.dumps(d, ensure_ascii=False))
+            break
+    except: pass
+" 2>/dev/null || echo '{"hasInsight":false}')
+
+    HAS_INSIGHT=$(echo "$BENCH_RESP" | jq -r '.hasInsight // false')
+
+    # 본 댓글 ID 업데이트 (인사이트 여부 무관)
+    NEW_IDS=$(echo "$NEW_COMMENTS" | jq -r '.id' 2>/dev/null | jq -Rs 'split("\n") | map(select(length>0))' 2>/dev/null || echo '[]')
+    jq --arg pid "$JPOST_ID" --argjson nids "$NEW_IDS" \
+      '.jarvisPostIds[$pid].seenCommentIds = ((.jarvisPostIds[$pid].seenCommentIds // []) + $nids | unique) |
+       .jarvisPostIds[$pid].lastChecked = (now | todate)' \
+      "$SHARED_STATE" > "${SHARED_STATE}.tmp" && mv "${SHARED_STATE}.tmp" "$SHARED_STATE" 2>/dev/null || true
+
+    if [[ "$HAS_INSIGHT" == "true" ]]; then
+      SUMMARY=$(echo "$BENCH_RESP" | jq -r '.summary // ""')
+      APPLICABILITY=$(echo "$BENCH_RESP" | jq -r '.applicability // ""')
+      POST_URL="https://workgroup.jangwonseok.com/posts/${JPOST_ID}"
+      TIMESTAMP=$(date '+%Y-%m-%d %H:%M')
+
+      # board-insights.md에 기록
+      printf "\n## %s — %s\n**게시글:** [%s](%s)\n**요약:** %s\n**적용 포인트:** %s\n\n" \
+        "$TIMESTAMP" "$POST_TITLE" "$POST_TITLE" "$POST_URL" "$SUMMARY" "$APPLICABILITY" \
+        >> "$INSIGHTS_FILE"
+
+      log "[benchmark] 인사이트 기록: $SUMMARY"
+
+      # Discord 알림
+      FIELDS=$(jq -n \
+        --arg post "$POST_TITLE" \
+        --arg url "$POST_URL" \
+        --arg summary "$SUMMARY" \
+        --arg apply "$APPLICABILITY" \
+        '[
+          {"name":"📝 게시글","value":("[\($post)](\($url))"),"inline":false},
+          {"name":"💡 인사이트 요약","value":$summary,"inline":false},
+          {"name":"🔧 적용 포인트","value":$apply,"inline":false}
+        ]')
+      discord_embed "🔬 벤치마킹 인사이트 발견" "커뮤니티 답변에서 유용한 내용을 추출했습니다." 3066993 "$FIELDS"
+    fi
+  done
+  log "[benchmark] 파이프라인 완료."
+fi
