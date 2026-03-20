@@ -53,9 +53,27 @@ cleanup_deploy() {
   echo "▶ 민감 파일 복원 중..."
   local restore_fail=0
   for f in "${PRIVATE_FILES[@]}"; do
-    if [[ -e "$SAFE_BACKUP_DIR/$f" && ! -e "$BOT_HOME/$f" ]]; then
-      mkdir -p "$(dirname "$BOT_HOME/$f")" 2>/dev/null
-      if cp -r "$SAFE_BACKUP_DIR/$f" "$BOT_HOME/$f"; then
+    local src="$SAFE_BACKUP_DIR/$f"
+    local dst="$BOT_HOME/$f"
+    if [[ ! -e "$src" ]]; then continue; fi
+    # 디렉토리면 내부 파일 단위로 복원 (디렉토리 존재해도 내부 파일 누락 케이스 대응)
+    if [[ -d "$src" ]]; then
+      while IFS= read -r -d '' src_file; do
+        local rel="${src_file#$src/}"
+        local dst_file="$dst/$rel"
+        if [[ ! -e "$dst_file" ]]; then
+          mkdir -p "$(dirname "$dst_file")" 2>/dev/null
+          if cp "$src_file" "$dst_file"; then
+            echo "  ♻️  복원: $f/$rel"
+          else
+            echo "  ❌ 복원 실패: $f/$rel" >&2
+            restore_fail=$((restore_fail + 1))
+          fi
+        fi
+      done < <(find "$src" -type f -print0)
+    elif [[ ! -e "$dst" ]]; then
+      mkdir -p "$(dirname "$dst")" 2>/dev/null
+      if cp "$src" "$dst"; then
         echo "  ♻️  복원: $f"
       else
         echo "  ❌ 복원 실패: $f" >&2
