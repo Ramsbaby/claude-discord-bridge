@@ -1,0 +1,113 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500" viewBox="0 0 800 500">
+  <defs>
+    <marker id="a"  markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#58a6ff"/></marker>
+    <marker id="ag" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#3fb950"/></marker>
+    <marker id="ao" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#f0883e"/></marker>
+  </defs>
+  <rect width="800" height="500" fill="#0d1117"/>
+
+  <!-- 제목 -->
+  <text x="400" y="22" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="15" font-weight="700" fill="#e6edf3">Jarvis — 시스템 아키텍처</text>
+  <text x="400" y="38" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="10" fill="#6e7681">claude -p (Claude Max, $0/호출)  ·  Discord  ·  크론 76개  ·  LanceDB RAG  ·  4계층 자가복구</text>
+
+  <!-- 입력 레이어 배경 -->
+  <rect x="10" y="48" width="780" height="88" rx="6" fill="#161b22" stroke="#21262d" stroke-width="1"/>
+  <text x="18" y="62" font-family="monospace" font-size="9" font-weight="700" fill="#6e7681" letter-spacing="1">입력 레이어</text>
+
+  <!-- 입력 1: Discord -->
+  <rect x="18" y="66" width="177" height="62" rx="5" fill="#0d1117" stroke="#388bfd" stroke-width="1.5"/>
+  <text x="106" y="84" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="11" font-weight="700" fill="#58a6ff">Discord 봇</text>
+  <text x="106" y="98" text-anchor="middle" font-family="monospace" font-size="9" fill="#8b949e">#general · #alerts · DM</text>
+  <text x="106" y="111" text-anchor="middle" font-family="monospace" font-size="9" fill="#8b949e">슬래시 명령어 · DiscordJS v14</text>
+
+  <!-- 입력 2: Cron -->
+  <rect x="205" y="66" width="177" height="62" rx="5" fill="#0d1117" stroke="#388bfd" stroke-width="1.5"/>
+  <text x="293" y="84" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="11" font-weight="700" fill="#58a6ff">크론 시스템</text>
+  <text x="293" y="98" text-anchor="middle" font-family="monospace" font-size="9" fill="#8b949e">76개 태스크 · tasks.json</text>
+  <text x="293" y="111" text-anchor="middle" font-family="monospace" font-size="9" fill="#8b949e">jarvis-cron.sh · 12개 팀</text>
+
+  <!-- 입력 3: CLI -->
+  <rect x="392" y="66" width="177" height="62" rx="5" fill="#0d1117" stroke="#388bfd" stroke-width="1.5"/>
+  <text x="480" y="84" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="11" font-weight="700" fill="#58a6ff">CLI / 웹훅</text>
+  <text x="480" y="98" text-anchor="middle" font-family="monospace" font-size="9" fill="#8b949e">ask-claude.sh · 트리거</text>
+  <text x="480" y="111" text-anchor="middle" font-family="monospace" font-size="9" fill="#8b949e">HTTP · macOS 단축키</text>
+
+  <!-- 입력 4: Apple/Google -->
+  <rect x="579" y="66" width="203" height="62" rx="5" fill="#0d1117" stroke="#388bfd" stroke-width="1.5"/>
+  <text x="680" y="84" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="11" font-weight="700" fill="#58a6ff">Apple / Google</text>
+  <text x="680" y="98" text-anchor="middle" font-family="monospace" font-size="9" fill="#8b949e">메모(memo) · 미리 알림</text>
+  <text x="680" y="111" text-anchor="middle" font-family="monospace" font-size="9" fill="#8b949e">Google Tasks · 캘린더</text>
+
+  <!-- 아래 화살표 -->
+  <line x1="106" y1="128" x2="106" y2="147" stroke="#388bfd" stroke-width="1.2" marker-end="url(#a)"/>
+  <line x1="293" y1="128" x2="293" y2="147" stroke="#388bfd" stroke-width="1.2" marker-end="url(#a)"/>
+  <line x1="480" y1="128" x2="480" y2="147" stroke="#388bfd" stroke-width="1.2" marker-end="url(#a)"/>
+  <line x1="680" y1="128" x2="680" y2="147" stroke="#388bfd" stroke-width="1.2" marker-end="url(#a)"/>
+
+  <!-- 핵심 엔진 배경 -->
+  <rect x="10" y="150" width="780" height="168" rx="6" fill="#1a2840" stroke="#388bfd" stroke-width="1.5"/>
+  <text x="18" y="164" font-family="monospace" font-size="9" font-weight="700" fill="#388bfd" letter-spacing="1">핵심 엔진</text>
+
+  <!-- 서브박스 1 -->
+  <rect x="18" y="170" width="224" height="64" rx="5" fill="#0d1117" stroke="#21262d" stroke-width="1"/>
+  <text x="130" y="188" text-anchor="middle" font-family="monospace" font-size="11" font-weight="700" fill="#e6edf3">discord-bot.js</text>
+  <text x="130" y="203" text-anchor="middle" font-family="monospace" font-size="9" fill="#8b949e">이벤트 디스패치 · 채널 라우팅</text>
+  <text x="130" y="218" text-anchor="middle" font-family="monospace" font-size="9" fill="#6e7681">채널 가드 · 속도 제한</text>
+
+  <!-- 서브박스 2 -->
+  <rect x="252" y="170" width="224" height="64" rx="5" fill="#0d1117" stroke="#21262d" stroke-width="1"/>
+  <text x="364" y="188" text-anchor="middle" font-family="monospace" font-size="11" font-weight="700" fill="#e6edf3">claude-runner.js</text>
+  <text x="364" y="203" text-anchor="middle" font-family="monospace" font-size="9" fill="#8b949e">subprocess.spawn · 파이프</text>
+  <text x="364" y="218" text-anchor="middle" font-family="monospace" font-size="9" fill="#6e7681">타임아웃 · 재시도 · 스트림</text>
+
+  <!-- 서브박스 3 -->
+  <rect x="486" y="170" width="296" height="64" rx="5" fill="#0d1117" stroke="#21262d" stroke-width="1"/>
+  <text x="634" y="188" text-anchor="middle" font-family="monospace" font-size="11" font-weight="700" fill="#e6edf3">context-builder + RAG 주입</text>
+  <text x="634" y="203" text-anchor="middle" font-family="monospace" font-size="9" fill="#8b949e">rag-engine.mjs · LanceDB 하이브리드</text>
+  <text x="634" y="218" text-anchor="middle" font-family="monospace" font-size="9" fill="#6e7681">CLAUDE.md · health.json · 페르소나</text>
+
+  <!-- claude -p 강조 박스 -->
+  <rect x="18" y="244" width="764" height="66" rx="6" fill="#1a2840" stroke="#388bfd" stroke-width="2"/>
+  <rect x="18" y="244" width="4" height="66" fill="#388bfd" rx="2"/>
+  <text x="400" y="266" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="16" font-weight="700" fill="#79c0ff">claude -p</text>
+  <text x="400" y="284" text-anchor="middle" font-family="monospace" font-size="10" fill="#58a6ff">Claude Max 구독  ·  호출당 $0  ·  API 키 불필요</text>
+  <text x="400" y="300" text-anchor="middle" font-family="monospace" font-size="9" fill="#6e7681">모델: claude-opus-4-6 / claude-sonnet-4-6  ·  200K 컨텍스트  ·  CLAUDE.md 자동 주입</text>
+
+  <!-- 출력 레이어 화살표 -->
+  <path d="M 190,318 L 140,336" fill="none" stroke="#388bfd" stroke-width="1.2" marker-end="url(#a)"/>
+  <path d="M 400,318 L 400,336" fill="none" stroke="#3fb950" stroke-width="1.2" marker-end="url(#ag)"/>
+  <path d="M 610,318 L 660,336" fill="none" stroke="#f0883e" stroke-width="1.2" marker-end="url(#ao)"/>
+
+  <!-- 출력 레이어 배경 -->
+  <rect x="10" y="338" width="780" height="76" rx="6" fill="#161b22" stroke="#21262d" stroke-width="1"/>
+  <text x="18" y="352" font-family="monospace" font-size="9" font-weight="700" fill="#6e7681" letter-spacing="1">출력 레이어</text>
+
+  <!-- 출력 1 -->
+  <rect x="18" y="357" width="230" height="50" rx="5" fill="#0d1117" stroke="#388bfd" stroke-width="1.5"/>
+  <text x="133" y="378" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="11" font-weight="700" fill="#58a6ff">Discord 답변</text>
+  <text x="133" y="395" text-anchor="middle" font-family="monospace" font-size="9" fill="#8b949e">실시간 · 채널 라우팅 · DM</text>
+
+  <!-- 출력 2 -->
+  <rect x="285" y="357" width="230" height="50" rx="5" fill="#0d1117" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="400" y="378" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="11" font-weight="700" fill="#3fb950">리포트</text>
+  <text x="400" y="395" text-anchor="middle" font-family="monospace" font-size="9" fill="#8b949e">스탠드업 · 브리핑 · 헬스 · 이발</text>
+
+  <!-- 출력 3 -->
+  <rect x="552" y="357" width="230" height="50" rx="5" fill="#0d1117" stroke="#f0883e" stroke-width="1.5"/>
+  <text x="667" y="378" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="11" font-weight="700" fill="#f0883e">알림</text>
+  <text x="667" y="395" text-anchor="middle" font-family="monospace" font-size="9" fill="#8b949e">Discord DM + ntfy 푸시 · Galaxy</text>
+
+  <!-- 메모리 / RAG -->
+  <rect x="10" y="424" width="370" height="66" rx="6" fill="#0d2818" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="18" y="438" font-family="monospace" font-size="9" font-weight="700" fill="#3fb950" letter-spacing="1">메모리 / RAG</text>
+  <text x="194" y="453" text-anchor="middle" font-family="monospace" font-size="10" font-weight="700" fill="#56d364">LanceDB · rag-engine.mjs</text>
+  <text x="194" y="467" text-anchor="middle" font-family="monospace" font-size="9" fill="#8b949e">BM25 + 벡터 하이브리드  ·  Obsidian Vault 자동 색인</text>
+  <text x="194" y="481" text-anchor="middle" font-family="monospace" font-size="9" fill="#3fb950">98% 토큰 압축: 315K → 5.4K</text>
+
+  <!-- 자가복구 -->
+  <rect x="390" y="424" width="400" height="66" rx="6" fill="#2a1505" stroke="#f0883e" stroke-width="1.5"/>
+  <text x="398" y="438" font-family="monospace" font-size="9" font-weight="700" fill="#f0883e" letter-spacing="1">자가복구 (4계층)</text>
+  <text x="590" y="453" text-anchor="middle" font-family="monospace" font-size="9" fill="#8b949e">L0 사전검사  ·  L1 launchd KeepAlive  ·  L2 감시자(180초)  ·  L3 가디언(*/3분)</text>
+  <text x="590" y="467" text-anchor="middle" font-family="monospace" font-size="9" fill="#8b949e">macOS launchd  +  Linux Docker  ·  충돌 시 자동 재시작</text>
+  <text x="590" y="481" text-anchor="middle" font-family="monospace" font-size="9" fill="#f0883e">사람 개입 불필요</text>
+</svg>
