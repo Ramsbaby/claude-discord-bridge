@@ -1,0 +1,202 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="520" viewBox="0 0 800 520">
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#58a6ff"/>
+    </marker>
+    <marker id="arrow-gray" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#30363d"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="800" height="520" fill="#0d1117" rx="12"/>
+
+  <!-- ============================================================ -->
+  <!-- TITLE -->
+  <!-- ============================================================ -->
+  <text x="400" y="28" font-family="'Segoe UI', -apple-system, sans-serif"
+        font-size="14" font-weight="600" fill="#8b949e" text-anchor="middle"
+        letter-spacing="2">JARVIS SYSTEM ARCHITECTURE</text>
+  <line x1="40" y1="38" x2="760" y2="38" stroke="#21262d" stroke-width="1"/>
+
+  <!-- ============================================================ -->
+  <!-- SECTION A: Discord Message Flow (left column) -->
+  <!-- ============================================================ -->
+  <text x="55" y="62" font-family="'Segoe UI', -apple-system, sans-serif"
+        font-size="11" fill="#58a6ff" font-weight="600" letter-spacing="1">DISCORD MESSAGE FLOW</text>
+
+  <!-- You -->
+  <rect x="40" y="72" width="80" height="34" fill="#1f6feb" rx="6"/>
+  <text x="80" y="94" font-family="'Segoe UI', -apple-system, sans-serif"
+        font-size="12" font-weight="600" fill="#ffffff" text-anchor="middle">You</text>
+
+  <!-- Arrow: You → discord-bot.js -->
+  <line x1="120" y1="89" x2="158" y2="89" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="139" y="84" font-family="'Segoe UI', -apple-system, sans-serif"
+        font-size="9" fill="#8b949e" text-anchor="middle">msg</text>
+
+  <!-- discord-bot.js -->
+  <rect x="160" y="72" width="110" height="34" fill="#1f6feb" rx="6"/>
+  <text x="215" y="94" font-family="'Segoe UI', -apple-system, sans-serif"
+        font-size="11" font-weight="600" fill="#ffffff" text-anchor="middle">discord-bot.js</text>
+
+  <!-- Arrow: discord-bot.js → handlers.js -->
+  <line x1="270" y1="89" x2="308" y2="89" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- handlers.js -->
+  <rect x="310" y="72" width="100" height="34" fill="#1f6feb" rx="6"/>
+  <text x="360" y="94" font-family="'Segoe UI', -apple-system, sans-serif"
+        font-size="11" font-weight="600" fill="#ffffff" text-anchor="middle">handlers.js</text>
+
+  <!-- Arrow: handlers.js → claude-runner.js -->
+  <line x1="410" y1="89" x2="448" y2="89" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- claude-runner.js -->
+  <rect x="450" y="72" width="120" height="34" fill="#1f6feb" rx="6"/>
+  <text x="510" y="94" font-family="'Segoe UI', -apple-system, sans-serif"
+        font-size="11" font-weight="600" fill="#ffffff" text-anchor="middle">claude-runner.js</text>
+
+  <!-- Arrow: claude-runner.js → claude -p -->
+  <line x1="510" y1="106" x2="510" y2="132" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- claude -p -->
+  <rect x="450" y="134" width="120" height="34" fill="#238636" rx="6"/>
+  <text x="510" y="156" font-family="'Segoe UI', -apple-system, sans-serif"
+        font-size="12" font-weight="700" fill="#ffffff" text-anchor="middle">claude -p</text>
+
+  <!-- Arrow: claude -p → Nexus CIG -->
+  <line x1="510" y1="168" x2="510" y2="194" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Nexus CIG -->
+  <rect x="440" y="196" width="140" height="44" fill="#6e40c9" rx="6"/>
+  <text x="510" y="215" font-family="'Segoe UI', -apple-system, sans-serif"
+        font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle">Nexus CIG (MCP)</text>
+  <text x="510" y="232" font-family="'Segoe UI', -apple-system, sans-serif"
+        font-size="10" fill="#c8b9f7" text-anchor="middle">98% compression</text>
+
+  <!-- Arrow: Nexus CIG → Discord reply -->
+  <line x1="440" y1="218" x2="372" y2="218" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Discord reply -->
+  <rect x="260" y="204" width="108" height="28" fill="#1f6feb" rx="6"/>
+  <text x="314" y="222" font-family="'Segoe UI', -apple-system, sans-serif"
+        font-size="10" font-weight="600" fill="#ffffff" text-anchor="middle">Discord reply</text>
+
+  <!-- Arrow: Nexus CIG → RAG index -->
+  <line x1="580" y1="218" x2="614" y2="218" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- RAG index -->
+  <rect x="616" y="204" width="90" height="28" fill="#1f6feb" rx="6"/>
+  <text x="661" y="222" font-family="'Segoe UI', -apple-system, sans-serif"
+        font-size="10" font-weight="600" fill="#ffffff" text-anchor="middle">RAG index</text>
+
+  <!-- ============================================================ -->
+  <!-- SECTION B: Cron Flow (top band) -->
+  <!-- ============================================================ -->
+  <line x1="40" y1="264" x2="760" y2="264" stroke="#21262d" stroke-width="1" stroke-dasharray="4,4"/>
+  <text x="55" y="284" font-family="'Segoe UI', -apple-system, sans-serif"
+        font-size="11" fill="#58a6ff" font-weight="600" letter-spacing="1">CRON SCHEDULER FLOW</text>
+
+  <!-- Cron scheduler -->
+  <rect x="40" y="294" width="110" height="34" fill="#1f6feb" rx="6"/>
+  <text x="95" y="316" font-family="'Segoe UI', -apple-system, sans-serif"
+        font-size="11" font-weight="600" fill="#ffffff" text-anchor="middle">Cron scheduler</text>
+
+  <!-- Arrow -->
+  <line x1="150" y1="311" x2="188" y2="311" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- jarvis-cron.sh -->
+  <rect x="190" y="294" width="110" height="34" fill="#1f6feb" rx="6"/>
+  <text x="245" y="316" font-family="'Segoe UI', -apple-system, sans-serif"
+        font-size="11" font-weight="600" fill="#ffffff" text-anchor="middle">jarvis-cron.sh</text>
+
+  <!-- Arrow -->
+  <line x1="300" y1="311" x2="338" y2="311" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- tasks.json -->
+  <rect x="340" y="294" width="90" height="34" fill="#1f6feb" rx="6"/>
+  <text x="385" y="316" font-family="'Segoe UI', -apple-system, sans-serif"
+        font-size="11" font-weight="600" fill="#ffffff" text-anchor="middle">tasks.json</text>
+
+  <!-- Arrow -->
+  <line x1="430" y1="311" x2="468" y2="311" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- claude -p (cron) -->
+  <rect x="470" y="294" width="90" height="34" fill="#238636" rx="6"/>
+  <text x="515" y="316" font-family="'Segoe UI', -apple-system, sans-serif"
+        font-size="12" font-weight="700" fill="#ffffff" text-anchor="middle">claude -p</text>
+
+  <!-- Arrow cron → Discord -->
+  <line x1="560" y1="311" x2="588" y2="311" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Outputs box -->
+  <rect x="590" y="286" width="150" height="50" fill="#161b22" rx="6" stroke="#30363d" stroke-width="1"/>
+  <text x="665" y="305" font-family="'Segoe UI', -apple-system, sans-serif"
+        font-size="10" fill="#8b949e" text-anchor="middle">Discord  ·  Obsidian</text>
+  <text x="665" y="323" font-family="'Segoe UI', -apple-system, sans-serif"
+        font-size="10" fill="#8b949e" text-anchor="middle">RAG index  ·  decisions/</text>
+
+  <!-- ============================================================ -->
+  <!-- SECTION C: Self-Healing Layers (bottom band) -->
+  <!-- ============================================================ -->
+  <line x1="40" y1="360" x2="760" y2="360" stroke="#21262d" stroke-width="1" stroke-dasharray="4,4"/>
+  <text x="55" y="380" font-family="'Segoe UI', -apple-system, sans-serif"
+        font-size="11" fill="#58a6ff" font-weight="600" letter-spacing="1">SELF-HEALING — 4 LAYERS</text>
+
+  <!-- Layer 0 -->
+  <rect x="40" y="392" width="160" height="76" fill="#161b22" rx="8" stroke="#1f6feb" stroke-width="1.5"/>
+  <text x="120" y="412" font-family="'Segoe UI', -apple-system, sans-serif"
+        font-size="11" font-weight="700" fill="#58a6ff" text-anchor="middle">Layer 0 · Preflight</text>
+  <text x="120" y="430" font-family="'Segoe UI', -apple-system, sans-serif"
+        font-size="10" fill="#8b949e" text-anchor="middle">bot-preflight.sh</text>
+  <text x="120" y="446" font-family="'Segoe UI', -apple-system, sans-serif"
+        font-size="10" fill="#8b949e" text-anchor="middle">validates config</text>
+  <text x="120" y="462" font-family="'Segoe UI', -apple-system, sans-serif"
+        font-size="10" fill="#8b949e" text-anchor="middle">Claude auto-fixes errors</text>
+
+  <!-- Arrow between layers -->
+  <line x1="200" y1="430" x2="218" y2="430" stroke="#30363d" stroke-width="1.5" marker-end="url(#arrow-gray)"/>
+
+  <!-- Layer 1 -->
+  <rect x="220" y="392" width="160" height="76" fill="#161b22" rx="8" stroke="#1f6feb" stroke-width="1.5"/>
+  <text x="300" y="412" font-family="'Segoe UI', -apple-system, sans-serif"
+        font-size="11" font-weight="700" fill="#58a6ff" text-anchor="middle">Layer 1 · OS-level</text>
+  <text x="300" y="430" font-family="'Segoe UI', -apple-system, sans-serif"
+        font-size="10" fill="#8b949e" text-anchor="middle">launchd KeepAlive</text>
+  <text x="300" y="446" font-family="'Segoe UI', -apple-system, sans-serif"
+        font-size="10" fill="#8b949e" text-anchor="middle">Docker restart:always</text>
+  <text x="300" y="462" font-family="'Segoe UI', -apple-system, sans-serif"
+        font-size="10" fill="#8b949e" text-anchor="middle">restarts on any crash</text>
+
+  <!-- Arrow between layers -->
+  <line x1="380" y1="430" x2="398" y2="430" stroke="#30363d" stroke-width="1.5" marker-end="url(#arrow-gray)"/>
+
+  <!-- Layer 2 -->
+  <rect x="400" y="392" width="160" height="76" fill="#161b22" rx="8" stroke="#1f6feb" stroke-width="1.5"/>
+  <text x="480" y="412" font-family="'Segoe UI', -apple-system, sans-serif"
+        font-size="11" font-weight="700" fill="#58a6ff" text-anchor="middle">Layer 2 · Watchdog</text>
+  <text x="480" y="430" font-family="'Segoe UI', -apple-system, sans-serif"
+        font-size="10" fill="#8b949e" text-anchor="middle">watchdog.sh</text>
+  <text x="480" y="446" font-family="'Segoe UI', -apple-system, sans-serif"
+        font-size="10" fill="#8b949e" text-anchor="middle">log freshness check</text>
+  <text x="480" y="462" font-family="'Segoe UI', -apple-system, sans-serif"
+        font-size="10" fill="#8b949e" text-anchor="middle">every 3 minutes</text>
+
+  <!-- Arrow between layers -->
+  <line x1="560" y1="430" x2="578" y2="430" stroke="#30363d" stroke-width="1.5" marker-end="url(#arrow-gray)"/>
+
+  <!-- Layer 3 -->
+  <rect x="580" y="392" width="160" height="76" fill="#161b22" rx="8" stroke="#1f6feb" stroke-width="1.5"/>
+  <text x="660" y="412" font-family="'Segoe UI', -apple-system, sans-serif"
+        font-size="11" font-weight="700" fill="#58a6ff" text-anchor="middle">Layer 3 · Guardian</text>
+  <text x="660" y="430" font-family="'Segoe UI', -apple-system, sans-serif"
+        font-size="10" fill="#8b949e" text-anchor="middle">launchd-guardian.sh</text>
+  <text x="660" y="446" font-family="'Segoe UI', -apple-system, sans-serif"
+        font-size="10" fill="#8b949e" text-anchor="middle">re-registers agents</text>
+  <text x="660" y="462" font-family="'Segoe UI', -apple-system, sans-serif"
+        font-size="10" fill="#8b949e" text-anchor="middle">every 3 minutes</text>
+
+  <!-- Footer -->
+  <text x="400" y="508" font-family="'Segoe UI', -apple-system, sans-serif"
+        font-size="10" fill="#30363d" text-anchor="middle">Ramsbaby/jarvis — 76 cron tasks · 12 AI teams · $0/month extra</text>
+</svg>
