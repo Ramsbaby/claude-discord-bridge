@@ -36,7 +36,7 @@ jobs:
           test -f discord/.env.example        && echo "✅ .env.example"
           echo "Core file check passed"
 
-      - name: JS syntax check
+      - name: JS syntax check (.js files)
         run: |
           echo "Checking JavaScript syntax..."
           find discord -name "*.js" -not -path "*/node_modules/*" | while read f; do
@@ -44,11 +44,36 @@ jobs:
           done
           echo "JS syntax check passed"
 
-      - name: Shell script syntax check
+      - name: JS syntax check (.mjs files)
+        run: |
+          echo "Checking ES module syntax..."
+          for f in \
+            lib/rag-engine.mjs \
+            lib/mcp-nexus.mjs \
+            scripts/discord-visual.mjs \
+            discord/lib/claude-runner.mjs; do
+            if [ -f "$f" ]; then
+              node --check "$f" && echo "✅ $f" || { echo "❌ $f"; exit 1; }
+            fi
+          done
+          # Also check any other .mjs files found in lib/ and scripts/
+          find lib scripts discord -name "*.mjs" -not -path "*/node_modules/*" 2>/dev/null | while read f; do
+            node --check "$f" && echo "✅ $f" || { echo "❌ $f"; exit 1; }
+          done
+          echo "MJS syntax check passed"
+
+      - name: Shell script syntax check (bash -n)
         run: |
           echo "Checking shell script syntax..."
+          # Check top-level known scripts
           for f in install.sh setup.sh docker-entrypoint.sh; do
             [ -f "$f" ] && bash -n "$f" && echo "✅ $f"
+          done
+          # Check all .sh files recursively, excluding node_modules and .git
+          find . -name "*.sh" \
+            -not -path "*/node_modules/*" \
+            -not -path "*/.git/*" | while read f; do
+            bash -n "$f" && echo "✅ $f" || { echo "❌ $f"; exit 1; }
           done
           echo "Shell syntax check passed"
 
