@@ -1,146 +1,117 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 400" width="800" height="400">
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500" viewBox="0 0 800 500">
   <defs>
-    <marker id="arr" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
-      <polygon points="0 0,8 3,0 6" fill="#58a6ff"/>
-    </marker>
-    <marker id="arr-g" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
-      <polygon points="0 0,8 3,0 6" fill="#3fb950"/>
-    </marker>
-    <marker id="arr-o" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
-      <polygon points="0 0,8 3,0 6" fill="#f0883e"/>
-    </marker>
+    <marker id="a"  markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#58a6ff"/></marker>
+    <marker id="ag" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#3fb950"/></marker>
+    <marker id="ao" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#f0883e"/></marker>
+    <marker id="ap" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#a371f7"/></marker>
+    <marker id="ad" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#6e7681"/></marker>
   </defs>
 
-  <rect width="800" height="400" fill="#0d1117"/>
+  <!-- Background -->
+  <rect width="800" height="500" fill="#0d1117"/>
 
-  <!-- Title -->
-  <text x="400" y="28" text-anchor="middle"
-    font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif"
-    font-size="14" font-weight="700" fill="#e6edf3" letter-spacing="0.5">Jarvis — Architecture</text>
-  <text x="400" y="44" text-anchor="middle"
-    font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif"
-    font-size="10" fill="#8b949e">claude -p (Claude Max, no API cost)  ·  Discord  ·  cron  ·  local RAG  ·  self-healing</text>
+  <!-- ── Title ── -->
+  <text x="400" y="22" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="15" font-weight="700" fill="#e6edf3">Jarvis — System Architecture</text>
+  <text x="400" y="38" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="10" fill="#6e7681">claude -p (Claude Max, $0/call)  ·  Discord  ·  76 cron tasks  ·  LanceDB RAG  ·  4-layer self-healing</text>
 
-  <!-- ── INPUT COLUMN ── -->
-  <!-- Discord -->
-  <rect x="20" y="68" width="140" height="54" rx="6" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
-  <text x="90" y="90" text-anchor="middle"
-    font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif"
-    font-size="12" font-weight="600" fill="#58a6ff">Discord</text>
-  <text x="90" y="107" text-anchor="middle"
-    font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif"
-    font-size="10" fill="#8b949e">user messages, slash cmds</text>
+  <!-- ── ZONE A: INPUT LAYER background ── -->
+  <rect x="10" y="48" width="780" height="88" rx="6" fill="#161b22" stroke="#21262d" stroke-width="1"/>
+  <text x="18" y="62" font-family="monospace" font-size="9" font-weight="700" fill="#6e7681" letter-spacing="1">INPUT LAYER</text>
 
-  <!-- Cron -->
-  <rect x="20" y="140" width="140" height="54" rx="6" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
-  <text x="90" y="162" text-anchor="middle"
-    font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif"
-    font-size="12" font-weight="600" fill="#58a6ff">Cron (76 tasks)</text>
-  <text x="90" y="179" text-anchor="middle"
-    font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif"
-    font-size="10" fill="#8b949e">jarvis-cron.sh, tasks.json</text>
+  <!-- INPUT 1: Discord -->
+  <rect x="18" y="66" width="177" height="62" rx="5" fill="#0d1117" stroke="#388bfd" stroke-width="1.5"/>
+  <text x="106" y="84" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="11" font-weight="700" fill="#58a6ff">Discord Bot</text>
+  <text x="106" y="98" text-anchor="middle" font-family="monospace" font-size="9" fill="#8b949e">#general · #alerts · DM</text>
+  <text x="106" y="111" text-anchor="middle" font-family="monospace" font-size="9" fill="#8b949e">slash cmds · DiscordJS v14</text>
 
-  <!-- CLI -->
-  <rect x="20" y="212" width="140" height="54" rx="6" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
-  <text x="90" y="234" text-anchor="middle"
-    font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif"
-    font-size="12" font-weight="600" fill="#58a6ff">CLI / Webhooks</text>
-  <text x="90" y="251" text-anchor="middle"
-    font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif"
-    font-size="10" fill="#8b949e">ask-claude.sh, triggers</text>
+  <!-- INPUT 2: Cron -->
+  <rect x="205" y="66" width="177" height="62" rx="5" fill="#0d1117" stroke="#388bfd" stroke-width="1.5"/>
+  <text x="293" y="84" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="11" font-weight="700" fill="#58a6ff">Cron System</text>
+  <text x="293" y="98" text-anchor="middle" font-family="monospace" font-size="9" fill="#8b949e">76 tasks · tasks.json</text>
+  <text x="293" y="111" text-anchor="middle" font-family="monospace" font-size="9" fill="#8b949e">jarvis-cron.sh · 12 teams</text>
 
-  <!-- ── ARROWS: inputs → core ── -->
-  <line x1="160" y1="95" x2="218" y2="95" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#arr)"/>
-  <line x1="160" y1="167" x2="218" y2="167" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#arr)"/>
-  <line x1="160" y1="239" x2="218" y2="239" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#arr)"/>
+  <!-- INPUT 3: CLI -->
+  <rect x="392" y="66" width="177" height="62" rx="5" fill="#0d1117" stroke="#388bfd" stroke-width="1.5"/>
+  <text x="480" y="84" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="11" font-weight="700" fill="#58a6ff">CLI / Webhooks</text>
+  <text x="480" y="98" text-anchor="middle" font-family="monospace" font-size="9" fill="#8b949e">ask-claude.sh · triggers</text>
+  <text x="480" y="111" text-anchor="middle" font-family="monospace" font-size="9" fill="#8b949e">HTTP · macOS shortcuts</text>
 
-  <!-- ── CORE ENGINE ── -->
-  <rect x="222" y="58" width="194" height="214" rx="10" fill="#161b22" stroke="#388bfd" stroke-width="2"/>
-  <text x="319" y="80" text-anchor="middle"
-    font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif"
-    font-size="13" font-weight="700" fill="#388bfd">Core Engine</text>
+  <!-- INPUT 4: Apple/Google -->
+  <rect x="579" y="66" width="203" height="62" rx="5" fill="#0d1117" stroke="#388bfd" stroke-width="1.5"/>
+  <text x="680" y="84" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="11" font-weight="700" fill="#58a6ff">Apple / Google</text>
+  <text x="680" y="98" text-anchor="middle" font-family="monospace" font-size="9" fill="#8b949e">Notes (memo) · Reminders</text>
+  <text x="680" y="111" text-anchor="middle" font-family="monospace" font-size="9" fill="#8b949e">Google Tasks · Calendar</text>
 
-  <rect x="234" y="90" width="170" height="34" rx="5" fill="#0d1117" stroke="#21262d" stroke-width="1"/>
-  <text x="319" y="112" text-anchor="middle"
-    font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif"
-    font-size="11" fill="#e6edf3">discord-bot.js</text>
+  <!-- Input → Core arrows (vertical, each from box center bottom) -->
+  <line x1="106" y1="128" x2="106" y2="147" stroke="#388bfd" stroke-width="1.2" marker-end="url(#a)"/>
+  <line x1="293" y1="128" x2="293" y2="147" stroke="#388bfd" stroke-width="1.2" marker-end="url(#a)"/>
+  <line x1="480" y1="128" x2="480" y2="147" stroke="#388bfd" stroke-width="1.2" marker-end="url(#a)"/>
+  <line x1="680" y1="128" x2="680" y2="147" stroke="#388bfd" stroke-width="1.2" marker-end="url(#a)"/>
 
-  <rect x="234" y="132" width="170" height="34" rx="5" fill="#0d1117" stroke="#21262d" stroke-width="1"/>
-  <text x="319" y="154" text-anchor="middle"
-    font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif"
-    font-size="11" fill="#e6edf3">claude-runner.js</text>
+  <!-- ── ZONE B: CORE ENGINE background ── -->
+  <rect x="10" y="150" width="780" height="168" rx="6" fill="#1a2840" stroke="#388bfd" stroke-width="1.5"/>
+  <text x="18" y="164" font-family="monospace" font-size="9" font-weight="700" fill="#388bfd" letter-spacing="1">CORE ENGINE</text>
 
-  <rect x="234" y="174" width="170" height="34" rx="5" fill="#0d1117" stroke="#21262d" stroke-width="1"/>
-  <text x="319" y="196" text-anchor="middle"
-    font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif"
-    font-size="11" fill="#e6edf3">context-builder + RAG inject</text>
+  <!-- Core sub-box 1: discord-bot.js -->
+  <rect x="18" y="170" width="224" height="64" rx="5" fill="#0d1117" stroke="#21262d" stroke-width="1"/>
+  <text x="130" y="188" text-anchor="middle" font-family="monospace" font-size="11" font-weight="700" fill="#e6edf3">discord-bot.js</text>
+  <text x="130" y="203" text-anchor="middle" font-family="monospace" font-size="9" fill="#8b949e">event dispatch · reply routing</text>
+  <text x="130" y="218" text-anchor="middle" font-family="monospace" font-size="9" fill="#6e7681">channel guard · rate limit</text>
 
-  <rect x="234" y="216" width="170" height="40" rx="5" fill="#1a2840" stroke="#388bfd" stroke-width="1.5"/>
-  <text x="319" y="233" text-anchor="middle"
-    font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif"
-    font-size="13" font-weight="700" fill="#79c0ff">claude -p</text>
-  <text x="319" y="249" text-anchor="middle"
-    font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif"
-    font-size="10" fill="#58a6ff">Claude Max  ·  $0 per call</text>
+  <!-- Core sub-box 2: claude-runner.js -->
+  <rect x="252" y="170" width="224" height="64" rx="5" fill="#0d1117" stroke="#21262d" stroke-width="1"/>
+  <text x="364" y="188" text-anchor="middle" font-family="monospace" font-size="11" font-weight="700" fill="#e6edf3">claude-runner.js</text>
+  <text x="364" y="203" text-anchor="middle" font-family="monospace" font-size="9" fill="#8b949e">subprocess.spawn · pipe</text>
+  <text x="364" y="218" text-anchor="middle" font-family="monospace" font-size="9" fill="#6e7681">timeout · retry · stream</text>
 
-  <!-- ── ARROWS: core → outputs ── -->
-  <line x1="416" y1="95" x2="474" y2="95" stroke="#388bfd" stroke-width="1.5" marker-end="url(#arr)"/>
-  <line x1="416" y1="167" x2="474" y2="167" stroke="#3fb950" stroke-width="1.5" marker-end="url(#arr-g)"/>
-  <line x1="416" y1="239" x2="474" y2="239" stroke="#f0883e" stroke-width="1.5" marker-end="url(#arr-o)"/>
+  <!-- Core sub-box 3: context-builder -->
+  <rect x="486" y="170" width="296" height="64" rx="5" fill="#0d1117" stroke="#21262d" stroke-width="1"/>
+  <text x="634" y="188" text-anchor="middle" font-family="monospace" font-size="11" font-weight="700" fill="#e6edf3">context-builder + RAG inject</text>
+  <text x="634" y="203" text-anchor="middle" font-family="monospace" font-size="9" fill="#8b949e">rag-engine.mjs · LanceDB hybrid</text>
+  <text x="634" y="218" text-anchor="middle" font-family="monospace" font-size="9" fill="#6e7681">CLAUDE.md · health.json · persona</text>
 
-  <!-- ── OUTPUT COLUMN ── -->
-  <!-- Discord reply -->
-  <rect x="478" y="68" width="140" height="54" rx="6" fill="#161b22" stroke="#388bfd" stroke-width="1.5"/>
-  <text x="548" y="90" text-anchor="middle"
-    font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif"
-    font-size="12" font-weight="600" fill="#58a6ff">Discord Reply</text>
-  <text x="548" y="107" text-anchor="middle"
-    font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif"
-    font-size="10" fill="#8b949e">real-time, channel routing</text>
+  <!-- claude -p highlight box -->
+  <rect x="18" y="244" width="764" height="66" rx="6" fill="#1a2840" stroke="#388bfd" stroke-width="2"/>
+  <rect x="18" y="244" width="4" height="66" fill="#388bfd" rx="2"/>
+  <text x="400" y="266" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="16" font-weight="700" fill="#79c0ff">claude -p</text>
+  <text x="400" y="284" text-anchor="middle" font-family="monospace" font-size="10" fill="#58a6ff">Claude Max subscription  ·  $0 per call  ·  no API key required</text>
+  <text x="400" y="300" text-anchor="middle" font-family="monospace" font-size="9" fill="#6e7681">model: claude-opus-4-6 / claude-sonnet-4-6  ·  200K context  ·  CLAUDE.md injected</text>
 
-  <!-- Reports -->
-  <rect x="478" y="140" width="140" height="54" rx="6" fill="#161b22" stroke="#3fb950" stroke-width="1.5"/>
-  <text x="548" y="162" text-anchor="middle"
-    font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif"
-    font-size="12" font-weight="600" fill="#3fb950">Reports</text>
-  <text x="548" y="179" text-anchor="middle"
-    font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif"
-    font-size="10" fill="#8b949e">standup, briefing, health</text>
+  <!-- Core → Output arrows -->
+  <path d="M 190,318 L 140,336" fill="none" stroke="#388bfd" stroke-width="1.2" marker-end="url(#a)"/>
+  <path d="M 400,318 L 400,336" fill="none" stroke="#3fb950" stroke-width="1.2" marker-end="url(#ag)"/>
+  <path d="M 610,318 L 660,336" fill="none" stroke="#f0883e" stroke-width="1.2" marker-end="url(#ao)"/>
 
-  <!-- Alerts -->
-  <rect x="478" y="212" width="140" height="54" rx="6" fill="#161b22" stroke="#f0883e" stroke-width="1.5"/>
-  <text x="548" y="234" text-anchor="middle"
-    font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif"
-    font-size="12" font-weight="600" fill="#f0883e">Alerts</text>
-  <text x="548" y="251" text-anchor="middle"
-    font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif"
-    font-size="10" fill="#8b949e">Discord + ntfy push</text>
+  <!-- ── ZONE C: OUTPUT LAYER ── -->
+  <rect x="10" y="338" width="780" height="76" rx="6" fill="#161b22" stroke="#21262d" stroke-width="1"/>
+  <text x="18" y="352" font-family="monospace" font-size="9" font-weight="700" fill="#6e7681" letter-spacing="1">OUTPUT LAYER</text>
 
-  <!-- ── ARROWS: core → bottom row ── -->
-  <line x1="319" y1="272" x2="319" y2="302" stroke="#3fb950" stroke-width="1.5" marker-end="url(#arr-g)"/>
-  <line x1="319" y1="272" x2="640" y2="302" stroke="#f0883e" stroke-width="1.5" marker-end="url(#arr-o)"/>
+  <!-- OUTPUT 1: Discord Reply -->
+  <rect x="18" y="357" width="230" height="50" rx="5" fill="#0d1117" stroke="#388bfd" stroke-width="1.5"/>
+  <text x="133" y="378" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="11" font-weight="700" fill="#58a6ff">Discord Reply</text>
+  <text x="133" y="395" text-anchor="middle" font-family="monospace" font-size="9" fill="#8b949e">real-time · channel routing · DM</text>
 
-  <!-- ── MEMORY ROW ── -->
-  <rect x="20" y="306" width="300" height="70" rx="8" fill="#161b22" stroke="#3fb950" stroke-width="1.5"/>
-  <text x="170" y="328" text-anchor="middle"
-    font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif"
-    font-size="12" font-weight="700" fill="#3fb950">Memory</text>
-  <text x="170" y="346" text-anchor="middle"
-    font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif"
-    font-size="10" fill="#8b949e">LanceDB RAG  ·  rag-engine.mjs  ·  hybrid search</text>
-  <text x="170" y="364" text-anchor="middle"
-    font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif"
-    font-size="10" fill="#8b949e">Obsidian Vault  ·  auto-indexed  ·  98% compression</text>
+  <!-- OUTPUT 2: Reports -->
+  <rect x="285" y="357" width="230" height="50" rx="5" fill="#0d1117" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="400" y="378" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="11" font-weight="700" fill="#3fb950">Reports</text>
+  <text x="400" y="395" text-anchor="middle" font-family="monospace" font-size="9" fill="#8b949e">standup · briefing · health · evals</text>
 
-  <!-- ── SELF-HEALING ROW ── -->
-  <rect x="340" y="306" width="440" height="70" rx="8" fill="#161b22" stroke="#f0883e" stroke-width="1.5"/>
-  <text x="560" y="328" text-anchor="middle"
-    font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif"
-    font-size="12" font-weight="700" fill="#f0883e">Self-Healing (4 layers)</text>
-  <text x="560" y="346" text-anchor="middle"
-    font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif"
-    font-size="10" fill="#8b949e">L0 preflight  ·  L1 launchd KeepAlive  ·  L2 watchdog (180s)  ·  L3 guardian</text>
-  <text x="560" y="364" text-anchor="middle"
-    font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif"
-    font-size="10" fill="#8b949e">No human intervention needed  ·  macOS launchd + Linux Docker</text>
+  <!-- OUTPUT 3: Alerts -->
+  <rect x="552" y="357" width="230" height="50" rx="5" fill="#0d1117" stroke="#f0883e" stroke-width="1.5"/>
+  <text x="667" y="378" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="11" font-weight="700" fill="#f0883e">Alerts</text>
+  <text x="667" y="395" text-anchor="middle" font-family="monospace" font-size="9" fill="#8b949e">Discord DM + ntfy push · Galaxy</text>
+
+  <!-- ── ZONE D: MEMORY ── -->
+  <rect x="10" y="424" width="370" height="66" rx="6" fill="#0d2818" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="18" y="438" font-family="monospace" font-size="9" font-weight="700" fill="#3fb950" letter-spacing="1">MEMORY / RAG</text>
+  <text x="194" y="453" text-anchor="middle" font-family="monospace" font-size="10" font-weight="700" fill="#56d364">LanceDB · rag-engine.mjs</text>
+  <text x="194" y="467" text-anchor="middle" font-family="monospace" font-size="9" fill="#8b949e">BM25 + vector hybrid  ·  Obsidian Vault auto-indexed</text>
+  <text x="194" y="481" text-anchor="middle" font-family="monospace" font-size="9" fill="#3fb950">98% token compression: 315K → 5.4K</text>
+
+  <!-- ── ZONE E: SELF-HEALING ── -->
+  <rect x="390" y="424" width="400" height="66" rx="6" fill="#2a1505" stroke="#f0883e" stroke-width="1.5"/>
+  <text x="398" y="438" font-family="monospace" font-size="9" font-weight="700" fill="#f0883e" letter-spacing="1">SELF-HEALING (4 LAYERS)</text>
+  <text x="590" y="453" text-anchor="middle" font-family="monospace" font-size="9" fill="#8b949e">L0 preflight  ·  L1 launchd KeepAlive  ·  L2 watchdog (180s)  ·  L3 guardian (*/3m)</text>
+  <text x="590" y="467" text-anchor="middle" font-family="monospace" font-size="9" fill="#8b949e">macOS launchd  +  Linux Docker  ·  auto-restart on crash</text>
+  <text x="590" y="481" text-anchor="middle" font-family="monospace" font-size="9" fill="#f0883e">Zero human intervention needed</text>
 </svg>
